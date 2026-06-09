@@ -22,7 +22,6 @@ import future.keywords.in
 #   }
 
 default allow := false
-default deny_reasons := set()
 
 # Promotion is allowed only when no deny reasons exist
 allow if {
