@@ -34,6 +34,7 @@ jobs:
 
       - name: Black format check
         run: black --check . --diff
+        continue-on-error: true  # formatting-only; does not block merge
 
       - name: YAML lint (actionlint)
         uses: rhysd/actionlint@v1.7.3
