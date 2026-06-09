@@ -46,7 +46,7 @@ jobs:
             }
           }
           EOF
-          RESULT=$(opa eval -d aiops/policies/opa/model_promotion.rego \
+          RESULT=$(opa eval --v1-compatible -d aiops/policies/opa/model_promotion.rego \
             -i /tmp/test_model_promotion.json \
             'data.platform.model_promotion.allow')
           echo "OPA model_promotion allow result: $RESULT"
@@ -65,7 +65,7 @@ jobs:
             }
           }
           EOF
-          RESULT=$(opa eval -d aiops/policies/opa/self_healing.rego \
+          RESULT=$(opa eval --v1-compatible -d aiops/policies/opa/self_healing.rego \
             -i /tmp/test_self_healing_allow.json \
             'data.platform.self_healing.allow')
           echo "$RESULT" | python3 -c "import sys,json; r=json.load(sys.stdin); assert r['result'][0]['expressions'][0]['value'] == True, f'Expected allow=true: {r}'"
@@ -83,7 +83,7 @@ jobs:
             }
           }
           EOF
-          RESULT=$(opa eval -d aiops/policies/opa/self_healing.rego \
+          RESULT=$(opa eval --v1-compatible -d aiops/policies/opa/self_healing.rego \
             -i /tmp/test_self_healing_deny.json \
             'data.platform.self_healing.allow')
           echo "$RESULT" | python3 -c "import sys,json; r=json.load(sys.stdin); assert r['result'][0]['expressions'][0]['value'] == False, f'Expected allow=false for kube-system: {r}'"

@@ -54,6 +54,7 @@ jobs:
           pip install --quiet \
             numpy==1.26.4 \
             scikit-learn==1.4.2 \
+            "protobuf>=4.21,<5.0" \
             mlflow==2.13.0
 
       - uses: actions/download-artifact@v4
