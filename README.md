@@ -35,14 +35,15 @@ Enterprise-grade **AIOps + MLOps** reference platform for SaaS teams. **23 use c
 
 ### Part IV — Deep Reference
 18. [Complete Tool & Library Reference](#complete-tool--library-reference)
-19. [Phases — Step-by-Step from Scratch](#phases--step-by-step-from-scratch)
-20. [Use Cases — Step-by-Step Walkthrough](#use-cases--step-by-step-walkthrough)
-21. [Challenges Encountered & How They Were Fixed](#challenges-encountered--how-they-were-fixed)
-22. [Verification Evidence (All Workflows Green)](#verification-evidence-all-workflows-green)
-23. [Official Documentation Index](#official-documentation-index)
+19. [Extended Coverage — Tools, Algorithms & Concepts](#extended-coverage--tools-algorithms--concepts)
+20. [Phases — Step-by-Step from Scratch](#phases--step-by-step-from-scratch)
+21. [Use Cases — Step-by-Step Walkthrough](#use-cases--step-by-step-walkthrough)
+22. [Challenges Encountered & How They Were Fixed](#challenges-encountered--how-they-were-fixed)
+23. [Verification Evidence (All Workflows Green)](#verification-evidence-all-workflows-green)
+24. [Official Documentation Index](#official-documentation-index)
 
 ### Part V — Expert Reference (SRE · MLOps · AIOps · DevOps)
-24. [Expert Reference — Platform Architecture](#expert-reference--platform-architecture)
+25. [Expert Reference — Platform Architecture](#expert-reference--platform-architecture)
 
 ---
 
@@ -108,10 +109,10 @@ flowchart TB
 | If you are… | Start here | Then read |
 |---|---|---|
 | **Executive / PM** | [Executive Summary](#executive-summary) → [23 Use Cases](#23-use-cases--business-value--evidence) | [Enterprise Production Context](#enterprise-production-context) |
-| **Platform / SRE lead** | [System Design Concepts §5](#critical-system-design-concepts) → [Architecture Diagrams](#architecture-diagrams--flows) | [Expert Reference §24](#expert-reference--platform-architecture) |
-| **ML engineer** | [UC Walkthroughs §20](#use-cases--step-by-step-walkthrough) → [Eval Framework §15](#eval-framework) | [Tool Reference §18](#complete-tool--library-reference) |
+| **Platform / SRE lead** | [System Design Concepts §5](#critical-system-design-concepts) → [Architecture Diagrams](#architecture-diagrams--flows) | [Expert Reference §25](#expert-reference--platform-architecture) |
+| **ML engineer** | [UC Walkthroughs §21](#use-cases--step-by-step-walkthrough) → [Extended Coverage §19](#extended-coverage--tools-algorithms--concepts) | [Tool Reference §18](#complete-tool--library-reference) |
 | **Security / compliance** | UC7, UC12, UC17 in [Use Cases](#23-use-cases--business-value--evidence) | [OPA/Kyverno/Trivy in Tool Reference](#complete-tool--library-reference) |
-| **Operator validating CI** | [Validation §11](#validation--run-everything-at-once) | [Verification Evidence §22](#verification-evidence-all-workflows-green) |
+| **Operator validating CI** | [Validation §11](#validation--run-everything-at-once) | [Verification Evidence §23](#verification-evidence-all-workflows-green) |
 
 ### Domain → UC hierarchy
 
@@ -1576,13 +1577,17 @@ run_eval_gate("UC1", {"psi_score": 1.2, "ks_statistic": 0.45, ...}, Path("eval-r
 
 ## Technology Stack
 
-**MLOps**: MLflow · Feast · DVC · Airflow · Kubeflow · KServe · Optuna · SHAP  
-**AIOps**: n8n · Qdrant · Ollama/TinyLlama · LangChain · Falco · OPA  
-**Observability**: OpenTelemetry · Prometheus · Grafana · Loki · Tempo · FluentBit · Alertmanager  
-**Drift/Monitoring**: Evidently · NannyML · Alibi Detect · WhyLogs  
-**ML**: PyTorch · scikit-learn · NumPy · Pandas · Prophet · sentence-transformers  
+**MLOps**: MLflow · Feast · DVC · Airflow · Kubeflow · KServe · Optuna · SHAP · SciPy  
+**AIOps**: n8n · Qdrant · Ollama/TinyLlama · LangChain · Falco · OPA · Rego  
+**Observability**: OpenTelemetry · OTLP · Prometheus · PromQL · Grafana · Loki · LogQL · Tempo · FluentBit · Alertmanager  
+**Drift/Monitoring**: Evidently · NannyML · Alibi Detect · WhyLogs · Great Expectations  
+**ML**: PyTorch · scikit-learn (DBSCAN, IsolationForest) · NumPy · Pandas · PyArrow · Prophet · sentence-transformers  
 **Security**: Trivy · Falco · Kyverno · OPA  
-**Infra**: Docker Compose · Kind · Helm · KEDA · Terraform (ref)
+**Infra**: Docker Compose · Kind · Knative (via KServe) · Helm · Terraform (ref) · PostgreSQL · Redis  
+**CI/Dev**: GitHub Actions · Ruff · Black · pytest · actionlint · pre-commit  
+**Platform**: `eval/scorer.py` · `data/synthetic/` · Backstage catalog · GitHub Pages · HuggingFace Hub (optional)
+
+Full per-tool detail: [§18 Complete Tool Reference](#complete-tool--library-reference) · [§19 Extended Coverage](#extended-coverage--tools-algorithms--concepts)
 
 ---
 
@@ -1601,7 +1606,7 @@ run_eval_gate("UC1", {"psi_score": 1.2, "ks_statistic": 0.45, ...}, Path("eval-r
 
 ## Complete Tool & Library Reference
 
-This section documents **every tool, library, and concept** used in the platform. Descriptions align with official project documentation (linked in [Section 23 — Official Documentation Index](#official-documentation-index)). For each entry: **problem solved**, **why we use it here**, **alternatives considered**, and **which UC(s) depend on it**.
+This section documents **every tool, library, and concept** used in the platform. Descriptions align with official project documentation (linked in [Section 24 — Official Documentation Index](#official-documentation-index)). For each entry: **problem solved**, **why we use it here**, **alternatives considered**, and **which UC(s) depend on it**.
 
 ### Platform & CI/CD
 
@@ -1850,9 +1855,15 @@ This section documents **every tool, library, and concept** used in the platform
 - **Used in**: UC4, `07-predictive-scaling`.
 
 #### NumPy / Pandas / SciPy / PyArrow
-- **Problem solved**: Numerical computing, tabular data, statistical tests (KS), columnar parquet I/O.
-- **Why here**: Foundation for all synthetic data generators and eval metrics; deterministic seeds for reproducible CI.
-- **Used in**: All UC workflows, `data/synthetic/`.
+- **Official definitions**:
+  - NumPy — N-dimensional arrays ([numpy.org/doc](https://numpy.org/doc/))
+  - Pandas — tabular data structures ([pandas.pydata.org/docs](https://pandas.pydata.org/docs/))
+  - SciPy — scientific computing & statistics ([docs.scipy.org](https://docs.scipy.org/doc/scipy/))
+  - PyArrow — columnar parquet I/O ([arrow.apache.org/docs/python](https://arrow.apache.org/docs/python/))
+- **Problem solved**: Numerical computing, statistical tests (KS, A/B p-values), columnar parquet for Feast and synthetic data.
+- **Why here**: Foundation for all `data/synthetic/` generators, eval metrics, drift reports, UC22 scipy tests. Deterministic seeds for reproducible CI.
+- **Real use case**: `generate_pod_metrics.py` writes parquet via PyArrow; UC22 uses `scipy.stats` for canary significance; UC1/UC5 compute KS on pandas DataFrames.
+- **Used in**: All UC workflows, `data/synthetic/`, `eval/`. See [Extended Coverage §19](#extended-coverage--tools-algorithms--concepts) for algorithm-level detail.
 
 #### sentence-transformers
 - **Official definition**: Sentence embeddings using transformer models ([sbert.net](https://www.sbert.net/)).
@@ -1906,6 +1917,8 @@ This section documents **every tool, library, and concept** used in the platform
 
 #### Helm / Terraform / Crossplane (reference)
 - **Purpose**: Reference IaC for production EKS/GKE deployment — not executed in CI but documented for enterprise rollout path.
+- **Real use case**: `infra/helm/kyverno/values.yml` for Kyverno install; `infra/terraform/aws-eks/` and `gcp-gke/` placeholders for cluster provisioning.
+- **Expanded detail**: [Extended Coverage §19 — Helm & Terraform](#extended-coverage--tools-algorithms--concepts)
 - **Location**: `infra/helm/`, `infra/terraform/`, `infra/crossplane/`.
 
 ---
@@ -1924,12 +1937,16 @@ This section documents **every tool, library, and concept** used in the platform
 ### Python Application Layer
 
 #### FastAPI / Uvicorn / Pydantic / httpx
-- **Problem solved**: Lightweight microservices for each UC (`services/*/src/main.py`) with typed APIs and async HTTP for OPA/n8n calls.
-- **Used in**: UC6 self-healing service, UC3 correlator, UC10 cost optimizer, others.
+- **Official definitions**: [FastAPI](https://fastapi.tiangolo.com/), [Uvicorn](https://www.uvicorn.org/), [Pydantic](https://docs.pydantic.dev/), [httpx](https://www.python-httpx.org/)
+- **Problem solved**: Typed async microservices for each UC with validated request bodies and HTTP calls to OPA/n8n/MLflow.
+- **Real use case**: `services/self-healing/src/main.py` — FastAPI app, Pydantic heal model, httpx POST to OPA; Docker CMD runs Uvicorn.
+- **Used in**: All `services/*/src/main.py`. Expanded in [Extended Coverage §19](#extended-coverage--tools-algorithms--concepts).
 
 #### prometheus-client
-- **Official definition**: Python client for Prometheus metrics ([github.com/prometheus/client_python](https://github.com/prometheus/client_python)).
-- **Used in**: `01-observability` test metric emission; services expose custom gauges.
+- **Official definition**: Python client library for Prometheus instrumentation ([github.com/prometheus/client_python](https://github.com/prometheus/client_python)).
+- **Problem solved**: Expose custom gauges/counters/histograms from Python services and CI test jobs.
+- **Real use case**: `01-observability` emits test gauge; drift-monitor exposes `ml_model_psi_score` consumed by `MLModelDriftDetected` alert in `platform.yml`.
+- **Used in**: `01-observability`, UC1 drift metrics, services exposing Prom metrics.
 
 ---
 
@@ -1947,6 +1964,292 @@ This section documents **every tool, library, and concept** used in the platform
 | **GitOps** | Declarative infra in git; cluster reconciles to desired state | UC12 |
 | **Canary / A/B** | Gradual rollout with statistical comparison of variants | UC22 |
 | **Eval gate** | Composite score threshold blocking CI merge | All UCs via `eval/scorer.py` |
+
+---
+
+## Extended Coverage — Tools, Algorithms & Concepts
+
+This section documents **everything used in the repo that was missing or only briefly mentioned** in [§18 Complete Tool Reference](#complete-tool--library-reference). Each entry includes: official definition, real use case in this platform, where it lives in code, and related UCs.
+
+### Platform internals (first-class, not third-party)
+
+#### Unified eval framework (`eval/`)
+
+- **Official definition**: Custom quality contract system — not a third-party product. Implements weighted composite scoring with per-metric direction (`higher_better`, `lower_better`, `bool_true`, `exact`).
+- **Problem solved**: 23 workflows need **one consistent pass/fail semantics**; ad-hoc `assert` per workflow is unmaintainable.
+- **Real use case**: UC1 workflow computes PSI/KS → calls `run_eval_gate("UC1", metrics_dict, Path("eval-results"))` → writes `uc1.json` → GHA fails if `score < 70`.
+- **Key files**: `eval/metrics.py` (23 UC metric specs + thresholds), `eval/scorer.py` (`compute_score()`, `run_eval_gate()`), consumed by `90-e2e-integration.yml`.
+- **Production parallel**: Same pattern as quality gates in Google CI/CD or Netflix automated canary analysis — numeric bar before promotion.
+
+#### Synthetic data generators (`data/synthetic/`)
+
+- **Official definition**: Deterministic Python scripts producing parquet/JSON for CI — seeded RNG for reproducibility.
+- **Problem solved**: No production data in git; every UC needs realistic input without external datasets.
+- **Real use case**:
+
+| Script | Generates | Used by |
+|---|---|---|
+| `generate_pod_metrics.py` | Pod CPU/memory with injected drift after hour 48 | UC1, UC5 |
+| `generate_container_logs.py` | Normal + anomalous log lines | UC2 |
+| `generate_alerts.py` | Alerts with `root_cause_id`, duplicate labels | UC3 |
+| `generate_cost_data.py` | Namespace cost + idle waste periods | UC10 |
+| `generate_http_traffic.py` | HTTP requests with SLO breach windows | UC21, UC18 |
+
+- **Validated in**: `02-data-pipeline.yml` → `data-generator-test` job.
+
+#### Microservices layer (`services/`)
+
+| Service | Port / role | UC | Key algorithm |
+|---|---|---|---|
+| `drift-monitor/` | Drift API + Evidently reports | UC1 | PSI, KS, Alibi LSDD |
+| `anomaly-detector/` | Log scoring API | UC2 | PyTorch LSTM autoencoder |
+| `alert-correlator/` | DBSCAN dedup API | UC3 | sklearn DBSCAN |
+| `predictive-scaler/` | Forecast + scale recommendation | UC4 | Prophet + KEDA manifest |
+| `self-healing/` | OPA-gated remediation | UC6 | httpx → OPA → K8s |
+| `runbook-agent/` | RAG Q&A | UC8, UC23 | Qdrant + LangChain |
+| `cost-optimizer/` | Waste detection API | UC10 | IsolationForest |
+
+---
+
+### CI, quality & developer tooling
+
+#### Ruff
+
+- **Official definition**: Extremely fast Python linter and formatter ([docs.astral.sh/ruff](https://docs.astral.sh/ruff/)).
+- **Problem solved**: Catch bugs, style issues, and unsafe patterns before merge.
+- **Real use case**: `00-pr-validate.yml` lint job runs `ruff check .` on all Python — config in `pyproject.toml` (rules E, F, W, N, UP, B, A, C4).
+- **UC**: Platform (Phase 0).
+
+#### Black
+
+- **Official definition**: Uncompromising Python code formatter ([black.readthedocs.io](https://black.readthedocs.io/)).
+- **Problem solved**: Zero bike-shedding on formatting across 23 UC folders.
+- **Real use case**: `ruff format --check` or Black in pre-commit; line length 100, Python 3.11 target.
+
+#### pytest + pytest-asyncio
+
+- **Official definition**: Mature Python testing framework ([docs.pytest.org](https://docs.pytest.org/)).
+- **Problem solved**: Unit tests for eval framework smoke cases and service logic.
+- **Real use case**: `tests/` directory; `00-pr-validate` runs eval-framework-test validating UC1 pass/fail scoring paths.
+
+#### pre-commit
+
+- **Official definition**: Git hook framework ([pre-commit.com](https://pre-commit.com/)).
+- **Problem solved**: Run Ruff/actionlint locally before push (optional for contributors).
+- **Config**: `.pre-commit-config.yaml`.
+
+#### actionlint
+
+- **Official definition**: Static checker for GitHub Actions workflow files ([github.com/rhysd/actionlint](https://github.com/rhysd/actionlint)).
+- **Problem solved**: Invalid workflow YAML, deprecated actions, or secrets-in-`if:` bugs caught in CI.
+- **Real use case**: `00-pr-validate` lints all 26 workflow files — prevented secrets context errors (see Challenges §22).
+
+---
+
+### Statistical, ML algorithms & libraries (expanded)
+
+#### SciPy
+
+- **Official definition**: Open-source library for scientific computing — statistics, optimization, signal processing ([docs.scipy.org](https://docs.scipy.org/doc/scipy/)).
+- **Problem solved**: Rigorous hypothesis testing for model A/B canary decisions.
+- **Real use case**: UC22 runs statistical test (e.g. chi-square or t-test) on canary vs baseline outcomes → `ab_test_p_value` must be ≤ 0.05 for promotion in `eval/metrics.py`.
+- **UC**: UC22 (`10-model-serving.yml`).
+
+#### DBSCAN (via scikit-learn)
+
+- **Official definition**: Density-Based Spatial Clustering of Applications with Noise — groups points in dense regions without specifying cluster count ([sklearn DBSCAN](https://scikit-learn.org/stable/modules/generated/sklearn.cluster.DBSCAN.html)).
+- **Problem solved**: Alert storms contain many near-duplicate events; DBSCAN clusters them by feature similarity.
+- **Real use case**: `services/alert-correlator/src/correlator.py` clusters synthetic alerts → computes `deduplication_rate` and `silhouette_score` for UC3 eval gate.
+- **UC**: UC3.
+
+#### Isolation Forest (via scikit-learn)
+
+- **Official definition**: Unsupervised anomaly detection — isolates outliers by random splits ([sklearn IsolationForest](https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.IsolationForest.html)).
+- **Problem solved**: Cloud cost time series have no labels for "waste"; IsolationForest flags anomalous utilization patterns.
+- **Real use case**: `services/cost-optimizer/src/main.py` + `mlops/experiments/cost_anomaly/` → `anomaly_detection_f1` ≥ 0.70.
+- **UC**: UC10.
+
+#### LSTM autoencoder (PyTorch)
+
+- **Official definition**: Long Short-Term Memory network trained to reconstruct normal sequences; high reconstruction error = anomaly ([PyTorch LSTM](https://pytorch.org/docs/stable/generated/torch.nn.LSTM.html)).
+- **Problem solved**: Log sequences have temporal structure keyword alerts miss.
+- **Real use case**: `mlops/experiments/log_anomaly/lstm_autoencoder.py` trains on normal logs, scores anomalies → UC2 precision@10 ≥ 0.70.
+- **UC**: UC2.
+
+#### PyArrow
+
+- **Official definition**: Cross-language columnar memory format and parquet I/O ([arrow.apache.org/docs/python](https://arrow.apache.org/docs/python/)).
+- **Problem solved**: Fast, typed parquet read/write for Feast offline store and synthetic generators.
+- **Real use case**: All `data/synthetic/*.py` write parquet; UC5 Feast `FileSource` reads `../../../data/synthetic/*.parquet`. Pinned `pyarrow>=14,<16` in `requirements.txt` for CI stability.
+- **UC**: UC1, UC5, UC13, data pipeline.
+
+---
+
+### Infrastructure & orchestration (previously brief or missing)
+
+#### PostgreSQL
+
+- **Official definition**: Open-source relational database ([postgresql.org/docs](https://www.postgresql.org/docs/)).
+- **Problem solved**: MLflow tracking store, Airflow metadata DB, and Feast registry need durable relational storage in Stack A.
+- **Real use case**: `docker-compose.mlops-core.yml` — `postgres:16-alpine` with databases `mlflow`, `airflow`, `feast` via `init-scripts/postgres-init-dbs.sh`.
+- **UC**: UC1 (Airflow retrain), UC9 (MLflow), UC5 (Feast registry).
+
+#### Knative Serving (KServe foundation)
+
+- **Official definition**: Kubernetes-based platform for serverless workloads — scale-to-zero, revision management ([knative.dev/docs/serving](https://knative.dev/docs/serving/)).
+- **Problem solved**: KServe `InferenceService` CRDs are built on Knative Serving for traffic splitting and autoscaling.
+- **Real use case**: UC9/UC22 apply `InferenceService` manifests in Kind; canary traffic split validated before 100% promotion.
+- **UC**: UC9, UC22.
+
+#### Argo CD (GitOps reference)
+
+- **Official definition**: Declarative GitOps continuous delivery tool for Kubernetes ([argo-cd.readthedocs.io](https://argo-cd.readthedocs.io/)).
+- **Problem solved**: Cluster state must match git; drift detection triggers reconcile.
+- **Real use case**: UC12 validates drift detection + reconcile semantics; production path uses ArgoCD sync after Kyverno admission (referenced in `19-gitops-drift.yml`).
+- **UC**: UC12.
+
+#### GitHub Pages
+
+- **Official definition**: Static site hosting from a git branch ([docs.github.com/pages](https://docs.github.com/en/pages)).
+- **Problem solved**: Publish eval portal and scorecards without separate web host.
+- **Real use case**: `91-publish-portal.yml` deploys `portal/` to `gh-pages` branch → `https://<org>.github.io/observable-mlops-platform/`.
+- **UC**: E2E portal (workflow 91).
+
+#### HuggingFace Hub
+
+- **Official definition**: Platform for sharing ML models, datasets, and Spaces ([huggingface.co/docs/hub](https://huggingface.co/docs/hub/)).
+- **Problem solved**: Optional mirror of portal artifacts and model cards.
+- **Real use case**: `91-publish-portal.yml` uploads when `HF_TOKEN` set; gracefully skipped when empty.
+- **UC**: Portal publish (optional).
+
+#### Helm
+
+- **Official definition**: Kubernetes package manager — charts templating K8s manifests ([helm.sh/docs](https://helm.sh/docs/)).
+- **Problem solved**: Parameterize Kyverno/Kubeflow values for production EKS/GKE without copy-paste YAML.
+- **Real use case**: Reference values in `infra/helm/kyverno/values.yml`; not executed in CI but documents production install path.
+- **UC**: UC7, UC12 (reference).
+
+#### Terraform
+
+- **Official definition**: Infrastructure-as-code tool by HashiCorp ([developer.hashicorp.com/terraform](https://developer.hashicorp.com/terraform/docs)).
+- **Problem solved**: Provision EKS/GKE clusters for production rollout of this platform.
+- **Real use case**: Placeholder modules `infra/terraform/aws-eks/`, `infra/terraform/gcp-gke/` — reference only; CI uses Kind instead.
+- **UC**: Production path (all UCs on real cluster).
+
+---
+
+### Observability query languages & APIs
+
+#### PromQL
+
+- **Official definition**: Prometheus Query Language — functional query language for time series ([prometheus.io/docs/prometheus/latest/querying/basics](https://prometheus.io/docs/prometheus/latest/querying/basics/)).
+- **Problem solved**: Express SLO error rates, recording rules, and alert conditions.
+- **Real use case**: `observability/alerts/rules/platform.yml`:
+  - Recording rule: `job:http_error_rate:ratio5m`
+  - Alert: `SLOFastBurnRate` when ratio > 0.02 for 2m
+  - Alert: `MLModelDriftDetected` when `ml_model_psi_score > 0.2`
+- **UC**: UC1, UC4, UC10, UC21.
+
+#### LogQL
+
+- **Official definition**: Grafana Loki's query language — Prometheus-inspired log querying ([grafana.com/docs/loki/latest/query](https://grafana.com/docs/loki/latest/query/)).
+- **Problem solved**: Filter and aggregate container logs by labels without full-text indexing cost.
+- **Real use case**: UC2 log anomaly pipeline conceptually sources Loki-style streams; Stack B provisions Loki datasource in Grafana.
+- **UC**: UC2, UC16.
+
+#### OTLP (OpenTelemetry Protocol)
+
+- **Official definition**: Standard protocol for exporting traces, metrics, logs to collectors ([opentelemetry.io/docs/specs/otlp](https://opentelemetry.io/docs/specs/otlp/)).
+- **Problem solved**: One instrumentation API → multiple backends via collector.
+- **Real use case**: `01-observability` sends test OTLP span to collector on gRPC/HTTP; `otelcol.yml` routes to Tempo/Loki/Prometheus.
+- **UC**: UC11, all observability.
+
+---
+
+### Rego (OPA policy language)
+
+- **Official definition**: Declarative policy language for OPA ([openpolicyagent.org/docs/latest/policy-language](https://www.openpolicyagent.org/docs/latest/policy-language/)).
+- **Problem solved**: Express allow/deny rules as auditable code, not embedded Python.
+- **Real use case**:
+  - `aiops/policies/opa/self_healing.rego` — namespace allowlist for UC6
+  - `aiops/policies/opa/model_promotion.rego` — SHAP + accuracy gates for UC9
+  - Tested via `opa eval -i input.json 'data.self_healing.allow'` in `08-self-healing.yml`
+- **Critical detail**: Input file for `opa eval -i` **is** the document — no `{"input":{}}` wrapper.
+- **UC**: UC6, UC9, UC12.
+
+---
+
+### Application layer (expanded)
+
+#### FastAPI
+
+- **Official definition**: Modern, fast Python web framework for building APIs with automatic OpenAPI docs ([fastapi.tiangolo.com](https://fastapi.tiangolo.com/)).
+- **Problem solved**: Lightweight HTTP APIs for each UC microservice with typed request/response models.
+- **Real use case**: Every `services/*/src/main.py` exposes health + domain endpoints (e.g. `/heal`, `/correlate`, `/drift/check`); called from GHA curl steps and integration tests.
+- **UC**: UC1–UC10 services.
+
+#### Uvicorn
+
+- **Official definition**: Lightning-fast ASGI server ([uvicorn.org](https://www.uvicorn.org/)).
+- **Problem solved**: Production-grade async server for FastAPI in Docker containers.
+- **Real use case**: Dockerfiles use `uvicorn main:app --host 0.0.0.0`.
+
+#### Pydantic v2
+
+- **Official definition**: Data validation using Python type hints ([docs.pydantic.dev](https://docs.pydantic.dev/)).
+- **Problem solved**: Request body validation for self-healing, correlator, and drift APIs — invalid payloads rejected before business logic.
+- **Real use case**: `services/self-healing/src/main.py` Pydantic models for heal requests.
+
+#### httpx
+
+- **Official definition**: Async-capable HTTP client for Python ([python-httpx.org](https://www.python-httpx.org/)).
+- **Problem solved**: Call OPA HTTP API, n8n webhooks, MLflow REST from services and CI scripts.
+- **Real use case**: UC6 self-healing service POSTs to `http://opa:8181/v1/data/self_healing/allow`.
+
+---
+
+### Extended concepts & metrics glossary
+
+| Concept | Official / standard definition | Real use case in this repo | UC |
+|---|---|---|---|
+| **PSI** | Population Stability Index — sum of `(actual% - expected%) × ln(actual%/expected%)` across bins; PSI ≥ 0.25 = significant shift in credit/risk ML | UC1: `psi_score` must exceed 0.25 to prove drift **detected**; UC5: offline/online PSI must stay ≤ 0.10 | UC1, UC5 |
+| **KS statistic** | Kolmogorov-Smirnov two-sample test — max CDF difference between distributions | UC1 drift confirmation; UC5 train/serve comparison | UC1, UC5 |
+| **LSDD** | Least-Squares Density Difference test (Alibi Detect) — multivariate drift p-value | UC1: `alibi_lsdd_p_value < 0.05` confirms drift | UC1 |
+| **Silhouette score** | Cluster quality metric (−1 to 1); higher = better-separated clusters | UC3 DBSCAN cluster quality ≥ 0.30 | UC3 |
+| **Precision@K / Recall@K** | IR metrics: fraction of top-K results that are relevant / relevant items found in top-K | UC2 anomaly detection at K=10 | UC2 |
+| **SHAP values** | Shapley values from cooperative game theory — fair feature attribution per prediction | UC17 logged to MLflow; OPA requires for promotion | UC17 |
+| **InferenceService** | KServe CRD defining model deployment, scaler, transformer, and canary traffic | UC9/UC22 Kind manifests | UC9, UC22 |
+| **Recording rule** | PromQL expression pre-computed and stored as new time series | `job:http_error_rate:ratio5m` feeds SLO alerts | UC21 |
+| **Error budget** | Allowed unreliability = 1 − SLO target over window ([Google SRE](https://sre.google/sre-book/service-level-objectives/)) | UC21 `error_budget_remaining_pct` in eval | UC21 |
+| **FeatureView** | Feast object defining features + source + schema ([Feast docs](https://docs.feast.dev/getting-started/concepts/feature-view)) | `mlops/feature-store/feature_repo/features.py` — Feast 0.40 `Field`/`schema` API | UC5 |
+| **Great Expectations suite** | Collection of `expect_*` assertions on a dataset | UC13 blocks bad data; UC5 validates feature columns | UC5, UC13 |
+| **WhyLogs profile** | Statistical summary (mean, std, counts, types) of a dataset batch | UC19 compares profiles for constraint violations | UC19 |
+| **DORA Four Keys** | Deploy frequency, lead time for changes, change failure rate, failed deployment recovery time | UC15 exports all four from GHA metadata | UC15 |
+| **RAG** | Retrieval-Augmented Generation — retrieve docs then condition LLM generation ([LangChain RAG](https://python.langchain.com/docs/tutorials/rag/)) | UC8 runbook Q&A; UC23 post-mortem context | UC8, UC23 |
+| **Canary rollout** | Route small traffic % to new version; promote on metric/statistical gate | KServe traffic split + scipy p-value | UC22 |
+| **Content-addressed storage** | Data identified by hash — same bytes = same ID | DVC push to DagsHub remote | UC9, data pipeline |
+| **Ephemeral runner** | GHA ubuntu-latest job destroyed after workflow | Full stack validated per run with zero persistent CI infra | All |
+
+---
+
+### Coverage checklist — nothing missing
+
+| Category | Items documented | Section |
+|---|---|---|
+| **26 GHA workflows** | All listed with UC mapping | §9, §20, §23 |
+| **23 UCs** | Business value + evidence + walkthrough | §9, §21 |
+| **Stack A services** | MLflow, Feast, Redis, Postgres, Airflow, n8n, Qdrant, Ollama | §18, §19 |
+| **Stack B services** | Prometheus, Grafana, Loki, Tempo, OTEL, Fluent Bit, Alertmanager | §18, §8 |
+| **7 microservices** | All under `services/` | §19 |
+| **OPA + Kyverno + Falco + Trivy** | Security stack | §18 |
+| **Drift stack** | Evidently, NannyML, Alibi, WhyLogs | §18 |
+| **ML stack** | PyTorch, sklearn, Prophet, Optuna, SHAP, scipy | §18, §19 |
+| **LLM/RAG stack** | Qdrant, LangChain, Ollama, TinyLlama, sentence-transformers | §18 |
+| **CI/dev tools** | Ruff, Black, pytest, pre-commit, actionlint | §19 |
+| **Platform code** | eval/, data/synthetic/, backstage catalog | §19 |
+| **System design** | 23 concepts with failure modes | §5 |
+| **Expert ops** | SLO, RACI, FMEA, maturity model | §25 |
+| **Official docs index** | P0–P2 critical + full tool list | §24 |
 
 ---
 
@@ -2343,21 +2646,33 @@ Primary references used for tool selection and implementation accuracy. **Bold e
 | **P1** | KServe rollout strategy | UC22 canary traffic split | https://kserve.github.io/website/latest/modelserving/v1beta1/rollout-strategy/ |
 | **P1** | DORA Four Keys | UC15 metric definitions | https://dora.dev/ |
 | **P2** | Evidently drift metrics | UC1 PSI interpretation | https://docs.evidentlyai.com/ |
-| **P2** | Backstage catalog format | UC20 entity lint rules | https://backstage.io/docs/features/software-catalog/descriptor-format/ |
+| **P2** | PromQL basics | SLO recording rules + alert expressions | https://prometheus.io/docs/prometheus/latest/querying/basics/ |
+| **P2** | SciPy statistics | UC22 A/B p-value tests | https://docs.scipy.org/doc/scipy/reference/stats.html |
 
 ### Full tool documentation
 
 | Tool | Official documentation |
 |---|---|
 | GitHub Actions | https://docs.github.com/en/actions |
+| GitHub Pages | https://docs.github.com/en/pages |
+| actionlint | https://github.com/rhysd/actionlint |
+| Ruff | https://docs.astral.sh/ruff/ |
+| Black | https://black.readthedocs.io/ |
+| pytest | https://docs.pytest.org/ |
+| pre-commit | https://pre-commit.com/ |
 | Docker Compose | https://docs.docker.com/compose/ |
 | Kind | https://kind.sigs.k8s.io/ |
+| Knative Serving | https://knative.dev/docs/serving/ |
+| Argo CD | https://argo-cd.readthedocs.io/ |
+| PostgreSQL | https://www.postgresql.org/docs/ |
 | OpenTelemetry | https://opentelemetry.io/docs/ |
+| OTLP specification | https://opentelemetry.io/docs/specs/otlp/ |
 | OTEL Collector | https://opentelemetry.io/docs/collector/ |
 | Prometheus | https://prometheus.io/docs/introduction/overview/ |
+| PromQL | https://prometheus.io/docs/prometheus/latest/querying/basics/ |
 | Alertmanager | https://prometheus.io/docs/alerting/latest/alertmanager/ |
 | Grafana | https://grafana.com/docs/grafana/latest/ |
-| Loki | https://grafana.com/docs/loki/latest/ |
+| Loki / LogQL | https://grafana.com/docs/loki/latest/ |
 | Tempo | https://grafana.com/docs/tempo/latest/ |
 | Fluent Bit | https://docs.fluentbit.io/ |
 | MLflow | https://mlflow.org/docs/latest/ |
@@ -2368,8 +2683,13 @@ Primary references used for tool selection and implementation accuracy. **Bold e
 | Kubeflow | https://www.kubeflow.org/docs/ |
 | KServe | https://kserve.github.io/website/latest/ |
 | KEDA | https://keda.sh/docs/latest/ |
+| Helm | https://helm.sh/docs/ |
+| Terraform | https://developer.hashicorp.com/terraform/docs |
 | Optuna | https://optuna.readthedocs.io/en/stable/ |
 | SHAP | https://shap.readthedocs.io/en/latest/ |
+| SciPy | https://docs.scipy.org/doc/scipy/ |
+| PyArrow | https://arrow.apache.org/docs/python/ |
+| HuggingFace Hub | https://huggingface.co/docs/hub |
 | Evidently AI | https://docs.evidentlyai.com/ |
 | NannyML | https://nannyml.readthedocs.io/ |
 | Alibi Detect | https://docs.seldon.io/projects/alibi/en/latest/ |
@@ -2640,7 +2960,7 @@ Before promoting from this reference CI to a **live cluster**, verify:
 
 | # | Check | Owner | Platform proof |
 |---|---|---|---|
-| 1 | All 26 workflows green on `main` | Platform | [Verification Evidence §22](#verification-evidence-all-workflows-green) |
+| 1 | All 26 workflows green on `main` | Platform | [Verification Evidence §23](#verification-evidence-all-workflows-green) |
 | 2 | `DAGSHUB_TOKEN` + GitHub Pages configured | Platform | [Your Action Items](#your-action-items) |
 | 3 | SLOs defined per critical service | SRE | UC21 rules in `platform.yml` |
 | 4 | Alert routes tested (PagerDuty/Slack) | SRE | Alertmanager config |
