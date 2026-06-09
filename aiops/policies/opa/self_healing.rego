@@ -16,7 +16,7 @@ import future.keywords.in
 #   }
 
 default allow := false
-default deny_reasons := []
+default deny_reasons := set()
 
 allow if {
     count(deny_reasons) == 0
