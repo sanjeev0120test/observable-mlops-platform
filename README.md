@@ -20,7 +20,7 @@ Enterprise-grade **AIOps + MLOps** reference platform for SaaS teams. **23 use c
 
 ### Part II — Operations & Observability
 7. [Observability Strategy](#observability-strategy)
-8. [23 Use Cases — Business Value & ROI](#23-use-cases--business-value--roi)
+8. [23 Use Cases — Business Value & Evidence](#23-use-cases--business-value--evidence)
 
 ### Part III — Build, Validate & Operate
 9. [Implementation Phases (Complete)](#implementation-phases-complete)
@@ -54,17 +54,17 @@ This platform solves **23 distinct enterprise pain points** spanning ML lifecycl
 - **Gated** in CI — scores below threshold block the workflow
 - **Observable** — critical paths emit metrics, logs, and traces through OpenTelemetry → Prometheus / Loki / Tempo
 
-**Typical ROI for a mid-size SaaS org (500–2,000 engineers, $5–20M/year infra spend):**
+**Value is proven in CI, not estimated.** Each use case writes measurable metrics to `eval-results/ucN.json` and must pass a composite score threshold in `eval/metrics.py` before the workflow succeeds. The platform delivers outcomes across five domains:
 
-| Category | Annual savings (conservative) | Primary UCs |
-|---|---|---|
-| Incident reduction (MTTR, alert fatigue) | $400K–$1.2M | UC2, UC3, UC6, UC8, UC11, UC21 |
-| ML model reliability (drift, skew, retrain) | $200K–$800K | UC1, UC5, UC9, UC19, UC22 |
-| Cloud cost optimization | $150K–$600K | UC4, UC10, UC18 |
-| Security & compliance automation | $100K–$400K | UC7, UC12, UC17, UC20 |
-| Engineering velocity (DORA, catalog, HPO) | $150K–$500K | UC14, UC15, UC20, UC23 |
+| Domain | Outcome for the organization | Primary UCs | How it is verified |
+|---|---|---|---|
+| Incident & reliability | Fewer duplicate pages, faster root-cause, SLO visibility | UC2, UC3, UC6, UC8, UC11, UC21, UC23 | Eval gates + Prometheus alerts tagged `uc: UCx` |
+| ML reliability | Drift caught, skew blocked, safe model promotion | UC1, UC5, UC9, UC19, UC22 | PSI/KS thresholds, OPA gates, A/B p-value |
+| Cost & capacity | Waste flagged, proactive scale, smarter rate limits | UC4, UC10, UC18 | IsolationForest F1, KEDA manifests, throttle metrics |
+| Security & governance | CVE scan, admission deny, explainability audit | UC7, UC12, UC17, UC20 | Trivy/Kyverno/Falco tests, SHAP logged, catalog lint |
+| Engineering velocity | Data gates, HPO, DORA metrics, error routing | UC13, UC14, UC15, UC16 | GE pass rate, Optuna trials, four keys computed |
 
-*Estimates assume 30–50% reduction in P1 incidents, 15–25% infra waste recovery, and 20–40% faster model promotion cycles. Adjust for your scale.*
+*When you scale this to production, teams commonly target 30–50% reduction in P1 incidents, 15–25% infra waste recovery, and 20–40% faster model promotion cycles — but those are organizational goals you measure after adoption, not figures claimed by this repo.*
 
 ---
 
@@ -75,7 +75,7 @@ This README is organized **top-down** — from executive intent to implementatio
 ```mermaid
 flowchart TB
     subgraph L0["Level 0 — Business Outcomes"]
-        ROI["ROI: MTTR ↓ · Drift caught early · Cost waste ↓ · Compliance ✓"]
+        OUT["Outcomes: MTTR ↓ · Drift caught · Waste flagged · Compliance ✓"]
     end
 
     subgraph L1["Level 1 — Platform Planes"]
@@ -106,10 +106,10 @@ flowchart TB
 
 | If you are… | Start here | Then read |
 |---|---|---|
-| **Executive / PM** | [Executive Summary](#executive-summary) → [23 Use Cases ROI](#23-use-cases--business-value--roi) | [Enterprise Production Context](#enterprise-production-context) |
+| **Executive / PM** | [Executive Summary](#executive-summary) → [23 Use Cases](#23-use-cases--business-value--evidence) | [Enterprise Production Context](#enterprise-production-context) |
 | **Platform / SRE lead** | [Architecture Diagrams](#architecture-diagrams--flows) → [Observability Strategy](#observability-strategy) | [Expert Reference §23](#expert-reference--platform-architecture) |
 | **ML engineer** | [UC Walkthroughs](#use-cases--step-by-step-walkthrough) → [Eval Framework](#eval-framework) | [Tool Reference §17](#complete-tool--library-reference) |
-| **Security / compliance** | UC7, UC12, UC17 in [Use Cases table](#23-use-cases--business-value--roi) | [OPA/Kyverno/Trivy in Tool Reference](#complete-tool--library-reference) |
+| **Security / compliance** | UC7, UC12, UC17 in [Use Cases](#23-use-cases--business-value--evidence) | [OPA/Kyverno/Trivy in Tool Reference](#complete-tool--library-reference) |
 | **Operator validating CI** | [Validation — Run Everything](#validation--run-everything-at-once) | [Verification Evidence §21](#verification-evidence-all-workflows-green) |
 
 ### Domain → UC hierarchy
@@ -212,16 +212,16 @@ These are **representative incident classes** seen at large SaaS orgs (aggregate
 
 | Scenario | Symptoms in prod | Business impact | Platform response (UC chain) | Eval proof |
 |---|---|---|---|---|
-| **Payment fraud model drift** | Approval rate shifts +2%; chargebacks rise 48h later | $500K–$2M/month loss | UC1 PSI/KS → Airflow retrain; UC19 WhyLogs early warning | `03-drift-detection`, `25-feature-monitoring` |
-| **Black Friday CPU spike** | p99 latency 3×; HPA lags 10 min | Cart abandonment, SLO burn | UC4 Prophet forecast → KEDA pre-scale; UC21 fast-burn alert | `07-predictive-scaling`, `15-slo-monitoring` |
-| **Log storm after bad deploy** | 50K ERROR/min; real root cause buried | MTTR 2h → 45m with correlation | UC2 LSTM anomaly; UC3 DBSCAN dedup; UC8 RAG runbook | `04-log-anomaly`, `06-alert-correlation`, `09-rag-runbook` |
-| **CVE in base Python image** | Trivy flags CRITICAL in CI | Compliance audit failure | UC7 blocks promote; Kyverno denies admission | `13-security-policy` |
-| **Feature skew after refactor** | Model accuracy −15% post deploy; features "look fine" | Silent wrong predictions | UC5 Feast offline vs online PSI | `05-feature-skew` |
-| **On-call restart without guardrails** | Engineer restarts `kube-system` pod at 3 AM | Cluster instability | UC6 OPA allows `payments` only; denies system ns | `08-self-healing` |
-| **Model promoted without explainability** | Regulator asks for SHAP on loan decision | Audit block / fine | UC17 SHAP → MLflow; OPA denies promotion | `23-explainability`, `10-model-serving` |
-| **Idle GPU namespaces** | 30% cloud spend on unused dev clusters | $200K+/year waste | UC10 IsolationForest waste ratio → Prom alert | `11-cost-optimizer` |
-| **429 storm on public API** | Rate limit reactive; legitimate users blocked | Support tickets spike | UC18 predictive Redis limits from traffic forecast | `24-rate-limiting` |
-| **Post-mortem takes 4 hours** | Engineer searches Confluence + Slack | Learning loop delayed | UC23 RAG + n8n → draft GitHub Issue | `09-rag-runbook` |
+| **Payment fraud model drift** | Approval rate shifts; chargebacks rise days later | Wrong fraud decisions; regulatory scrutiny | UC1 PSI/KS → Airflow retrain; UC19 WhyLogs early warning | `03-drift-detection`, `25-feature-monitoring` |
+| **Black Friday CPU spike** | p99 latency spikes; HPA lags behind load | Cart/checkout degradation; SLO burn | UC4 Prophet forecast → KEDA pre-scale; UC21 fast-burn alert | `07-predictive-scaling`, `15-slo-monitoring` |
+| **Log storm after bad deploy** | ERROR volume floods dashboards; root cause buried | Long MTTR; alert fatigue | UC2 LSTM anomaly; UC3 DBSCAN dedup; UC8 RAG runbook | `04-log-anomaly`, `06-alert-correlation`, `09-rag-runbook` |
+| **CVE in base Python image** | Trivy flags CRITICAL in CI | Compliance audit failure; exploit risk | UC7 blocks promote; Kyverno denies admission | `13-security-policy` |
+| **Feature skew after refactor** | Model accuracy drops post deploy; features "look fine" | Silent wrong predictions | UC5 Feast offline vs online PSI | `05-feature-skew` |
+| **On-call restart without guardrails** | Engineer restarts protected namespace at night | Cluster instability | UC6 OPA allows `payments` only; denies system ns | `08-self-healing` |
+| **Model promoted without explainability** | Regulator asks for prediction rationale | Audit block | UC17 SHAP → MLflow; OPA denies promotion | `23-explainability`, `10-model-serving` |
+| **Idle GPU namespaces** | Utilization near zero on dev/test clusters | Unnecessary cloud spend | UC10 IsolationForest waste ratio → Prom alert | `11-cost-optimizer` |
+| **429 storm on public API** | Reactive rate limits block legitimate users | Support tickets; API SLA miss | UC18 predictive Redis limits from traffic forecast | `24-rate-limiting` |
+| **Post-mortem takes hours** | Engineer searches Confluence + Slack manually | Delayed learning loop | UC23 RAG + n8n → draft GitHub Issue | `09-rag-runbook` |
 
 ### Definitions — enterprise MLOps / AIOps vocabulary
 
@@ -743,46 +743,68 @@ Dashboard: `observability/dashboards/grafana/overview.json`
 
 ---
 
-## 23 Use Cases — Business Value & ROI
+## 23 Use Cases — Business Value & Evidence
 
-### ROI distribution by domain (conservative mid-size SaaS)
+Every use case below is **implemented, CI-gated, and measured**. “Hard evidence” refers to metrics in `eval/metrics.py` that must pass for the workflow to succeed (threshold in `THRESHOLDS`). No dollar figures — value is expressed as **observable outcomes** you can verify in GitHub Actions artifacts.
 
-```mermaid
-pie title Annual savings by domain ($1M–$3.5M total)
-    "Incident / MTTR (UC2,3,6,8,11,21,23)" : 35
-    "ML reliability (UC1,5,9,19,22)" : 25
-    "Cloud cost (UC4,10,18)" : 20
-    "Security / compliance (UC7,12,17,20)" : 12
-    "Engineering velocity (UC14,15,16,13)" : 8
-```
+### 1. Reliability & SLOs
 
-### Problem → solution matrix (all 23 UCs)
+| UC | Problem (plain language) | What the platform does | Business value | User value | Hard evidence (CI gate) | Workflow |
+|---|---|---|---|---|---|---|
+| **UC1** | Production ML models get worse over time because data changes, but nobody notices until customers complain. | Compares reference vs current feature distributions (PSI, KS, Alibi LSDD), estimates performance with NannyML, fires an Airflow retrain DAG when drift is confirmed, and emits `ml_model_psi_score` to Prometheus. | Stops revenue-impacting wrong predictions before they accumulate; automates retrain instead of manual firefighting. | Data scientists get a triggered pipeline; SRE sees `MLModelDriftDetected` alert. | PSI ≥ 0.25, KS ≥ 0.20, LSDD p < 0.05, `retrain_triggered=true`; score ≥ **70** | `03-drift-detection` |
+| **UC4** | Kubernetes HPA reacts *after* load spikes, causing latency breaches during predictable peaks (sales events, cron jobs). | Prophet forecasts CPU/request load; KEDA `ScaledObject` pre-scales before the peak; validates lead time and latency delta. | Avoids outage-driven revenue loss and emergency scale-ups. | End users see stable latency; on-call gets fewer SEV2 pages. | Forecast MAE ≤ 15% of mean load, pre-scale ≥ **300s** before peak, p99 latency improves; score ≥ **70** | `07-predictive-scaling` |
+| **UC21** | Teams learn about SLO breaches from customers or executives, not from monitoring — releases continue while error budget burns. | Computes HTTP error rate, error budget remaining, and validates `SLOFastBurnRate` / `SLOSlowBurnRate` rules in `platform.yml`. | Ties release decisions to reliability ([Google SRE error budget policy](https://sre.google/workbook/alerting-on-slos/)). | Customers experience fewer undetected outages; PMs see SLO compliance. | SLO compliance ≥ **99.9%**, error budget ≥ 0%, fast-burn alert fires in breach window; score ≥ **60** | `15-slo-monitoring` |
 
-| UC | Problem (enterprise pain) | Solution | Tools | Typical impact |
-|---|---|---|---|---|
-| **UC1** | Model silently degrades in production | Drift detection + auto-retrain DAG | Evidently, NannyML, Alibi, Airflow | **30–50% fewer bad predictions**; retrain within hours not weeks |
-| **UC2** | Log floods hide real incidents | LSTM log anomaly detection | PyTorch, Loki, Qdrant | **40–60% faster anomaly detection** vs keyword rules |
-| **UC3** | Alert fatigue (100s of duplicate pages) | DBSCAN alert correlation | sklearn, Prometheus | **50–70% alert volume reduction** (industry avg for dedup) |
-| **UC4** | Reactive scaling wastes money or causes outages | Prophet forecast + KEDA pre-scale | Prophet, KEDA, Prometheus | **15–25% compute savings**; fewer latency spikes |
-| **UC5** | Training-serving skew causes silent errors | Feast offline/online compare | Feast, GE, Evidently | **Catches skew before production**; standard MLOps hygiene |
-| **UC6** | Manual incident response at 3 AM | OPA-gated self-healing + n8n | OPA, Falco, n8n | **MTTR −30–50%** for allowed auto-actions |
-| **UC7** | CVEs and policy drift in containers | Trivy + Falco + Kyverno + OPA | Trivy, Falco, Kyverno | **Blocks vulnerable images**; audit trail for compliance |
-| **UC8** | Engineers search Confluence during incidents | RAG runbook Q&A | Qdrant, sentence-transformers | **5–15 min saved per incident** lookup |
-| **UC9** | No experiment lineage or safe promotion | MLflow registry + OPA promotion gate | MLflow, DVC, OPA | **Audit-ready model promotion** |
-| **UC10** | Cloud bill surprises | IsolationForest cost anomalies | sklearn, Prometheus | **10–20% waste identified** in idle resources |
-| **UC11** | Can't trace root cause across services | OTEL + Tempo RCA | OTEL, Tempo, Grafana | **RCA time −25–40%** with trace correlation |
-| **UC12** | GitOps config drift | Kyverno + OPA compliance check | Kyverno, OPA | **Prevents config drift** before deploy |
-| **UC13** | Bad data reaches training | Great Expectations gates | GE, Airflow | **Data incidents −60%+** at pipeline boundary |
-| **UC14** | Manual hyperparameter tuning | Optuna + MLflow HPO | Optuna, MLflow | **2–5× faster** to optimal hyperparams |
-| **UC15** | No engineering metrics visibility | DORA four keys from GHA | Prometheus, Grafana | **Visibility → 10–20% deploy freq improvement** |
-| **UC16** | Errors mis-routed to wrong team | Embedding-based classification | sklearn, sentence-transformers | **Routing accuracy 85%+** |
-| **UC17** | Regulated models lack explainability | SHAP + MLflow audit | SHAP, MLflow, OPA | **Compliance-ready** model documentation |
-| **UC18** | Reactive rate limits cause 429 storms | Predictive rate limiting | Redis, sklearn, KEDA | **429 errors −20–40%** during traffic spikes |
-| **UC19** | Feature distribution drift undetected | WhyLogs profiling | WhyLogs | **Early warning** before model impact |
-| **UC20** | No service ownership map | Backstage catalog validation | catalog-info.yaml | **Onboarding time −30%** with clear ownership |
-| **UC21** | SLO breaches discovered too late | Error budget + fast-burn alerts | Prometheus, Grafana | **SLO compliance visibility**; burn alerts in 2 min |
-| **UC22** | Risky model rollouts | KServe canary + A/B stats | KServe, scipy | **Safe promotion** with statistical gate |
-| **UC23** | Post-mortems are manual and slow | Auto post-mortem + GitHub Issue | n8n, Qdrant, TinyLlama | **Post-mortem draft in minutes** not hours |
+### 2. Observability & Incident Response
+
+| UC | Problem | What the platform does | Business value | User value | Hard evidence (CI gate) | Workflow |
+|---|---|---|---|---|---|---|
+| **UC2** | Millions of log lines drown out the few lines that indicate a real incident; keyword alerts false-positive constantly. | Trains an LSTM autoencoder on normal log sequences; flags anomalies by reconstruction error; stores similar past incidents in Qdrant. | Faster incident detection without hiring more L1 support. | On-call finds the needle in the haystack; less pager fatigue. | Precision@10 ≥ **0.70**, recall@10 ≥ **0.60**, ≥ 1 similar incident in Qdrant; score ≥ **65** | `04-log-anomaly` |
+| **UC3** | One root cause triggers 50+ duplicate Alertmanager pages; engineers mute channels and miss real issues. | DBSCAN clusters alerts by feature vector; deduplicates while keeping `false_positive_rate` bounded. | Restores trust in alerting; reduces on-call burnout. | Engineers receive one correlated page per incident. | Dedup rate ≥ **70%**, silhouette ≥ 0.30, FPR ≤ **0.10**; score ≥ **50** | `06-alert-correlation` |
+| **UC6** | At 3 AM, on-call restarts pods manually — sometimes in protected namespaces, making things worse. | Self-healing service calls OPA (`self_healing.rego`); only allowed actions (e.g. restart in `payments`) execute via n8n webhook from Alertmanager. | Cuts toil for repeatable fixes; blocks dangerous automation. | On-call approves policy once; safe actions run automatically. | Remediation success ≥ **90%**, OPA gate = **1.0**, false remediation ≤ 5%, MTTR ≤ **300s**; score ≥ **85** | `08-self-healing` |
+| **UC8** | During incidents, engineers search Confluence/Notion for runbooks while the clock runs. | Indexes runbook markdown into Qdrant; sentence-transformer retrieval returns top chunks; LangChain grounds answers in context. | Shortens MTTR for known failure modes. | On-call gets step-by-step remediation without leaving the incident channel. | Retrieval P@5 ≥ **0.70**, groundedness ≥ 0.60, ≥ **40** chunks indexed; score ≥ **60** | `09-rag-runbook` |
+| **UC11** | A request fails in service C, but the bug is in service A — without trace IDs, RCA takes hours. | Emits OTEL spans across a simulated call chain; correlates trace IDs; identifies anomalous span for RCA. | Reduces cross-team blame meetings; faster fixes. | Support can pinpoint failing dependency for customers. | Trace completeness ≥ **90%**, anomalous span identified, precision ≥ 0.60; score ≥ **65** | `18-distributed-tracing` |
+| **UC23** | Post-mortems are written from memory days later; lessons are lost. | On incident webhook, RAG pulls similar past incidents from Qdrant; n8n generates post-mortem draft and opens a GitHub Issue. | Institutional memory; audit trail for SEV reviews. | Teams spend time on fixes, not formatting docs. | Post-mortem generated, GitHub issue created, ≥ 1 similar incident cited; score ≥ **60** | `09-rag-runbook` |
+
+### 3. ML Lifecycle & Data Quality
+
+| UC | Problem | What the platform does | Business value | User value | Hard evidence (CI gate) | Workflow |
+|---|---|---|---|---|---|---|
+| **UC5** | Training pipeline computes features differently than the online serving path — model looks fine in lab, fails in prod. | Feast registers offline (parquet) and online (Redis) feature views; compares PSI/KS; Great Expectations validates columns. | Prevents silent prediction errors ([Feast train/serve consistency](https://docs.feast.dev/getting-started/concepts/overview)). | ML engineers trust one feature definition; backend devs serve what was trained. | Offline/online PSI ≤ **0.10**, GE pass ≥ **99%**, freshness ≤ 3600s; score ≥ **75** | `05-feature-skew` |
+| **UC9** | Models are promoted via email or Slack with no lineage, no policy check, and no canary. | Logs experiments to MLflow on DagsHub; OPA `model_promotion.rego` gates staging; KServe InferenceService in Kind with error-rate check. | Audit-ready promotion; regulator-friendly lineage. | DS teams promote with confidence; compliance sees MLflow trail. | Accuracy beats baseline ≥ **2%**, holdout drift ≤ 0.10, OPA pass, canary error ≤ **1%**; score ≥ **75** | `10-model-serving` |
+| **UC13** | Bad rows (nulls, out-of-range values) enter training data and corrupt the model for weeks. | Great Expectations suite on pipeline output; injected bad batch must be blocked by sensor. | Stops garbage-in-garbage-out at the pipeline boundary ([GE docs](https://docs.greatexpectations.io/docs/)). | Analysts trust data quality reports before training runs. | GE pass ≥ **95%** on good data, bad data blocked, schema valid; score ≥ **80** | `20-data-quality` |
+| **UC14** | Data scientists manually grid-search hyperparameters for days. | Optuna study with ≥ 15 trials; best trial logged to MLflow on DagsHub. | Faster iteration to production-quality models. | DS focuses on features, not tuning loops. | Best trial beats default, ≥ **15** trials, study in MLflow; score ≥ **65** | `21-hpo` |
+| **UC17** | Regulated use cases (credit, health) require explainability — teams can't answer "why this prediction?" | SHAP values computed, logged to MLflow; OPA denies promotion if SHAP not present. | Passes model governance and audit reviews ([SHAP docs](https://shap.readthedocs.io/en/latest/)). | Customers/advocates get human-readable feature contributions. | SHAP generated, top features logged, explanation coverage ≥ **90%**; score ≥ **65** | `23-explainability` |
+| **UC19** | Feature distributions shift gradually — before model accuracy drops, data already changed. | WhyLogs profiles feature batches; detects injected constraint violations via profile statistics. | Early warning layer before UC1 drift fires. | ML ops catches data pipeline bugs upstream. | Profiles written, ≥ 1 violation detected, drift flagged; score ≥ **65** | `25-feature-monitoring` |
+| **UC22** | New model version replaces old one in a single deploy — if it's worse, 100% of users are affected. | KServe canary traffic split; scipy A/B test on outcomes; winner promoted only if p < 0.05. | Limits blast radius of bad models ([KServe rollout](https://kserve.github.io/website/latest/modelserving/v1beta1/rollout-strategy/)). | End users on canary slice validate quality before full rollout. | A/B p ≤ **0.05**, winner promoted, traffic split within **2%** of target; score ≥ **70** | `10-model-serving` |
+
+### 4. Security, Policy & Governance
+
+| UC | Problem | What the platform does | Business value | User value | Hard evidence (CI gate) | Workflow |
+|---|---|---|---|---|---|---|
+| **UC7** | Vulnerable container images and runtime exploits reach production; compliance audits fail. | Trivy scans images; Kyverno denies bad manifests in Kind; Falco rules validated; OPA admission tests. | Defense-in-depth per [CNCF security cloud native trail map](https://github.com/cncf/tag-security). | Security team gets automated gates; devs get fast CI feedback. | Critical CVEs ≤ **25** (baseline-aware), Kyverno blocks ≥ 1 violation, Falco fires ≥ 1 rule; score ≥ **60** | `13-security-policy` |
+| **UC12** | Someone `kubectl apply`s a manifest that diverges from git — cluster state drifts silently. | Applies baseline to Kind; injects drift; Kyverno/OPA catch violations; reconcile validated. | GitOps integrity ([CNCF GitOps](https://opengitops.dev/)). | Platform team trusts declared state matches reality. | Drift detected, reconcile success, ≥ 1 policy violation caught; score ≥ **70** | `19-gitops-drift` |
+| **UC20** | Nobody knows who owns a service during an incident; onboarding takes weeks of Slack archaeology. | Lints `backstage/catalog-info.yaml` — **27 entities** (23 services + 3 ML models + 1 system) with required fields. | Clear ownership ([Backstage catalog](https://backstage.io/docs/features/software-catalog/)). | New engineers find owners and APIs in one place. | All entities valid, exactly **27** entities, schema lint pass; score ≥ **90** | `26-catalog-validate` |
+
+### 5. Platform Engineering & Cost
+
+| UC | Problem | What the platform does | Business value | User value | Hard evidence (CI gate) | Workflow |
+|---|---|---|---|---|---|---|
+| **UC10** | Cloud bills grow monthly; idle namespaces and orphaned resources go unnoticed. | IsolationForest on utilization features; attributes waste to namespaces; concept metric `cloud_cost_waste_ratio` → `IdleResourceWaste` alert. | FinOps visibility without manual spreadsheet audits. | Eng leads right-size teams; finance gets attribution. | Anomaly F1 ≥ **0.70**, idle resources flagged ≥ **20%**, namespace coverage ≥ **95%**; score ≥ **65** | `11-cost-optimizer` |
+| **UC15** | Leadership asks "are we getting faster?" — no DORA metrics exist. | Parses GitHub Actions metadata; exports deployment frequency, lead time, change failure rate, MTTR to Prometheus/Grafana. | Data-driven engineering improvement ([dora.dev](https://dora.dev/)). | Developers see team velocity trends, not gut feel. | All **4 DORA keys** computed, deploy freq tracked, MTTR computed; score ≥ **60** | `14-dora-metrics` |
+| **UC16** | Error logs land in a shared channel; wrong team investigates, wasting hours. | Sentence-transformer embeddings + sklearn classifier routes errors to team/category taxonomy. | Faster fix by correct owner. | Support and backend teams get only their errors. | Classifier F1 ≥ **0.70**, ≥ **5** error classes, taxonomy coverage ≥ **80%**; score ≥ **65** | `22-error-classification` |
+| **UC18** | Static rate limits either block real users (too low) or allow abuse (too high) during traffic spikes. | Redis-backed sliding window; sklearn predicts request rate; adjusts limits proactively. | Protects API SLAs during spikes without manual tuning. | Legitimate API consumers stay unblocked; abusers throttled. | Throttle precision ≥ **0.70**, false throttle ≤ **10%**, window accuracy ≥ **90%**; score ≥ **65** | `24-rate-limiting` |
+
+### Value summary by stakeholder
+
+| Stakeholder | UCs that matter most | What they get (evidence-based) |
+|---|---|---|
+| **Customer / end user** | UC1, UC4, UC5, UC18, UC21, UC22 | More accurate ML predictions, stable latency, fewer API errors |
+| **On-call / SRE** | UC2, UC3, UC6, UC8, UC11, UC21, UC23 | Deduped alerts, runbook answers, safe auto-remediation, trace RCA |
+| **Data scientist / ML engineer** | UC1, UC5, UC9, UC14, UC17, UC19, UC22 | Automated retrain, feature consistency, gated promotion, SHAP audit |
+| **Platform / DevOps** | UC7, UC12, UC15, UC20 | Policy enforcement, GitOps drift catch, DORA metrics, service catalog |
+| **Security / compliance** | UC7, UC12, UC17 | CVE scan, admission deny, explainability required for promotion |
+| **FinOps / leadership** | UC10, UC15, UC21 | Waste detection, engineering velocity metrics, SLO compliance |
 
 ### Workflow reference
 
