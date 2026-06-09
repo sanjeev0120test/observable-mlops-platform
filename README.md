@@ -37,6 +37,7 @@ These are the **non-negotiable design invariants** — if you adopt only one ide
    - [Priority tiers](#priority-tiers--what-architects-should-internalize-first)
    - [Seven architectural invariants](#the-seven-architectural-invariants-expanded)
 6. [Architecture Diagrams & Flows](#architecture-diagrams--flows)
+   - [Complete Visual Diagram Reference](#complete-visual-diagram-reference)
 7. [Sequence Diagrams (Production Flows)](#sequence-diagrams-production-flows)
 
 ### Part II - Operations & Observability
@@ -1174,6 +1175,671 @@ flowchart TD
     START --> P0 --> P1 --> P2 --> UC
     UC --> E2E --> PORTAL
     UC -.->|artifact upload| E2E
+```
+
+---
+
+## Complete Visual Diagram Reference
+
+This section collects **every diagram type** an architect, SRE, or ML engineer would expect in a platform README — mapped to this repo's actual components, ports, and code paths. Use the index below to jump to the view you need.
+
+### Diagram type index
+
+| Diagram type | What it answers | Section below | Also covered in |
+|---|---|---|---|
+| **System Context** | Who uses the platform and what external systems it talks to | [§ System Context](#system-context-diagram-c4-level-1) | [Enterprise Production Context](#enterprise-production-context) |
+| **Architecture** | Major subsystems and how they connect | [§ Platform Architecture](#full-platform-architecture-ci--runtime-stacks) | [Expert Reference §25](#expert-reference--platform-architecture) |
+| **Data Flow (DFD)** | How data moves from source to eval gate | [§ DFD Level 0/1](#data-flow-diagram-dfd) | [Data flow — raw signals](#data-flow--from-raw-signals-to-eval-gate) |
+| **Sequence** | Time-ordered message flow between actors | [Sequence Diagrams §7](#sequence-diagrams-production-flows) | UC1, UC6, UC9, UC8, UC21 flows |
+| **Component** | Software modules inside the platform boundary | [§ Component Diagram](#component-diagram) | [Repository Structure](#repository-structure) |
+| **Dependency** | Which UCs depend on which | [§ Dependency Diagram](#dependency-diagram) | [UC dependency graph](#uc-dependency-graph-logical-not-import) |
+| **Control vs Data Plane** | Where decisions happen vs where work runs | [§ Control/Data Plane](#control-plane-vs-data-plane-diagram) | [Concept #1](#1-control-plane-vs-data-plane) |
+| **Deployment** | Where binaries run in CI vs remote | [§ Deployment Diagram](#deployment-diagram) | [Execution model](#execution-model-no-local-machine) |
+| **State Machine** | Legal lifecycle transitions | [§ State Transitions](#state-machine--state-transition-diagrams) | [Concept #19](#19-state-machines-for-lifecycle-management) |
+| **ERD** | Persistent entities and relationships | [§ Entity Relationship](#entity-relationship-diagram-erd) | `eval/metrics.py`, MLflow, Feast |
+| **Network Topology** | Containers, ports, and networks | [§ Network Topology](#network-topology-diagram) | `infra/docker-compose/` |
+| **Workflow** | CI job orchestration order | [§ Workflow Diagram](#workflow-diagram) | [CI validation pipeline](#ci-validation-pipeline-all-26-workflows) |
+| **Process Flowchart** | Step-by-step eval gate logic | [§ Process Flowchart](#process-flowchart--eval-gate) | [Eval Framework](#eval-framework) |
+| **Decision Tree** | Branching policy and adoption choices | [§ Decision Trees](#decision-trees) | [When to adopt which UC](#when-to-adopt-which-uc--decision-matrix) |
+| **Concept Map / Mind Map** | How design ideas relate | [§ Concept Map](#concept-map--mind-map) | [Concept map §5](#concept-map-how-ideas-connect) |
+| **Class Diagram (UML)** | Eval framework object model | [§ Class Diagram](#class-diagram-uml--eval-framework) | `eval/scorer.py`, `eval/metrics.py` |
+| **Activity Diagram (UML)** | Parallel incident response steps | [§ Activity Diagram](#activity-diagram-uml--incident-response) | Scenario B in [Use Cases](#end-to-end-scenarios--systems-view) |
+
+---
+
+### System Context Diagram (C4 Level 1)
+
+Shows the platform as a **single system** at the boundary of external actors and services. Everything inside the dashed box is validated in this repo; external systems are integration targets in production.
+
+```mermaid
+flowchart TB
+    subgraph External["External actors & systems"]
+        ENG["Platform / ML / SRE engineers"]
+        GHA["GitHub Actions<br/>(CI orchestrator)"]
+        DH["DagsHub<br/>MLflow + DVC remote"]
+        GP["GitHub Pages<br/>Eval portal"]
+        PROD["Production SaaS<br/>(reference target)"]
+    end
+
+    subgraph Platform["Observable MLOps Platform (this repo)"]
+        UC["23 Use Case workflows"]
+        EV["Eval framework<br/>eval/scorer.py"]
+        ST["Ephemeral stacks<br/>Compose A/B + Kind"]
+        OB["Observability<br/>OTEL → Prom/Loki/Tempo"]
+    end
+
+    ENG -->|"push, dispatch, review"| GHA
+    GHA -->|"runs jobs against"| ST
+    ST --> UC
+    UC --> EV
+    UC --> OB
+    UC -->|"optional artifact push"| DH
+    EV -->|"eval-results/*.json"| GHA
+    GHA -->|"90-e2e aggregate"| GP
+    ENG -->|"reads scorecard"| GP
+    Platform -.->|"patterns map to"| PROD
+```
+
+| Boundary | Inside platform | Outside (you provide) |
+|---|---|---|
+| **Compute** | GHA `ubuntu-latest` ephemeral runners | Production EKS/GKE clusters |
+| **Persistence** | `eval-results/`, CI artifacts | DagsHub token, prod object storage |
+| **Identity** | GitHub repo permissions | SSO, RBAC, service accounts |
+| **Observability** | Stack B in Compose | Managed Prom/Grafana or Datadog |
+
+---
+
+### Data Flow Diagram (DFD)
+
+#### Level 0 — context flow
+
+```mermaid
+flowchart LR
+    EXT["External data sources<br/>synthetic seeds / prod feeds"]
+    P["Observable MLOps Platform"]
+    ART["Artifacts<br/>eval-results · MLflow · portal"]
+    OPS["Operators<br/>SRE · ML · Security"]
+
+    EXT -->|"raw features, logs, metrics"| P
+    P -->|"scored UC JSON, reports"| ART
+    ART -->|"alerts, gates, scorecards"| OPS
+    OPS -->|"policy updates, thresholds"| P
+```
+
+#### Level 1 — major processes
+
+```mermaid
+flowchart TB
+    subgraph Sources["Data stores (D1–D4)"]
+        D1[("D1: Parquet<br/>data/synthetic/")]
+        D2[("D2: Redis<br/>Feast online")]
+        D3[("D3: Prometheus TSDB")]
+        D4[("D4: eval-results/<br/>ucN.json")]
+    end
+
+    P1["P1: Ingest & validate<br/>GE · DVC · synthetic gen"]
+    P2["P2: ML / AIOps processing<br/>services/* · mlops/*"]
+    P3["P3: Observe & alert<br/>OTEL · rules · AM"]
+    P4["P4: Score & gate<br/>eval/scorer.py"]
+    P5["P5: Publish<br/>90-e2e · 91-portal"]
+
+    D1 --> P1 --> P2
+    P2 --> D2
+    P2 --> D3
+    P2 --> P4
+    P3 --> D3
+    P3 --> P2
+    P4 --> D4
+    D4 --> P5
+```
+
+---
+
+### Component Diagram
+
+Logical software components inside the platform — each maps to a directory or deployable unit.
+
+```mermaid
+flowchart TB
+    subgraph Workflows[".github/workflows/"]
+        W0["00-pr-validate"]
+        WUC["03–26 UC workflows"]
+        W90["90-e2e"]
+    end
+
+    subgraph EvalFW["eval/"]
+        MET["metrics.py<br/>MetricSpec · THRESHOLDS"]
+        SCR["scorer.py<br/>compute_score()"]
+    end
+
+    subgraph Services["services/*/ (FastAPI)"]
+        DM["drift-monitor"]
+        AD["anomaly-detector"]
+        AC["alert-correlator"]
+        SH["self-healing"]
+        RA["runbook-agent"]
+        PS["predictive-scaler"]
+        CO["cost-optimizer"]
+    end
+
+    subgraph MLOps["mlops/"]
+        EXP["experiments/"]
+        SRV["serving/"]
+        FEAST["feast/"]
+    end
+
+    subgraph Policy["aiops/policies/"]
+        OPA["opa/*.rego"]
+        KYV["kyverno/"]
+    end
+
+    subgraph Obs["observability/"]
+        OTEL["otel/otelcol.yml"]
+        ALR["alerts/rules/platform.yml"]
+        DASH["dashboards/grafana/"]
+    end
+
+    subgraph Infra["infra/"]
+        DC["docker-compose/"]
+        K8["kubernetes/kind/"]
+        HELM["helm/"]
+    end
+
+    WUC --> Services & MLOps
+    WUC --> EvalFW
+    Services --> OTEL
+    Services --> OPA
+    MLOps --> FEAST
+    WUC --> DC & K8
+    W90 --> SCR
+    ALR --> OTEL
+```
+
+| Component | Responsibility | Key entrypoint |
+|---|---|---|
+| `eval/scorer.py` | Weighted composite score; CI pass/fail | `run_eval_gate()` |
+| `services/drift-monitor/` | PSI/KS/LSDD drift checks | `POST /drift/check` |
+| `services/self-healing/` | OPA-gated remediation | `POST /heal` |
+| `mlops/serving/` | KServe manifests + canary | `InferenceService` YAML |
+| `observability/alerts/` | PromQL rules tagged `uc: UCx` | `platform.yml` |
+
+---
+
+### Dependency Diagram
+
+Runtime and logical dependencies between use cases (solid = data/policy prerequisite; dashed = operational context).
+
+```mermaid
+flowchart TD
+    UC13["UC13 Data Quality"] --> UC5["UC5 Feature Skew"]
+    UC5 --> UC9["UC9 Model Registry"]
+    UC19["UC19 Feature Monitor"] --> UC1["UC1 Drift"]
+    UC1 --> UC9
+    UC17["UC17 SHAP"] --> UC9
+    UC9 --> UC22["UC22 Canary A/B"]
+    UC7["UC7 Security"] --> UC12["UC12 GitOps"]
+    UC21["UC21 SLO"] --> UC3["UC3 Alert Correlation"]
+    UC2["UC2 Log Anomaly"] --> UC8["UC8 RAG Runbook"]
+    UC11["UC11 Tracing"] --> UC8
+    UC8 --> UC23["UC23 Post-Mortem"]
+    UC6["UC6 Self-Heal"] --> UC23
+    UC15["UC15 DORA"] -.-> UC21
+    UC20["UC20 Catalog"] -.-> UC8
+    UC4["UC4 Predictive Scale"] -.-> UC21
+    UC10["UC10 Cost"] -.-> UC4
+```
+
+**Adoption rule**: never enable UC9 promotion until UC5 (skew) and UC13 (data quality) pass — otherwise you promote models trained on bad or inconsistent features.
+
+---
+
+### Control Plane vs Data Plane Diagram
+
+```mermaid
+flowchart TB
+    subgraph Control["CONTROL PLANE — decides what should happen"]
+        GHA["GitHub Actions<br/>orchestration"]
+        OPA["OPA Rego policies"]
+        KYV["Kyverno admission"]
+        KEDA["KEDA ScaledObject"]
+        AM["Alertmanager routing"]
+        EVAL["eval/scorer.py gates"]
+        AF["Airflow scheduler"]
+        MLF_REG["MLflow stage transitions"]
+    end
+
+    subgraph Data["DATA PLANE — carries actual work"]
+        SVC["FastAPI microservices"]
+        KS["KServe inference"]
+        REDIS["Redis feature reads"]
+        QDR["Qdrant vector retrieval"]
+        PROM["Prometheus samples"]
+        LOGS["Loki log streams"]
+        TRACE["Tempo spans"]
+    end
+
+    OPA -->|"allow/deny"| SVC
+    KYV -->|"admit/deny pod"| KS
+    KEDA -->|"scale replicas"| KS
+    EVAL -->|"block/pass CI"| GHA
+    MLF_REG -->|"traffic split %"| KS
+    AM -->|"webhook trigger"| SVC
+    AF -->|"trigger DAG"| SVC
+    SVC --> PROM & LOGS & TRACE
+    KS --> PROM
+```
+
+| Path | Control decision | Data action | UC |
+|---|---|---|---|
+| Self-heal | OPA `self_healing.rego` | K8s rollout restart | UC6 |
+| Model promote | OPA + MLflow stage | KServe canary traffic | UC9, UC22 |
+| Pre-scale | KEDA metric threshold | Replica count change | UC4 |
+| Merge block | `score < THRESHOLDS[UCx]` | Workflow exit 1 | All |
+
+---
+
+### Deployment Diagram
+
+Where each artifact runs during CI validation on a GitHub Actions runner (~7 GB RAM budget).
+
+```mermaid
+flowchart TB
+    subgraph Runner["GitHub Actions ubuntu-latest runner"]
+        subgraph ComposeA["Docker Compose — Stack A (~5.5 GB)"]
+            PG["postgres:16"]
+            RD["redis:7"]
+            MLF["mlflow:5000"]
+            AF["airflow:8080"]
+            QD["qdrant:6333"]
+            N8["n8n:5678"]
+        end
+
+        subgraph ComposeB["Docker Compose — Stack B (~1.8 GB)"]
+            PR["prometheus:9090"]
+            GF["grafana:3000"]
+            LO["loki:3100"]
+            TE["tempo:3200"]
+            OC["otel-collector:4317"]
+            AL["alertmanager:9093"]
+        end
+
+        subgraph Kind["Kind cluster (in-job, ephemeral)"]
+            KS["KServe InferenceService"]
+            OP["OPA :8181"]
+            KY["Kyverno admission"]
+            KE["KEDA operator"]
+        end
+
+        subgraph SvcHost["Host-process / job steps"]
+            PY["Python 3.11<br/>services + mlops scripts"]
+            EV["eval/scorer.py"]
+        end
+    end
+
+    subgraph Remote["Remote (persistent)"]
+        DH["DagsHub — MLflow + DVC"]
+        GH["GitHub Pages — portal"]
+    end
+
+    PY --> ComposeA & ComposeB & Kind
+    EV --> GH
+    ComposeA -.->|"DAGSHUB_TOKEN"| DH
+```
+
+Files: `infra/docker-compose/docker-compose.mlops-core.yml`, `docker-compose.observability.yml`, `docker-compose.services.yml`, `infra/kubernetes/kind/kind-config.yaml`
+
+---
+
+### State Machine / State Transition Diagrams
+
+#### Model lifecycle (UC9, UC17, UC22)
+
+```mermaid
+stateDiagram-v2
+    [*] --> Experiment: train + log MLflow
+    Experiment --> Staging: OPA pass + metrics OK
+    Staging --> Canary: KServe 10% traffic
+    Canary --> Production: A/B p ≤ 0.05
+    Canary --> Staging: canary error > 1%
+    Production --> Retired: superseded / drift breach
+    Production --> Staging: UC1 drift → retrain
+    Staging --> Experiment: rollback
+
+    note right of Staging
+        Guards: SHAP present (UC17)
+        holdout drift ≤ 0.10
+        accuracy ≥ baseline + 2%
+    end note
+```
+
+#### Incident lifecycle (UC2, UC3, UC6, UC21, UC23)
+
+```mermaid
+stateDiagram-v2
+    [*] --> Normal
+    Normal --> AlertFiring: SLO burn / anomaly / Falco
+    AlertFiring --> Correlated: UC3 DBSCAN dedup
+    Correlated --> Remediation: UC6 OPA allow
+    Correlated --> Escalated: OPA deny
+    Remediation --> Resolved: MTTR ≤ 300s
+    Escalated --> Resolved: manual fix
+    Resolved --> PostMortem: UC23 n8n + GitHub Issue
+    PostMortem --> Normal: lessons merged to runbooks
+```
+
+---
+
+### Entity Relationship Diagram (ERD)
+
+Core entities persisted or emitted during CI — not a production database schema, but the **logical data model** the platform assumes.
+
+```mermaid
+erDiagram
+    USE_CASE ||--o{ EVAL_RESULT : produces
+    USE_CASE ||--o{ METRIC_SPEC : defines
+    EVAL_RESULT ||--|{ METRIC_VALUE : contains
+    MLFLOW_RUN ||--o| MODEL_VERSION : registers
+    MODEL_VERSION ||--o{ SHAP_ARTIFACT : requires
+    MODEL_VERSION ||--o{ CANARY_TEST : validates
+    FEATURE_VIEW ||--o{ FEATURE_VALUE : serves
+    FEATURE_VIEW }o--|| OFFLINE_STORE : reads
+    FEATURE_VIEW }o--|| ONLINE_STORE : materializes
+    ALERT_RULE ||--o{ ALERT_FIRE : triggers
+    SERVICE_ENTITY ||--o{ RUNBOOK_CHUNK : indexed_in
+
+    USE_CASE {
+        string uc_id PK
+        string workflow_file
+        int score_threshold
+    }
+    EVAL_RESULT {
+        string uc_id FK
+        float composite_score
+        boolean passed
+        string timestamp
+    }
+    METRIC_SPEC {
+        string name PK
+        string direction
+        float weight
+        float pass_threshold
+    }
+    MLFLOW_RUN {
+        string run_id PK
+        string experiment_name
+    }
+    MODEL_VERSION {
+        string name PK
+        string stage
+        float accuracy
+    }
+    FEATURE_VIEW {
+        string name PK
+        float offline_online_psi
+    }
+    SERVICE_ENTITY {
+        string name PK
+        string owner
+        string type
+    }
+```
+
+Source files: `eval/metrics.py` (entities), `backstage/catalog-info.yaml` (27 service entities), MLflow on DagsHub (runs/versions).
+
+---
+
+### Network Topology Diagram
+
+Docker Compose default bridge network inside CI — service DNS names match `container_name` / service keys.
+
+```mermaid
+flowchart TB
+    subgraph Host["GHA Runner host"]
+        subgraph NetA["network: mlops-core (Stack A)"]
+            PG["postgresql :5432"]
+            RD["redis :6379"]
+            MLF["mlflow :5000"]
+            AF["airflow :8080"]
+            QD["qdrant :6333"]
+            N8["n8n :5678"]
+        end
+
+        subgraph NetB["network: observability (Stack B)"]
+            PR["prometheus :9090"]
+            GF["grafana :3000"]
+            LO["loki :3100"]
+            TE["tempo :3200"]
+            OC["otel-collector :4317/4318"]
+            AL["alertmanager :9093"]
+        end
+
+        subgraph NetS["network: services"]
+            DM["drift-monitor :8001"]
+            SH["self-healing :8002"]
+            RA["runbook-agent :8003"]
+        end
+
+        subgraph KindNet["Kind cluster network"]
+            KS["KServe :8080"]
+            OP["OPA :8181"]
+        end
+    end
+
+    DM & SH & RA -->|"OTLP"| OC
+    OC --> PR & LO & TE
+    PR --> AL
+    PR & LO & TE --> GF
+    SH -->|"POST /v1/data"| OP
+    DM --> MLF
+    RA --> QD
+    AL -->|"webhook"| N8
+    N8 --> SH
+```
+
+---
+
+### Workflow Diagram
+
+GitHub Actions workflow orchestration — phases run in build order; UC workflows can be dispatched independently but E2E expects all artifacts.
+
+```mermaid
+flowchart TD
+    START(["Trigger: push · workflow_dispatch · schedule"])
+    P0["00-pr-validate<br/>lint · eval framework test"]
+    P1["01-observability<br/>Stack B health · alert rules"]
+    P2["02-data-pipeline<br/>DVC · GE foundation"]
+    PAR{"Parallel UC dispatch<br/>03–26 workflows"}
+    UC1["03-drift-detection …"]
+    UCN["… 26-catalog-validate"]
+    COLLECT["Upload eval-results artifacts"]
+    E2E["90-e2e-integration<br/>aggregate scores"]
+    PASS{"All UCs passed?"}
+    PORTAL["91-publish-portal<br/>GitHub Pages"]
+    FAIL(["CI failed — fix UC metrics"])
+    DONE(["Portal live · scorecard published"])
+
+    START --> P0 --> P1 --> P2 --> PAR
+    PAR --> UC1 & UCN
+    UC1 & UCN --> COLLECT --> E2E --> PASS
+    PASS -->|yes| PORTAL --> DONE
+    PASS -->|no| FAIL
+```
+
+---
+
+### Process Flowchart — eval gate
+
+Every UC workflow ends in this shared process (`eval/scorer.py`).
+
+```mermaid
+flowchart TD
+    A(["UC workflow completes processing"]) --> B["Collect raw metrics dict"]
+    B --> C{"All required<br/>MetricSpec names present?"}
+    C -->|no| D["Missing metrics → sub-score 0"]
+    C -->|yes| E["Score each metric 0–100<br/>higher/lower/bool/exact"]
+    D --> F["Weighted composite<br/>Σ weight × score / Σ weight"]
+    E --> F
+    F --> G{"composite ≥ THRESHOLDS[UCx]?"}
+    G -->|yes| H["Write eval-results/ucN.json<br/>passed: true"]
+    G -->|no| I["Write eval-results/ucN.json<br/>passed: false"]
+    H --> J(["exit 0 — workflow green"])
+    I --> K(["exit 1 — workflow red · blocks merge"])
+```
+
+Example: UC6 threshold is **85** — highest on the platform because false remediation is worse than a missed auto-heal.
+
+---
+
+### Decision Trees
+
+#### Model promotion (UC9 + UC17 + UC22)
+
+```mermaid
+flowchart TD
+    START(["New model version ready"]) --> A{"Accuracy ≥ baseline + 2%?"}
+    A -->|no| REJECT1["OPA deny · stay in Experiment"]
+    A -->|yes| B{"Holdout drift ≤ 0.10?"}
+    B -->|no| REJECT2["Block · investigate UC5 skew"]
+    B -->|yes| C{"SHAP artifact in MLflow? (UC17)"}
+    C -->|no| REJECT3["OPA deny · explainability required"]
+    C -->|yes| D{"Trivy critical CVEs ≤ 25? (UC7)"}
+    D -->|no| REJECT4["Block image promote"]
+    D -->|yes| E["Deploy KServe canary 10%"]
+    E --> F{"A/B p-value ≤ 0.05?"}
+    F -->|no| ROLLBACK["Rollback canary → Staging"]
+    F -->|yes| PROMOTE(["Promote to Production"])
+```
+
+#### Which UC to implement first?
+
+```mermaid
+flowchart TD
+    START(["What is your top pain?"]) --> Q1{"Silent ML failures<br/>in production?"}
+    Q1 -->|yes| PATH1["UC13 → UC5 → UC19 → UC1 → UC9 → UC22"]
+    Q1 -->|no| Q2{"Alert fatigue / slow MTTR?"}
+    Q2 -->|yes| PATH2["UC3 → UC2 → UC8 → UC6 → UC23"]
+    Q2 -->|no| Q3{"Security / compliance audit?"}
+    Q3 -->|yes| PATH3["UC7 → UC12 → UC17"]
+    Q3 -->|no| Q4{"No SLO visibility?"}
+    Q4 -->|yes| PATH4["UC21 → UC15 → UC4"]
+    Q4 -->|no| PATH5["UC20 catalog → UC15 DORA → expand"]
+```
+
+---
+
+### Concept Map / Mind Map
+
+How the 23 design concepts, three planes, and eval integrator relate:
+
+```mermaid
+mindmap
+  root((Observable MLOps))
+    Planes
+      Business
+        SLO UC21
+        DORA UC15
+        Cost UC10
+      ML
+        Drift UC1
+        Features UC5
+        Serve UC22
+      Ops
+        Logs UC2
+        Alerts UC3
+        Traces UC11
+    Invariants
+      Eval gates
+      Fail closed OPA
+      Closed loops
+      SSOT GitOps
+    Validation
+      26 workflows
+      eval-results JSON
+      90-e2e portal
+    Security
+      Trivy UC7
+      Kyverno UC12
+      SHAP UC17
+```
+
+---
+
+### Class Diagram (UML) — eval framework
+
+Object model for the unified scoring engine — the only shared library all 23 UCs import.
+
+```mermaid
+classDiagram
+    class MetricSpec {
+        +string name
+        +string direction
+        +Any pass_threshold
+        +float weight
+        +string description
+    }
+
+    class EvalResult {
+        +string uc
+        +float score
+        +bool passed
+        +dict details
+        +save(path) void
+        +to_dict() dict
+    }
+
+    class UC_METRICS {
+        <<module>>
+        +dict~str, list~MetricSpec~~ UC_METRICS
+        +dict~str, int~ THRESHOLDS
+    }
+
+    class Scorer {
+        <<module eval/scorer.py>>
+        +compute_score(uc, values) EvalResult
+        +run_eval_gate(uc, values, path) EvalResult
+        -_score_metric(spec, value) float
+    }
+
+    UC_METRICS --> MetricSpec : defines 23×N
+    Scorer --> MetricSpec : reads specs
+    Scorer --> EvalResult : produces
+    Scorer --> UC_METRICS : lookup THRESHOLDS
+```
+
+---
+
+### Activity Diagram (UML) — incident response
+
+Parallel activities during a production incident — mirrors [Scenario B](#scenario-b--black-friday-incident-ops-plane).
+
+```mermaid
+flowchart TB
+    subgraph SwimSRE["SRE / On-call"]
+        A1([Alert received]) --> A2[UC3 dedup correlated incident]
+        A2 --> A3[UC2 locate anomalous log sequence]
+        A3 --> A4[UC8 RAG fetch runbook steps]
+        A4 --> A5{UC6 OPA allow?}
+        A5 -->|yes| A6[Auto-heal safe namespace]
+        A5 -->|no| A7[Manual escalation]
+        A6 --> A8[UC11 trace RCA]
+        A7 --> A8
+        A8 --> A9[UC23 generate post-mortem draft]
+    end
+
+    subgraph SwimAuto["Automated controllers"]
+        B1[UC21 SLO burn rate evaluated]
+        B2[UC4 KEDA pre-scale if forecast breach]
+        B1 --> B2
+    end
+
+    subgraph SwimBiz["Business plane"]
+        C1[UC15 DORA MTTR recorded]
+        C2[Error budget policy reviewed]
+        C1 --> C2
+    end
+
+    A1 -.-> B1
+    A9 --> C1
 ```
 
 ---
