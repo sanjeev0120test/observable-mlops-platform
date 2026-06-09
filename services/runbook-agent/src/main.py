@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import os
 
-import httpx
 from fastapi import FastAPI
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 from pydantic import BaseModel

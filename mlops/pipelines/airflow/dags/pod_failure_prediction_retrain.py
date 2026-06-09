@@ -95,6 +95,7 @@ def run_ge_validation(**context) -> bool:
 
 def train_model(**context) -> str:
     """Train GradientBoostingClassifier and log to MLflow."""
+    import json
     import mlflow
     from sklearn.ensemble import GradientBoostingClassifier
     from sklearn.model_selection import train_test_split

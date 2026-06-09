@@ -26,7 +26,8 @@ jobs:
 
       - name: Install Trivy
         run: |
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.57.1
+          curl -sLO "https://github.com/aquasecurity/trivy/releases/download/v0.57.1/trivy_0.57.1_Linux-64bit.deb"
+          sudo dpkg -i trivy_0.57.1_Linux-64bit.deb
 
       - name: Trivy scan base images (python:3.11-slim)
         id: trivy

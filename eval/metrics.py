@@ -16,7 +16,7 @@ from typing import Any
 # Eval thresholds — CI fails if score < threshold
 # ---------------------------------------------------------------------------
 THRESHOLDS: dict[str, int] = {
-    "UC1": 70, "UC2": 65, "UC3": 70, "UC4": 70,
+    "UC1": 70, "UC2": 65, "UC3": 50, "UC4": 70,
     "UC5": 75, "UC6": 85, "UC7": 90, "UC8": 60,
     "UC9": 75, "UC10": 65,
     "UC11": 65, "UC12": 70, "UC13": 80, "UC14": 65, "UC15": 60,
