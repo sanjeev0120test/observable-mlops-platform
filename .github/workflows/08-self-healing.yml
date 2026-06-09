@@ -53,6 +53,10 @@ jobs:
 
       - name: Test self_healing policy — allowed action
         run: |
+          echo "=== Policy file contents ==="
+          cat aiops/policies/opa/self_healing.rego
+          echo "=== Parse check ==="
+          opa parse aiops/policies/opa/self_healing.rego && echo "PARSE OK"
           cat > /tmp/test_self_healing_allow.json << 'EOF'
           {
             "input": {
@@ -63,9 +67,13 @@ jobs:
             }
           }
           EOF
+          echo "=== Input file ==="
+          cat /tmp/test_self_healing_allow.json
+          echo "=== OPA eval allow ==="
           RESULT=$(opa eval -d aiops/policies/opa/self_healing.rego \
             -i /tmp/test_self_healing_allow.json \
             'data.platform.self_healing.allow' 2>&1) || { echo "OPA ERROR: $RESULT"; exit 2; }
+          echo "RAW RESULT: $RESULT"
           echo "$RESULT" | python3 -c "import sys,json; r=json.load(sys.stdin); assert r['result'][0]['expressions'][0]['value'] == True, f'Expected allow=true: {r}'"
           echo "OPA self_healing allow (restart_pod + CrashLoop): PASS"
 

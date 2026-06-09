@@ -1,16 +1,12 @@
 package platform.self_healing
 
-import future.keywords.contains
-import future.keywords.if
+# Classic Rego syntax - no future.keywords imports needed.
+# Tested with OPA v0.65.0.
 
-# OPA policy: Gate every autonomous remediation action.
-# Uses explicit != comparisons — no negation helpers, no set-literal membership.
-# Protected namespaces are NEVER touched by automation.
+default allow = false
 
-default allow := false
-
-# Allow restart_pod for CrashLoopBackOff only in non-protected namespaces
-allow if {
+# Allow restart_pod for CrashLoopBackOff in non-protected namespaces
+allow {
     input.action == "restart_pod"
     input.trigger.alert_name == "PodCrashLoopBackOff"
     input.target.namespace != "kube-system"
@@ -19,8 +15,8 @@ allow if {
     input.target.namespace != "keda"
 }
 
-# Allow scale_deployment for HighCPUPreScale in non-protected namespaces
-allow if {
+# Allow scale_deployment for KEDA-triggered alerts in non-protected namespaces
+allow {
     input.action == "scale_deployment"
     input.trigger.alert_name == "HighCPUPreScale"
     input.target.namespace != "kube-system"
@@ -29,8 +25,7 @@ allow if {
     input.target.namespace != "keda"
 }
 
-# Allow scale_deployment for KafkaLag in non-protected namespaces
-allow if {
+allow {
     input.action == "scale_deployment"
     input.trigger.alert_name == "KafkaLag"
     input.target.namespace != "kube-system"
@@ -39,8 +34,8 @@ allow if {
     input.target.namespace != "keda"
 }
 
-# Allow dry-run testing in non-protected namespaces only
-allow if {
+# Allow dry-run testing in non-protected namespaces
+allow {
     input.dry_run == true
     input.target.namespace != "kube-system"
     input.target.namespace != "cert-manager"
@@ -48,30 +43,35 @@ allow if {
     input.target.namespace != "keda"
 }
 
-# ---- deny_reasons (audit / reporting only) ----
-
-deny_reasons contains "action 'drain_node' requires critical severity" if {
+# deny_reasons partial set (audit/reporting)
+deny_reasons[reason] {
     input.action == "drain_node"
     input.trigger.severity != "critical"
+    reason := "action 'drain_node' requires critical severity"
 }
 
-deny_reasons contains "action 'rollback_deployment' requires critical severity" if {
+deny_reasons[reason] {
     input.action == "rollback_deployment"
     input.trigger.severity != "critical"
+    reason := "action 'rollback_deployment' requires critical severity"
 }
 
-deny_reasons contains "namespace 'kube-system' is protected" if {
+deny_reasons[reason] {
     input.target.namespace == "kube-system"
+    reason := "namespace 'kube-system' is protected"
 }
 
-deny_reasons contains "namespace 'cert-manager' is protected" if {
+deny_reasons[reason] {
     input.target.namespace == "cert-manager"
+    reason := "namespace 'cert-manager' is protected"
 }
 
-deny_reasons contains "namespace 'kyverno' is protected" if {
+deny_reasons[reason] {
     input.target.namespace == "kyverno"
+    reason := "namespace 'kyverno' is protected"
 }
 
-deny_reasons contains "namespace 'keda' is protected" if {
+deny_reasons[reason] {
     input.target.namespace == "keda"
+    reason := "namespace 'keda' is protected"
 }
