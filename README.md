@@ -6,6 +6,22 @@ Enterprise-grade **AIOps + MLOps** reference platform for SaaS teams. **23 use c
 **MLflow/DVC remote**: [dagshub.com/sanjeev0120test/observable-mlops-platform](https://dagshub.com/sanjeev0120test/observable-mlops-platform)  
 **Eval portal**: `https://sanjeev0120test.github.io/observable-mlops-platform/` (after `91-publish-portal` runs)
 
+### Critical points at a glance
+
+These are the **non-negotiable design invariants** — if you adopt only one idea from this repo, adopt these. Everything else composes around them.
+
+| # | Invariant | Systems-thinking lens | Failure mode if ignored | Enforced by |
+|---|---|---|---|---|
+| **1** | **Value is proven in CI, not estimated** | Output of the system must be *measurable*, not narrated | Teams ship "demo-ware" that passes smoke tests but fails in prod | `eval/scorer.py` + `eval/metrics.py` in all 23 UC workflows |
+| **2** | **Closed-loop feedback, not open-loop dashboards** | Observe → Orient → Decide → Act must reconnect to the plant | Pretty Grafana panels; incidents still take hours | OODA chain: UC1/UC2/UC19 → UC3/UC11 → OPA/SLO → UC6/UC4/UC22 |
+| **3** | **Fail-closed policy defaults** | Control plane denies by default; explicit allow only | 3 AM restart in `kube-system`; model promoted without SHAP | OPA (`self_healing.rego`, `model_promotion.rego`), Kyverno admission |
+| **4** | **Control plane ≠ data plane** | Decisions (policy, scale, promote) separate from work (inference, logs) | Policy embedded in app code — unauditable, untestable | UC6 OPA gate, UC9 MLflow stage + KServe traffic split |
+| **5** | **Blast radius containment** | Limit how far a bad change propagates through the system | 100% traffic to broken model; one namespace restart kills cluster | UC22 canary + A/B, UC6 namespace allowlist, UC21 error budget |
+| **6** | **Single source of truth (Git + registry)** | One declared state; controllers reconcile reality to it | `kubectl apply` drift; "works in staging" prod failures | UC12 GitOps, UC20 Backstage catalog, MLflow on DagsHub |
+| **7** | **Ephemeral validation environments** | CI proves behavior in throwaway stacks — cattle, not pets | "Works on my laptop"; unreproducible prod incidents | Docker Compose Stack A/B + Kind in every workflow |
+
+> **Systems insight**: This platform is a **system of systems** — Business, ML, and Ops planes that traditionally silo. The eval gate is the *integrator*: it forces each plane to emit verifiable signals before the whole is considered healthy.
+
 ---
 
 ## Table of Contents
@@ -15,13 +31,19 @@ Enterprise-grade **AIOps + MLOps** reference platform for SaaS teams. **23 use c
 2. [Platform Hierarchy & Reading Guide](#platform-hierarchy--reading-guide)
 3. [Enterprise Production Context](#enterprise-production-context)
 4. [System Thinking](#system-thinking)
+   - [Cross-plane signal contract](#cross-plane-signal-contract)
+   - [Systems dynamics — delays, stocks, and leverage points](#systems-dynamics--delays-stocks-and-leverage-points)
 5. [Critical System Design Concepts](#critical-system-design-concepts)
+   - [Priority tiers](#priority-tiers--what-architects-should-internalize-first)
+   - [Seven architectural invariants](#the-seven-architectural-invariants-expanded)
 6. [Architecture Diagrams & Flows](#architecture-diagrams--flows)
 7. [Sequence Diagrams (Production Flows)](#sequence-diagrams-production-flows)
 
 ### Part II - Operations & Observability
 8. [Observability Strategy](#observability-strategy)
 9. [23 Use Cases — Business Value & Evidence](#23-use-cases--business-value--evidence)
+   - [End-to-end scenarios (systems view)](#end-to-end-scenarios--systems-view)
+   - [When to adopt which UC](#when-to-adopt-which-uc--decision-matrix)
 
 ### Part III - Build, Validate & Operate
 10. [Implementation Phases (Complete)](#implementation-phases-complete)
@@ -67,6 +89,19 @@ This platform solves **23 distinct enterprise pain points** spanning ML lifecycl
 | Engineering velocity | Data gates, HPO, DORA metrics, error routing | UC13, UC14, UC15, UC16 | GE pass rate, Optuna trials, four keys computed |
 
 *When you scale this to production, teams commonly target 30–50% reduction in P1 incidents, 15–25% infra waste recovery, and 20–40% faster model promotion cycles — but those are organizational goals you measure after adoption, not figures claimed by this repo.*
+
+### Why systems thinking matters here
+
+Traditional MLOps repos document **tools** (MLflow, Feast, KServe). This repo documents **interconnections** — how signals flow between planes, where feedback loops close, and where they intentionally stay open (human-in-the-loop for UC6 policy approval).
+
+| Systems property | What it means in this platform | Example |
+|---|---|---|
+| **Feedback loop** | Output of one UC becomes input to another | UC19 WhyLogs → UC1 drift → UC9 retrain gate |
+| **Leverage point** | Small change, large effect | One OPA rule blocks all bad promotions (UC9, UC17) |
+| **Delay** | Time between cause and measurable effect | Feature skew (UC5) appears days before accuracy drop (UC1) |
+| **Stock & flow** | Accumulated state vs rate of change | Error budget (UC21) is a *stock*; burn rate is a *flow* |
+| **Boundary** | What is inside vs outside the system's responsibility | Eval gates prove CI behavior; you own prod SLO targets |
+| **Emergence** | Whole-platform value exceeds sum of UCs | E2E workflow `90-e2e` aggregates 23 scores — one failing UC blocks portal publish |
 
 ---
 
@@ -360,6 +395,72 @@ flowchart LR
 | **Decide** | OPA, Kyverno, eval gates, SLO rules | UC6, UC7, UC9, UC21 |
 | **Act** | n8n, Airflow retrain, KEDA scale, KServe canary | UC1, UC4, UC6, UC22 |
 
+### Cross-plane signal contract
+
+When Business, ML, and Ops planes **don't share signals**, second-order failures emerge — not immediate crashes, but slow degradation:
+
+```mermaid
+flowchart TB
+    subgraph ML["ML Plane outputs"]
+        PSI["PSI / KS drift score"]
+        SHAP["SHAP audit artifact"]
+        FEAT["Feast feature freshness"]
+    end
+
+    subgraph Ops["Ops Plane outputs"]
+        ALERT["Alertmanager firing"]
+        TRACE["Trace span anomaly"]
+        SLO["Error budget remaining"]
+    end
+
+    subgraph Biz["Business Plane outputs"]
+        DORA["DORA four keys"]
+        COST["Cloud waste ratio"]
+        CAT["Catalog owner lookup"]
+    end
+
+    subgraph Integrator["Platform integrator"]
+        EVAL["eval/scorer.py gates"]
+        OPA["OPA policy engine"]
+        PORTAL["91-portal scorecard"]
+    end
+
+    PSI --> EVAL
+    SHAP --> OPA
+    ALERT --> OPA
+    SLO --> OPA
+    DORA --> PORTAL
+    COST --> PORTAL
+    CAT --> TRACE
+    FEAT --> PSI
+    EVAL --> PORTAL
+```
+
+| Broken link | Symptom (weeks later) | UCs that close the loop |
+|---|---|---|
+| ML → Ops | Drift undetected until customer complaints | UC1 emits `ml_model_psi_score` → `MLModelDriftDetected` alert |
+| Ops → ML | On-call restarts serving pods; model still wrong | UC1 retrain DAG, not just UC6 pod restart |
+| Ops → Business | SLO burns; releases continue | UC21 fast/slow burn → release policy (error budget) |
+| Business → Ops | FinOps finds waste; no one owns remediation | UC10 namespace attribution → `IdleResourceWaste` alert |
+| ML → Governance | Model promoted; regulator asks "why?" | UC17 SHAP logged → OPA denies UC9 promotion |
+
+### Systems dynamics — delays, stocks, and leverage points
+
+**Donella Meadows' leverage points** applied to MLOps/AIOps (highest impact first in this repo):
+
+| Leverage level | Intervention in this platform | UCs |
+|---|---|---|
+| **12 — Constants & parameters** | Threshold tuning (PSI ≥ 0.25, F1 ≥ 0.70) | All — `eval/metrics.py` |
+| **9 — Delays in feedback loops** | Early warning before accuracy drops | UC19 → UC1 (days of lead time) |
+| **8 — Balancing vs reinforcing loops** | Error budget *balances* release velocity vs reliability | UC21 SLO burn |
+| **7 — Gain around loops** | Alert dedup reduces pager gain (fewer false positives) | UC3 DBSCAN |
+| **6 — Information flows** | Trace IDs link service A → C failures | UC11 → UC8 RAG context |
+| **5 — Rules of the system** | OPA Rego = explicit, auditable rules | UC6, UC7, UC9, UC17 |
+| **4 — Self-organization** | Per-UC workflows — teams adopt without central rewrite | All 23 isolated workflows |
+| **3 — Goals of the system** | Eval gates encode *what good looks like* numerically | `eval/scorer.py` composite scores |
+
+**Critical delay to plan for**: Feature pipeline bugs (UC13, UC5) → skew → wrong predictions (UC1) → customer impact. The platform inserts **UC19 and UC5 gates upstream** so the loop closes before UC1 fires.
+
 ### Execution model (no local machine)
 
 | Layer | Technology | Why |
@@ -378,6 +479,44 @@ flowchart LR
 This section explains the **most important system design ideas** embodied in this platform — written for **platform architects, SREs, MLOps/AIOps engineers, and DevOps leads** who need to understand *why* the repo is structured the way it is, not just *what* it runs.
 
 Each concept follows: **definition → why it matters in production → how this repo implements it → where in code → related UCs → failure mode if ignored**.
+
+### Priority tiers — what architects should internalize first
+
+| Tier | Concepts | Read if you have 15 min | Read if you have 1 hour |
+|---|---|---|---|
+| **P0 — Non-negotiable** | #2 Closed-loop feedback, #6 Fail-closed policy, #14 Quality gates as contracts, #1 Control vs data plane | Concepts 1, 2, 6, 14 | + #5 Blast radius, #4 SSOT |
+| **P1 — Production correctness** | #7 Blast radius, #4 SSOT, #18 Defense in depth, #11 Observability-first, #19 State machines | Concepts 4, 5, 7, 11, 18 | + #9 Event-driven, #16 Correlation |
+| **P2 — Scale & adoption** | #15 Ephemeral envs, #23 Composability, #21 CAP, #17 Backpressure, #22 Operability | Concepts 15, 23 | Full section + [Expert Reference §25](#expert-reference--platform-architecture) |
+
+### The seven architectural invariants (expanded)
+
+These invariants appear repeatedly across all 23 UCs. Recognizing them once lets you predict how any new UC *should* be structured:
+
+1. **Every UC emits JSON evidence** → `eval-results/ucN.json` — no UC is "done" without a score.
+2. **Every critical path has a Prom alert** → `platform.yml` tagged `uc: UCx` — observability is not optional.
+3. **Policy lives outside application code** → `aiops/policies/opa/*.rego` — change rules without redeploying inference.
+4. **Synthetic data enables deterministic CI** → `data/synthetic/` — same inputs, same eval outcome every run.
+5. **Kind validates K8s paths; Compose validates data paths** — right fidelity for each layer.
+6. **Remote persistence is optional but wired** → DagsHub token; workflows degrade gracefully with `continue-on-error`.
+7. **Portal aggregates truth** → `90-e2e` → `91-portal` — one scorecard for all stakeholders.
+
+```mermaid
+flowchart LR
+    INV1["Invariant 1<br/>JSON evidence"]
+    INV2["Invariant 2<br/>Prom alerts"]
+    INV3["Invariant 3<br/>OPA policies"]
+    INV4["Invariant 4<br/>Synthetic seeds"]
+    INV5["Invariant 5<br/>Kind + Compose"]
+    INV6["Invariant 6<br/>DagsHub optional"]
+    INV7["Invariant 7<br/>Portal aggregate"]
+
+    INV1 --> INV7
+    INV2 --> INV7
+    INV3 --> INV1
+    INV4 --> INV1
+    INV5 --> INV1
+    INV6 -.-> INV1
+```
 
 ### Concept map (how ideas connect)
 
@@ -428,9 +567,9 @@ mindmap
 
 ---
 
-### 2. Closed-loop feedback systems
+### 2. Closed-loop feedback systems ⭐ CRITICAL
 
-**Definition**: A system that **observes its own output**, compares to a target, and **acts to reduce error** — the same principle as a thermostat or PID controller.
+**Definition**: A system that **observes its own output**, compares to a target, and **acts to reduce error** — the same principle as a thermostat or PID controller. This is the **central organizing idea** of the entire platform: without closed loops, observability becomes expensive theater.
 
 ```mermaid
 flowchart LR
@@ -520,9 +659,9 @@ This platform uses **three overlapping planes** (Business · ML · Ops) — see 
 
 ---
 
-### 6. Fail-closed vs fail-open (policy defaults)
+### 6. Fail-closed vs fail-open (policy defaults) ⭐ CRITICAL
 
-**Definition**: When the policy engine is uncertain or unavailable, does the system **deny** (fail-closed) or **allow** (fail-open)?
+**Definition**: When the policy engine is uncertain or unavailable, does the system **deny** (fail-closed) or **allow** (fail-open)? In safety-critical paths — admission, promotion, self-heal — **fail-closed is mandatory**.
 
 **Production rule of thumb** ([Google security design](https://cloud.google.com/architecture/framework/security)): **fail-closed for authorization**; **fail-open only with explicit justification** (e.g. metrics drop vs user-facing outage).
 
@@ -694,9 +833,9 @@ flowchart LR
 
 ---
 
-### 14. Quality gates as executable contracts
+### 14. Quality gates as executable contracts ⭐ CRITICAL
 
-**Definition**: An **eval gate** is a machine-enforceable contract: "this capability meets minimum quality" before merge or promotion — analogous to SLOs for code.
+**Definition**: An **eval gate** is a machine-enforceable contract: "this capability meets minimum quality" before merge or promotion — analogous to SLOs for code. This replaces slide-deck claims with **provable** outcomes: every UC writes `eval-results/ucN.json` or CI fails.
 
 ```python
 # Contract: UC1 must prove drift detection + retrain
@@ -1278,6 +1417,79 @@ Dashboard: `observability/dashboards/grafana/overview.json`
 ## 23 Use Cases — Business Value & Evidence
 
 Every use case below is **implemented, CI-gated, and measured**. “Hard evidence” refers to metrics in `eval/metrics.py` that must pass for the workflow to succeed (threshold in `THRESHOLDS`). No dollar figures — value is expressed as **observable outcomes** you can verify in GitHub Actions artifacts.
+
+### End-to-end scenarios — systems view
+
+Three **multi-UC narratives** showing how use cases chain in production. Each scenario maps to eval-gated workflows you can replay in CI.
+
+#### Scenario A — Fraud model degrades after a data pipeline change
+
+```mermaid
+sequenceDiagram
+    participant DP as Data Pipeline
+    participant UC13 as UC13 GE Gate
+    participant UC5 as UC5 Feast Skew
+    participant UC19 as UC19 WhyLogs
+    participant UC1 as UC1 Drift
+    participant UC9 as UC9 MLflow + OPA
+    participant UC22 as UC22 Canary
+
+    DP->>UC13: Bad batch injected
+    UC13-->>DP: BLOCKED (GE fail)
+    Note over DP,UC13: Happy path: good data passes
+    DP->>UC5: Feature refactor deployed
+    UC5->>UC19: Offline/online PSI spike
+    UC19->>UC1: Early profile violation
+    UC1->>UC9: PSI ≥ 0.25 → retrain triggered
+    UC9->>UC22: New model → canary 10%
+    UC22->>UC9: A/B p < 0.05 → promote
+```
+
+| Stage | What breaks without this UC | CI proof |
+|---|---|---|
+| UC13 blocks corrupt rows | Garbage trains for weeks | `20-data-quality` — bad batch blocked |
+| UC5 catches train/serve mismatch | Model "passes" lab, fails prod | `05-feature-skew` — PSI ≤ 0.10 |
+| UC19 early warning | Days of silent skew before accuracy drops | `25-feature-monitoring` — violation detected |
+| UC1 auto-retrain | Manual firefighting; drift accumulates | `03-drift-detection` — retrain triggered |
+| UC9 OPA gate | Promotion via Slack with no lineage | `10-model-serving` — OPA pass required |
+| UC22 canary | 100% users on bad model | `10-model-serving` — A/B p ≤ 0.05 |
+
+#### Scenario B — Black Friday incident (ops plane)
+
+| Time | Event | UC chain | Outcome |
+|---|---|---|---|
+| T-30m | Traffic forecast predicts 3× load | UC4 Prophet → KEDA pre-scale | Pods ready **300s** before peak |
+| T+0 | p99 latency rises; error rate climbs | UC21 SLO fast-burn fires | Error budget policy triggers |
+| T+2m | 200+ duplicate Alertmanager pages | UC3 DBSCAN dedup → 1 correlated incident | On-call not overwhelmed |
+| T+5m | ERROR log storm buries root cause | UC2 LSTM flags anomalous sequence | Needle found in haystack |
+| T+8m | Engineer asks "what do we do?" | UC8 RAG retrieves runbook from Qdrant | Step-by-step remediation |
+| T+12m | Safe restart approved by policy | UC6 OPA allows `payments` only | Auto-heal; `kube-system` denied |
+| T+30m | Incident resolved | UC11 trace RCA + UC23 post-mortem draft | GitHub Issue with similar past incidents |
+
+**Eval proof chain**: `07-predictive-scaling` → `15-slo-monitoring` → `06-alert-correlation` → `04-log-anomaly` → `09-rag-runbook` → `08-self-healing` → `18-distributed-tracing`
+
+#### Scenario C — Compliance audit before model go-live
+
+| Auditor question | UC that answers it | Evidence artifact |
+|---|---|---|
+| "Who approved this model version?" | UC9 MLflow registry | DagsHub experiment + stage transition log |
+| "Why did the model predict X for customer Y?" | UC17 SHAP | SHAP values in MLflow artifact |
+| "Was the container scanned for CVEs?" | UC7 Trivy + Kyverno | CI log: CVE count ≤ 25; admission deny test |
+| "Does declared config match cluster?" | UC12 GitOps | Drift injected → reconcile validated |
+| "Who owns this service?" | UC20 Backstage | 27 entities linted; owner field required |
+
+**Critical point**: UC17 SHAP is not optional decoration — OPA `model_promotion.rego` **denies promotion** if explainability artifact is missing. This is fail-closed governance, not a dashboard checkbox.
+
+### When to adopt which UC — decision matrix
+
+| Your pain right now | Start with | Then add | Why this order |
+|---|---|---|---|
+| Models degrade silently in prod | UC13 → UC5 → UC1 | UC19, UC9, UC22 | Fix data quality and skew *before* drift detection and promotion |
+| On-call drowning in alerts | UC3 → UC2 | UC8, UC6, UC23 | Dedup first; then find root cause; then automate safe fixes |
+| No SLO visibility | UC21 | UC15, UC4 | Error budget before predictive scale and DORA metrics |
+| Security audit failing | UC7 | UC12, UC17 | Scan → GitOps integrity → explainability for regulated ML |
+| Cloud bill growing | UC10 | UC4, UC18 | Find waste → right-size → protect APIs during spikes |
+| New platform team, greenfield | UC20 → UC15 | UC7, UC21 | Catalog ownership → velocity metrics → policy + SLOs |
 
 ### 1. Reliability & SLOs
 
