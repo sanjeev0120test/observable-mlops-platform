@@ -1,0 +1,185 @@
+name: "02 · Data Pipeline (DVC + Synthetic Data + Great Expectations)"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "data/**"
+      - "scripts/validate_data.py"
+      - ".github/workflows/02-data-pipeline.yml"
+  workflow_dispatch:
+    inputs:
+      force_regenerate:
+        description: "Force regenerate all data even if DVC cache exists"
+        type: boolean
+        default: false
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  generate-and-validate:
+    name: "Generate Synthetic Data + Validate"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install data dependencies
+        run: |
+          pip install --quiet \
+            numpy==1.26.4 \
+            pandas==2.2.2 \
+            pyarrow==16.0.0 \
+            dvc==3.51.1 \
+            great-expectations==0.18.19
+
+      - name: Setup DagsHub / DVC remote
+        env:
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+        run: bash scripts/setup-dagshub.sh
+
+      - name: Run all data generators
+        run: |
+          python data/synthetic/generate_pod_metrics.py \
+            --hours 72 --interval 5 --anomaly-rate 0.03 \
+            --output data/synthetic/pod_metrics.parquet \
+            --drift-after-hour 48
+
+          python data/synthetic/generate_container_logs.py \
+            --hours 24 --logs-per-second 10.0 \
+            --output data/synthetic/container_logs.ndjson
+
+          python data/synthetic/generate_cost_data.py \
+            --days 30 --anomaly-rate 0.04 \
+            --output data/synthetic/cost_data.parquet
+
+          python data/synthetic/generate_alerts.py \
+            --hours 24 --incidents-per-hour 2.0 \
+            --output data/synthetic/alerts.parquet
+
+          python data/synthetic/generate_http_traffic.py \
+            --hours 72 --interval 60 \
+            --output data/synthetic/http_traffic.parquet
+
+      - name: Run data validation
+        run: python scripts/validate_data.py
+
+      - name: Great Expectations — pod_metrics quality suite
+        run: |
+          python3 - <<'EOF'
+          import great_expectations as ge
+          import pandas as pd
+
+          df = pd.read_parquet("data/synthetic/pod_metrics.parquet")
+          ge_df = ge.from_pandas(df)
+
+          results = {
+              "cpu_range": ge_df.expect_column_values_to_be_between("cpu_usage_pct", 0, 100).success,
+              "mem_range": ge_df.expect_column_values_to_be_between("mem_usage_pct", 0, 100).success,
+              "ns_not_null": ge_df.expect_column_values_to_not_be_null("namespace").success,
+              "pod_not_null": ge_df.expect_column_values_to_not_be_null("pod_name").success,
+              "ns_set": ge_df.expect_column_values_to_be_in_set(
+                  "namespace",
+                  ["payments","auth","catalog","recommendations","gateway","ml-serving"]
+              ).success,
+              "restart_non_neg": ge_df.expect_column_values_to_be_between("restart_count", 0, 10000).success,
+          }
+
+          failed = [k for k, v in results.items() if not v]
+          if failed:
+              raise RuntimeError(f"GE expectations failed: {failed}")
+          print(f"All {len(results)} pod_metrics GE expectations passed")
+          EOF
+
+      - name: Great Expectations — cost_data quality suite
+        run: |
+          python3 - <<'EOF'
+          import great_expectations as ge
+          import pandas as pd
+
+          df = pd.read_parquet("data/synthetic/cost_data.parquet")
+          ge_df = ge.from_pandas(df)
+
+          results = {
+              "cost_positive": ge_df.expect_column_values_to_be_between("hourly_cost_usd", 0, 1000).success,
+              "waste_ratio_range": ge_df.expect_column_values_to_be_between("waste_ratio", 0, 1).success,
+              "team_not_null": ge_df.expect_column_values_to_not_be_null("team_label").success,
+              "ns_not_null": ge_df.expect_column_values_to_not_be_null("namespace").success,
+          }
+
+          failed = [k for k, v in results.items() if not v]
+          if failed:
+              raise RuntimeError(f"GE expectations failed: {failed}")
+          print(f"All {len(results)} cost_data GE expectations passed")
+          EOF
+
+      - name: Great Expectations — alerts quality suite
+        run: |
+          python3 - <<'EOF'
+          import great_expectations as ge
+          import pandas as pd
+
+          df = pd.read_parquet("data/synthetic/alerts.parquet")
+          ge_df = ge.from_pandas(df)
+
+          dup_rate = float(df["is_duplicate"].mean())
+          assert dup_rate > 0.30, f"Expected >30% duplicate alerts for UC3, got {dup_rate:.2f}"
+
+          results = {
+              "alert_id_unique": ge_df.expect_column_values_to_be_unique("alert_id").success,
+              "alertname_not_null": ge_df.expect_column_values_to_not_be_null("alertname").success,
+              "root_cause_not_null": ge_df.expect_column_values_to_not_be_null("root_cause_id").success,
+              "severity_values": ge_df.expect_column_values_to_be_in_set(
+                  "severity", ["warning", "critical"]
+              ).success,
+          }
+
+          failed = [k for k, v in results.items() if not v]
+          if failed:
+              raise RuntimeError(f"GE expectations failed: {failed}")
+          print(f"All {len(results)} alerts GE expectations passed (dup_rate={dup_rate:.2f})")
+          EOF
+
+      - name: Print dataset stats
+        run: |
+          python3 - <<'EOF'
+          import pandas as pd, json
+          from pathlib import Path
+
+          for fname in ["pod_metrics.parquet", "cost_data.parquet", "alerts.parquet", "http_traffic.parquet"]:
+              df = pd.read_parquet(f"data/synthetic/{fname}")
+              print(f"\n=== {fname} ===")
+              print(f"  Rows: {len(df)}, Cols: {len(df.columns)}")
+              if "is_anomaly" in df.columns:
+                  rate = df["is_anomaly"].mean()
+                  print(f"  Anomaly rate: {rate:.2%}")
+
+          logs = len(Path("data/synthetic/container_logs.ndjson").read_text().splitlines())
+          print(f"\n=== container_logs.ndjson ===\n  Lines: {logs}")
+          EOF
+
+      - name: DVC push (if DagsHub token available)
+        if: ${{ secrets.DAGSHUB_TOKEN != '' }}
+        env:
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+        run: |
+          dvc add data/synthetic/*.parquet data/synthetic/*.ndjson || true
+          dvc push || echo "[DVC] Push skipped (no remote or token)"
+
+      - name: Upload data artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-data
+          path: |
+            data/synthetic/*.parquet
+            data/synthetic/*.ndjson
+            data/synthetic/validation_report.json
+          retention-days: 1

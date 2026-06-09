@@ -1,0 +1,114 @@
+name: "91 · Publish Portal (GitHub Pages + HuggingFace Spaces opt-in)"
+
+on:
+  workflow_run:
+    workflows: ["90 · E2E Integration — All 23 UC Eval Results Aggregation"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  build-portal:
+    name: "Build Eval Dashboard HTML"
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Download eval summary
+        uses: actions/download-artifact@v4
+        with:
+          name: eval-summary
+          path: eval-results/
+        continue-on-error: true
+
+      - name: Download all UC eval results
+        uses: actions/download-artifact@v4
+        with:
+          path: eval-results/
+          merge-multiple: true
+        continue-on-error: true
+
+      - name: Build portal
+        run: bash scripts/publish-portal.sh
+
+      - name: Upload portal artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: portal-dist
+          path: portal/dist/
+          retention-days: 7
+
+  publish-github-pages:
+    name: "Deploy to GitHub Pages"
+    runs-on: ubuntu-latest
+    needs: build-portal
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download portal
+        uses: actions/download-artifact@v4
+        with:
+          name: portal-dist
+          path: portal/dist/
+
+      - name: Deploy to gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./portal/dist
+          commit_message: "chore: update eval dashboard [skip ci]"
+
+  publish-huggingface-spaces:
+    name: "Publish to HuggingFace Spaces (opt-in)"
+    runs-on: ubuntu-latest
+    needs: build-portal
+    if: ${{ secrets.HF_TOKEN != '' && github.ref == 'refs/heads/main' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download portal
+        uses: actions/download-artifact@v4
+        with:
+          name: portal-dist
+          path: portal/dist/
+
+      - name: Install huggingface_hub
+        run: pip install huggingface_hub --quiet
+
+      - name: Push to HuggingFace Spaces
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE: ${{ vars.HF_SPACE_NAME || 'observable-mlops-platform' }}
+        run: |
+          python3 - <<'PYEOF'
+          import os
+          from huggingface_hub import HfApi
+
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          space_id = f"{api.whoami()['name']}/{os.environ['HF_SPACE']}"
+
+          api.upload_file(
+              path_or_fileobj="portal/dist/index.html",
+              path_in_repo="index.html",
+              repo_id=space_id,
+              repo_type="space",
+              commit_message="Update eval dashboard",
+          )
+          print(f"Portal published to https://huggingface.co/spaces/{space_id}")
+          PYEOF

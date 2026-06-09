@@ -1,0 +1,166 @@
+name: "01 · Observability Stack (Prometheus + Grafana + Loki + Tempo + OTEL)"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "observability/**"
+      - "infra/docker-compose/docker-compose.observability.yml"
+      - "infra/docker-compose/config/**"
+      - ".github/workflows/01-observability.yml"
+  workflow_dispatch:
+
+env:
+  COMPOSE_FILE: infra/docker-compose/docker-compose.observability.yml
+  COMPOSE_PROJECT_NAME: platform-obs
+
+jobs:
+  observability-stack:
+    name: "Start Observability Stack + Health Check"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create external Docker network
+        run: docker network create platform-net || true
+
+      - name: Start observability stack
+        run: |
+          docker compose -f ${{ env.COMPOSE_FILE }} up -d \
+            prometheus alertmanager grafana loki tempo otel-collector
+          echo "Stack started, waiting for services to be healthy..."
+
+      - name: Wait for Prometheus
+        run: |
+          echo "Waiting for Prometheus..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:9090/-/healthy; then
+              echo "Prometheus healthy"
+              break
+            fi
+            sleep 5
+            if [ $i -eq 30 ]; then echo "Prometheus timeout" && exit 1; fi
+          done
+
+      - name: Wait for Grafana
+        run: |
+          echo "Waiting for Grafana..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000/api/health | grep -q '"database": "ok"'; then
+              echo "Grafana healthy"
+              break
+            fi
+            sleep 5
+            if [ $i -eq 30 ]; then echo "Grafana timeout" && exit 1; fi
+          done
+
+      - name: Wait for Loki
+        run: |
+          for i in $(seq 1 20); do
+            if curl -sf http://localhost:3100/ready; then echo "Loki ready"; break; fi
+            sleep 5
+            if [ $i -eq 20 ]; then echo "Loki timeout" && exit 1; fi
+          done
+
+      - name: Wait for Tempo
+        run: |
+          for i in $(seq 1 20); do
+            if curl -sf http://localhost:3200/ready; then echo "Tempo ready"; break; fi
+            sleep 5
+            if [ $i -eq 20 ]; then echo "Tempo timeout" && exit 1; fi
+          done
+
+      - name: Wait for OTEL Collector
+        run: |
+          for i in $(seq 1 15); do
+            if curl -sf http://localhost:8889/metrics | grep -q "otelcol"; then
+              echo "OTEL Collector ready"
+              break
+            fi
+            sleep 5
+            if [ $i -eq 15 ]; then echo "OTEL Collector timeout" && exit 1; fi
+          done
+
+      - name: Validate Prometheus datasource in Grafana
+        run: |
+          RESULT=$(curl -sf -u admin:admin \
+            'http://localhost:3000/api/datasources/name/Prometheus')
+          echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('type')=='prometheus', 'Wrong type'"
+          echo "Grafana Prometheus datasource: OK"
+
+      - name: Validate Loki datasource in Grafana
+        run: |
+          RESULT=$(curl -sf -u admin:admin \
+            'http://localhost:3000/api/datasources/name/Loki')
+          echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('type')=='loki', 'Wrong type'"
+          echo "Grafana Loki datasource: OK"
+
+      - name: Validate Tempo datasource in Grafana
+        run: |
+          RESULT=$(curl -sf -u admin:admin \
+            'http://localhost:3000/api/datasources/name/Tempo')
+          echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('type')=='tempo', 'Wrong type'"
+          echo "Grafana Tempo datasource: OK"
+
+      - name: Send test OTLP span to OTEL Collector
+        run: |
+          pip install opentelemetry-sdk opentelemetry-exporter-otlp-proto-http --quiet
+          python3 - <<'EOF'
+          from opentelemetry import trace
+          from opentelemetry.sdk.trace import TracerProvider
+          from opentelemetry.sdk.trace.export import BatchSpanProcessor
+          from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+          import time
+
+          provider = TracerProvider()
+          exporter = OTLPSpanExporter(endpoint="http://localhost:4318/v1/traces")
+          provider.add_span_processor(BatchSpanProcessor(exporter))
+          trace.set_tracer_provider(provider)
+
+          tracer = trace.get_tracer("platform.test")
+          with tracer.start_as_current_span("test-span") as span:
+              span.set_attribute("uc", "observability-test")
+              span.set_attribute("service.name", "platform-ci-test")
+              time.sleep(0.01)
+
+          provider.force_flush()
+          print("Test span sent to OTEL Collector")
+          EOF
+
+      - name: Validate Prometheus alert rules loaded
+        run: |
+          RULES=$(curl -sf http://localhost:9090/api/v1/rules | \
+            python3 -c "import sys,json; r=json.load(sys.stdin); print(len(r['data']['groups']))")
+          echo "Prometheus rule groups loaded: $RULES"
+          [ "$RULES" -gt 0 ] || { echo "No rule groups loaded"; exit 1; }
+
+      - name: Emit platform metrics to Prometheus
+        run: |
+          pip install prometheus-client --quiet
+          python3 - <<'EOF'
+          from prometheus_client import CollectorRegistry, Counter, Gauge, push_to_gateway
+          import time
+
+          registry = CollectorRegistry()
+          c = Counter('platform_ci_test_total', 'CI test counter', registry=registry)
+          g = Gauge('ml_model_psi_score', 'Model PSI test', ['model_name'], registry=registry)
+
+          c.inc(3)
+          g.labels(model_name='pod-failure-prediction').set(0.06)
+          g.labels(model_name='log-anomaly-lstm').set(0.04)
+
+          # Push to Prometheus pushgateway (not started in this compose, so just validate the metric format)
+          print("Metrics created successfully")
+          print(f"  platform_ci_test_total = {c._value.get()}")
+          EOF
+
+      - name: Collect logs from stack
+        if: failure()
+        run: |
+          docker compose -f ${{ env.COMPOSE_FILE }} logs --tail=50
+
+      - name: Stop observability stack
+        if: always()
+        run: docker compose -f ${{ env.COMPOSE_FILE }} down -v

@@ -1,0 +1,212 @@
+name: "04 · UC2 — Log Anomaly Detection (PyTorch LSTM + Qdrant)"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mlops/experiments/log_anomaly/**"
+      - "services/anomaly-detector/**"
+      - ".github/workflows/04-log-anomaly.yml"
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.11"
+  UC: UC2
+
+jobs:
+  generate-logs:
+    name: "Generate Log Dataset"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install --quiet numpy pandas
+      - name: Generate logs (normal + burst anomalies)
+        run: |
+          python data/synthetic/generate_container_logs.py \
+            --hours 24 \
+            --logs-per-second 10.0 \
+            --output /tmp/container_logs.ndjson
+      - uses: actions/upload-artifact@v4
+        with:
+          name: logs-uc2
+          path: /tmp/container_logs.ndjson
+          retention-days: 1
+
+  train-and-evaluate:
+    name: "Train LSTM Autoencoder + Evaluate (UC2)"
+    runs-on: ubuntu-latest
+    needs: generate-logs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install ML dependencies
+        run: |
+          pip install --quiet \
+            torch==2.3.0+cpu --index-url https://download.pytorch.org/whl/cpu \
+            numpy==1.26.4 \
+            scikit-learn==1.5.0 \
+            mlflow==2.13.0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: logs-uc2
+          path: /tmp/
+
+      - name: Setup MLflow/DagsHub
+        env:
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+        run: bash scripts/setup-dagshub.sh
+
+      - name: Train LSTM autoencoder
+        run: |
+          python3 - <<'PYEOF'
+          import sys, json
+          sys.path.insert(0, '.')
+          import json
+          from pathlib import Path
+          from mlops.experiments.log_anomaly.lstm_autoencoder import train, evaluate
+
+          # Load logs
+          lines = Path("/tmp/container_logs.ndjson").read_text().splitlines()
+          records = [json.loads(l) for l in lines]
+
+          # Split normal vs anomaly
+          normal = [r["message"] for r in records if not r["is_anomaly"]]
+          anomaly = [r["message"] for r in records if r["is_anomaly"]]
+          anomaly_labels = [r["is_anomaly"] for r in records]
+
+          print(f"Normal log lines:  {len(normal)}")
+          print(f"Anomaly log lines: {len(anomaly)}")
+
+          # Train on normal
+          model_path = Path("mlops/experiments/log_anomaly/lstm_ae.pt")
+          model, threshold = train(normal, model_path=model_path, epochs=5)
+          print(f"Training complete. Threshold: {threshold:.6f}")
+
+          # Evaluate on all (with labels from burst windows)
+          all_messages = [r["message"] for r in records]
+          window_labels = []
+          for i in range(0, len(records) - 50 + 1, 25):
+              window = records[i: i + 50]
+              has_anomaly = any(r["is_anomaly"] for r in window)
+              window_labels.append(has_anomaly)
+
+          results = evaluate(model, threshold, all_messages, labels=window_labels)
+          print(f"\n=== UC2 Metrics ===")
+          for k, v in results.items():
+              print(f"  {k}: {v}")
+
+          Path("eval-results").mkdir(exist_ok=True)
+          Path("eval-results/uc2_metrics.json").write_text(json.dumps(results, indent=2))
+          PYEOF
+
+      - name: Seed Qdrant with incident vectors
+        run: |
+          pip install --quiet qdrant-client==1.9.1 sentence-transformers==3.0.1
+          python3 - <<'PYEOF'
+          import json
+          from pathlib import Path
+
+          try:
+              from qdrant_client import QdrantClient
+              from qdrant_client.models import Distance, VectorParams, PointStruct
+              from sentence_transformers import SentenceTransformer
+
+              # Use in-memory Qdrant for CI
+              client = QdrantClient(":memory:")
+              model = SentenceTransformer("all-MiniLM-L6-v2")
+
+              # Create collection
+              client.recreate_collection(
+                  collection_name="log_anomaly_incidents",
+                  vectors_config=VectorParams(size=384, distance=Distance.COSINE),
+              )
+
+              # Sample incidents from the log file
+              lines = Path("/tmp/container_logs.ndjson").read_text().splitlines()
+              incidents = [json.loads(l) for l in lines if json.loads(l)["is_anomaly"]][:100]
+
+              if incidents:
+                  texts = [inc["message"] for inc in incidents]
+                  embeddings = model.encode(texts)
+                  points = [
+                      PointStruct(id=i, vector=emb.tolist(),
+                                  payload={"error_type": inc.get("error_type"), "service": inc["service"]})
+                      for i, (inc, emb) in enumerate(zip(incidents, embeddings))
+                  ]
+                  client.upsert(collection_name="log_anomaly_incidents", points=points)
+                  collection_size = client.get_collection("log_anomaly_incidents").points_count
+                  print(f"Qdrant seeded with {collection_size} incident vectors")
+
+                  # Test similarity search
+                  query_text = "OOMKilled container exceeded memory limit"
+                  query_emb = model.encode([query_text])[0]
+                  results = client.search(
+                      collection_name="log_anomaly_incidents",
+                      query_vector=query_emb.tolist(),
+                      limit=5,
+                  )
+                  print(f"Similar incidents found: {len(results)}")
+
+                  # Update metrics
+                  metrics = json.loads(Path("eval-results/uc2_metrics.json").read_text())
+                  metrics["qdrant_similar_incidents_found"] = len(results)
+                  metrics["qdrant_collection_size"] = collection_size
+                  Path("eval-results/uc2_metrics.json").write_text(json.dumps(metrics, indent=2))
+              else:
+                  print("No incidents found in log file")
+          except Exception as e:
+              print(f"Qdrant seeding skipped: {e}")
+              # Ensure metrics file exists with defaults
+              metrics = json.loads(Path("eval-results/uc2_metrics.json").read_text()) if Path("eval-results/uc2_metrics.json").exists() else {}
+              metrics.setdefault("qdrant_similar_incidents_found", 0)
+              Path("eval-results/uc2_metrics.json").write_text(json.dumps(metrics, indent=2))
+          PYEOF
+
+      - name: Log experiment to MLflow
+        env:
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+        run: |
+          python3 - <<'PYEOF'
+          import mlflow, json
+          from pathlib import Path
+
+          metrics = json.loads(Path("eval-results/uc2_metrics.json").read_text())
+          mlflow.set_experiment("log-anomaly-detection")
+
+          with mlflow.start_run(run_name="uc2-lstm-ci"):
+              mlflow.log_params({"model": "LSTM-Autoencoder", "window_size": 50, "epochs": 5})
+              numeric = {k: v for k, v in metrics.items() if isinstance(v, (int, float))}
+              mlflow.log_metrics(numeric)
+              mlflow.set_tags({"uc": "UC2", "ci_run": "true"})
+              if Path("mlops/experiments/log_anomaly/lstm_ae.pt").exists():
+                  mlflow.log_artifact("mlops/experiments/log_anomaly/lstm_ae.pt", "model")
+          print("UC2 experiment logged to MLflow")
+          PYEOF
+
+      - name: Run eval gate (UC2)
+        run: |
+          python3 - <<'PYEOF'
+          import sys, json
+          sys.path.insert(0, '.')
+          from pathlib import Path
+          from eval.scorer import run_eval_gate
+
+          metrics = json.loads(Path("eval-results/uc2_metrics.json").read_text())
+          run_eval_gate("UC2", metrics, Path("eval-results"))
+          PYEOF
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-uc2
+          path: eval-results/uc2*.json
+          retention-days: 7

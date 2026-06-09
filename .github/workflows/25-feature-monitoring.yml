@@ -1,0 +1,103 @@
+name: "25 · UC19 — Feature Monitoring (WhyLogs + WhyLabs opt-in)"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/25-feature-monitoring.yml"
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.11"
+  UC: UC19
+
+jobs:
+  feature-monitoring:
+    name: "WhyLogs Profiles + Constraint Violations"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install --quiet whylogs==1.3.30 numpy==1.26.4 pandas==2.2.2 pyarrow
+
+      - name: Generate data
+        run: python data/synthetic/generate_pod_metrics.py --hours 24 --output /tmp/pod_metrics.parquet
+
+      - name: WhyLogs profiling + violation detection
+        run: |
+          python3 - <<'PYEOF'
+          import json
+          import numpy as np
+          import pandas as pd
+          import whylogs as why
+          from whylogs.core.constraints.factories import greater_than_number, smaller_than_number
+          from pathlib import Path
+
+          df = pd.read_parquet("/tmp/pod_metrics.parquet").head(2000)
+
+          # Profile reference data
+          ref_result = why.log(df[["cpu_usage_pct", "mem_usage_pct", "restart_count"]])
+          ref_profile = ref_result.profile()
+
+          print(f"WhyLogs profiles generated successfully")
+          print(f"  Columns profiled: {list(ref_profile.get_columns().keys())}")
+
+          # Inject a violation: add out-of-range values
+          bad_df = df.copy()
+          bad_df.loc[:10, "cpu_usage_pct"] = 150.0  # out of range
+
+          cur_result = why.log(bad_df[["cpu_usage_pct", "mem_usage_pct", "restart_count"]])
+
+          # Check constraints
+          from whylogs.core.constraints import ConstraintsBuilder
+          builder = ConstraintsBuilder(dataset_profile=ref_profile)
+          builder.add_constraint(smaller_than_number(column_name="cpu_usage_pct", number=100))
+          builder.add_constraint(smaller_than_number(column_name="mem_usage_pct", number=100))
+          constraints = builder.build()
+
+          # Validate bad data against constraints
+          bad_profile = cur_result.profile()
+          report = constraints.generate_constraints_report()
+          constraint_violations = sum(1 for r in report if not r.passed)
+          print(f"Constraint violations detected: {constraint_violations}")
+
+          profiles_generated = True
+          constraint_violations_detected = constraint_violations
+          drift_flagged = constraint_violations > 0
+
+          metrics = {
+              "profiles_generated": profiles_generated,
+              "constraint_violations_detected": constraint_violations_detected,
+              "drift_flagged": drift_flagged,
+          }
+          print(f"\n=== UC19 Feature Monitoring Metrics ===")
+          for k, v in metrics.items():
+              print(f"  {k}: {v}")
+
+          Path("eval-results").mkdir(exist_ok=True)
+          Path("eval-results/uc19_metrics.json").write_text(json.dumps(metrics, indent=2))
+          PYEOF
+
+      - name: Run eval gate (UC19)
+        run: |
+          python3 - <<'PYEOF'
+          import sys, json
+          sys.path.insert(0, '.')
+          from pathlib import Path
+          from eval.scorer import run_eval_gate
+
+          metrics = json.loads(Path("eval-results/uc19_metrics.json").read_text())
+          run_eval_gate("UC19", metrics, Path("eval-results"))
+          PYEOF
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-uc19
+          path: eval-results/uc19*.json
+          retention-days: 7

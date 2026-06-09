@@ -1,0 +1,82 @@
+name: "90 · E2E Integration — All 23 UC Eval Results Aggregation"
+
+on:
+  workflow_run:
+    workflows:
+      - "03 · UC1 — Drift Detection + Auto-Retraining (Evidently + NannyML + Alibi)"
+      - "04 · UC2 — Log Anomaly Detection (PyTorch LSTM + Qdrant)"
+      - "05 · UC5 — Feature Store + Training-Serving Skew (Feast + GE + Evidently)"
+      - "06 · UC3 — Alert Correlation & Fatigue Reduction (DBSCAN)"
+      - "07 · UC4 — Predictive Autoscaling (Prophet + KEDA)"
+      - "08 · UC6 — Agentic Self-Healing (Falco + n8n + OPA)"
+      - "09 · UC8/UC23 — RAG Runbook Agent + Auto Post-Mortem (Qdrant + TinyLlama)"
+      - "10 · UC9/UC22 — Experiment Tracking + Registry + Canary Serving + A/B Test"
+      - "11 · UC10 — Cloud Cost Anomaly Detection + Attribution (IsolationForest)"
+      - "13 · UC7 — Security Policy Enforcement (Trivy + Falco + Kyverno + OPA)"
+    types: [completed]
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  aggregate-results:
+    name: "Aggregate All Eval Results"
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Download all eval artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: eval-results/
+          merge-multiple: true
+        continue-on-error: true  # Some artifacts may not exist yet
+
+      - name: Aggregate all UC results
+        run: |
+          python3 - <<'PYEOF'
+          import sys, json
+          sys.path.insert(0, '.')
+          from pathlib import Path
+          from eval.scorer import aggregate_all_results
+
+          # Look for result files
+          eval_dir = Path("eval-results")
+          eval_dir.mkdir(exist_ok=True)
+
+          summary = aggregate_all_results(eval_dir)
+
+          print("=" * 60)
+          print("  PLATFORM EVAL SUMMARY — All 23 Use Cases")
+          print("=" * 60)
+          print(f"  Passed: {summary['passed']}/{summary['total']}")
+          print(f"  Failed: {summary['failed']}/{summary['total']}")
+          print()
+          for uc, r in sorted(summary["ucs"].items()):
+              status = "PASS" if r["passed"] else "FAIL"
+              print(f"  {status}  {uc}  score={r['score']:.1f}  threshold={r['threshold']}")
+
+          Path("eval-results/summary.json").write_text(json.dumps(summary, indent=2))
+
+          if summary["total"] > 0:
+              pass_rate = summary["passed"] / summary["total"]
+              print(f"\n  Overall pass rate: {pass_rate:.0%}")
+              if pass_rate < 1.0:
+                  print(f"\n  WARNING: {summary['failed']} UC(s) failing — see individual reports above")
+          else:
+              print("  No eval results found yet — run individual UC workflows first")
+          PYEOF
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eval-summary
+          path: eval-results/summary.json
+          retention-days: 30

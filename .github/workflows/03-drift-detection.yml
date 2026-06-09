@@ -1,0 +1,245 @@
+name: "03 · UC1 — Drift Detection + Auto-Retraining (Evidently + NannyML + Alibi)"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "services/drift-monitor/**"
+      - "mlops/experiments/pod_failure_prediction/**"
+      - ".github/workflows/03-drift-detection.yml"
+  schedule:
+    - cron: "0 4 * * *"  # Daily at 04:00 UTC
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.11"
+  UC: UC1
+
+jobs:
+  generate-data:
+    name: "Generate Synthetic Dataset (reference + drifted)"
+    runs-on: ubuntu-latest
+    outputs:
+      data_artifact: synthetic-data-uc1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install --quiet numpy==1.26.4 pandas==2.2.2 pyarrow==16.0.0
+
+      - name: Generate reference (no drift) + drifted (after hour 48) datasets
+        run: |
+          # Reference: first 48h (no drift)
+          python data/synthetic/generate_pod_metrics.py \
+            --hours 48 --interval 5 --anomaly-rate 0.01 \
+            --output /tmp/reference.parquet \
+            --drift-after-hour 9999
+
+          # Current: last 24h (with drift — CPU shifts +15%)
+          python data/synthetic/generate_pod_metrics.py \
+            --hours 72 --interval 5 --anomaly-rate 0.03 \
+            --output /tmp/full.parquet \
+            --drift-after-hour 48
+
+          python3 - <<'EOF'
+          import pandas as pd
+          df = pd.read_parquet("/tmp/full.parquet")
+          current = df[df["is_drifted"] == True]
+          current.to_parquet("/tmp/current.parquet", index=False)
+          print(f"Reference rows: {len(pd.read_parquet('/tmp/reference.parquet'))}")
+          print(f"Current (drifted) rows: {len(current)}")
+          EOF
+
+      - name: Upload datasets
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-data-uc1
+          path: /tmp/*.parquet
+          retention-days: 1
+
+  drift-detection:
+    name: "Run Drift Detection (UC1)"
+    runs-on: ubuntu-latest
+    needs: generate-data
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install drift detection dependencies
+        run: |
+          pip install --quiet \
+            numpy==1.26.4 \
+            pandas==2.2.2 \
+            pyarrow==16.0.0 \
+            scipy==1.13.0 \
+            evidently==0.4.30 \
+            alibi-detect==0.12.0 \
+            nannyml==0.12.3 \
+            mlflow==2.13.0
+
+      - name: Download datasets
+        uses: actions/download-artifact@v4
+        with:
+          name: synthetic-data-uc1
+          path: /tmp/
+
+      - name: Setup MLflow/DagsHub
+        env:
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+        run: bash scripts/setup-dagshub.sh
+
+      - name: Run drift detection
+        id: drift
+        run: |
+          python3 - <<'PYEOF'
+          import sys, json, os
+          sys.path.insert(0, '.')
+          import pandas as pd
+          from pathlib import Path
+          from services.drift_monitor.src.drift_engine import compute_drift
+
+          reference = pd.read_parquet("/tmp/reference.parquet")
+          current = pd.read_parquet("/tmp/current.parquet")
+
+          print(f"Reference shape: {reference.shape}")
+          print(f"Current shape:   {current.shape}")
+
+          report_dir = Path("services/drift-monitor/reports")
+          report_dir.mkdir(parents=True, exist_ok=True)
+
+          metrics = compute_drift(
+              reference_df=reference,
+              current_df=current,
+              primary_feature="cpu_usage_pct",
+              report_output_dir=report_dir,
+              model_name="pod-failure-prediction",
+          )
+
+          print(f"\n=== UC1 Drift Metrics ===")
+          print(f"  KS statistic:               {metrics.ks_statistic}")
+          print(f"  PSI score:                  {metrics.psi_score}")
+          print(f"  NannyML perf estimate:      {metrics.nannyml_performance_estimate}")
+          print(f"  Alibi LSDD p-value:         {metrics.alibi_lsdd_p_value}")
+          print(f"  Retrain triggered:          {metrics.retrain_triggered}")
+          print(f"  Drifted features:           {metrics.drifted_features}")
+          print(f"  Report:                     {metrics.report_path}")
+
+          # Write metrics for eval gate
+          Path("eval-results").mkdir(exist_ok=True)
+          m = {
+              "ks_statistic": metrics.ks_statistic,
+              "psi_score": metrics.psi_score,
+              "nannyml_performance_estimate": metrics.nannyml_performance_estimate,
+              "alibi_lsdd_p_value": metrics.alibi_lsdd_p_value,
+              "retrain_triggered": metrics.retrain_triggered,
+          }
+          Path("eval-results/uc1_metrics.json").write_text(json.dumps(m, indent=2))
+          print("\nMetrics written to eval-results/uc1_metrics.json")
+          PYEOF
+
+      - name: Log experiment to MLflow
+        env:
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+        run: |
+          python3 - <<'PYEOF'
+          import mlflow, json
+          from pathlib import Path
+
+          metrics = json.loads(Path("eval-results/uc1_metrics.json").read_text())
+
+          with mlflow.start_run(run_name="uc1-drift-detection-ci"):
+              mlflow.log_params({
+                  "primary_feature": "cpu_usage_pct",
+                  "psi_threshold": 0.20,
+                  "ks_threshold": 0.30,
+              })
+              mlflow.log_metrics({
+                  "ks_statistic": metrics["ks_statistic"],
+                  "psi_score": metrics["psi_score"],
+                  "nannyml_performance_estimate": metrics["nannyml_performance_estimate"],
+                  "alibi_lsdd_p_value": metrics["alibi_lsdd_p_value"],
+              })
+              mlflow.set_tags({
+                  "uc": "UC1",
+                  "drift_detected": str(metrics["retrain_triggered"]),
+                  "ci_run": "true",
+              })
+              if Path("services/drift-monitor/reports").exists():
+                  mlflow.log_artifacts("services/drift-monitor/reports", artifact_path="drift-reports")
+
+          print("UC1 experiment logged to MLflow")
+          PYEOF
+
+      - name: Run eval gate (UC1)
+        run: |
+          python3 - <<'PYEOF'
+          import sys, json
+          sys.path.insert(0, '.')
+          from pathlib import Path
+          from eval.scorer import run_eval_gate
+
+          metrics = json.loads(Path("eval-results/uc1_metrics.json").read_text())
+          run_eval_gate("UC1", metrics, Path("eval-results"))
+          PYEOF
+
+      - name: Upload drift report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: drift-reports-uc1
+          path: |
+            services/drift-monitor/reports/*.html
+            eval-results/uc1*.json
+          retention-days: 7
+
+  trigger-retrain:
+    name: "Trigger Airflow Retrain DAG (if drift > threshold)"
+    runs-on: ubuntu-latest
+    needs: drift-detection
+    if: ${{ needs.drift-detection.result == 'success' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download eval results
+        uses: actions/download-artifact@v4
+        with:
+          name: drift-reports-uc1
+          path: eval-results/
+
+      - name: Check if retrain needed
+        id: check
+        run: |
+          python3 - <<'PYEOF'
+          import json
+          from pathlib import Path
+
+          metrics = json.loads(Path("eval-results/uc1_metrics.json").read_text())
+          if metrics.get("retrain_triggered"):
+              print("RETRAIN_NEEDED=true")
+              with open("$GITHUB_OUTPUT" if __import__("os").environ.get("GITHUB_OUTPUT") else "/dev/null", "a") as f:
+                  f.write("retrain_needed=true\n")
+          else:
+              print("RETRAIN_NEEDED=false — PSI below threshold, no retrain required")
+          PYEOF
+
+      - name: Trigger Airflow retrain DAG via REST API
+        if: steps.check.outputs.retrain_needed == 'true'
+        run: |
+          echo "Drift detected: triggering Airflow pod_failure_prediction_retrain DAG"
+          curl -sf -X POST \
+            http://localhost:8080/api/v1/dags/pod_failure_prediction_retrain/dagRuns \
+            -H "Content-Type: application/json" \
+            -u "admin:admin" \
+            -d '{"conf": {"trigger": "uc1_drift_gate", "psi_score": "'"$(cat eval-results/uc1_metrics.json | python3 -c "import sys,json; print(json.load(sys.stdin)['psi_score'])")"'"}}' \
+            || echo "[Airflow] Not running in this job — retrain would be triggered via workflow_dispatch in production"

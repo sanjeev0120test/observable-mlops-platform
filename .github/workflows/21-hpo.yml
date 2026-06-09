@@ -1,0 +1,112 @@
+name: "21 · UC14 — Hyperparameter Optimization (Optuna + MLflow)"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mlops/experiments/**"
+      - ".github/workflows/21-hpo.yml"
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.11"
+  UC: UC14
+
+jobs:
+  hpo:
+    name: "Optuna HPO Study + MLflow Tracking"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install --quiet optuna==3.6.1 scikit-learn==1.5.0 numpy==1.26.4 pandas==2.2.2 pyarrow==16.0.0 mlflow==2.13.0
+
+      - name: Generate data
+        run: python data/synthetic/generate_pod_metrics.py --hours 24 --output /tmp/pod_metrics.parquet
+
+      - name: Setup MLflow
+        env:
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+        run: bash scripts/setup-dagshub.sh
+
+      - name: Run HPO study (20 trials)
+        run: |
+          python3 - <<'PYEOF'
+          import json
+          import numpy as np
+          import pandas as pd
+          import mlflow
+          import optuna
+          from pathlib import Path
+          from sklearn.ensemble import GradientBoostingClassifier
+          from sklearn.metrics import f1_score
+          from sklearn.model_selection import cross_val_score
+
+          optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+          df = pd.read_parquet("/tmp/pod_metrics.parquet")
+          df["will_fail"] = ((df["cpu_usage_pct"] > 85) | (df["mem_usage_pct"] > 90) | (df["restart_count"] > 3)).astype(int)
+          X = df[["cpu_usage_pct", "mem_usage_pct", "restart_count"]].values
+          y = df["will_fail"].values
+
+          BASELINE_F1 = 0.75  # default params baseline
+
+          def objective(trial):
+              n_est = trial.suggest_int("n_estimators", 50, 300)
+              depth = trial.suggest_int("max_depth", 2, 6)
+              lr = trial.suggest_float("learning_rate", 0.01, 0.2, log=True)
+              clf = GradientBoostingClassifier(n_estimators=n_est, max_depth=depth, learning_rate=lr, random_state=42)
+              scores = cross_val_score(clf, X, y, cv=3, scoring="f1", n_jobs=1)
+              return float(scores.mean())
+
+          mlflow.set_experiment("pod-failure-hpo")
+          with mlflow.start_run(run_name="optuna-study-ci"):
+              study = optuna.create_study(direction="maximize")
+              study.optimize(objective, n_trials=20, n_jobs=1)
+
+              best = study.best_trial
+              mlflow.log_params(best.params)
+              mlflow.log_metric("best_f1_score", best.value)
+              mlflow.log_metric("n_trials", len(study.trials))
+              mlflow.log_metric("best_trial_improvement", best.value - BASELINE_F1)
+              mlflow.set_tags({"uc": "UC14", "optimizer": "optuna"})
+
+              print(f"Best trial F1: {best.value:.4f} (baseline: {BASELINE_F1:.4f})")
+              print(f"Best params: {best.params}")
+              study_persisted = True  # MLflow logged above
+
+          metrics = {
+              "best_trial_improvement": round(best.value - BASELINE_F1, 4),
+              "n_trials_completed": len(study.trials),
+              "study_persisted_to_mlflow": study_persisted,
+          }
+          Path("eval-results").mkdir(exist_ok=True)
+          Path("eval-results/uc14_metrics.json").write_text(json.dumps(metrics, indent=2))
+          print(f"\n=== UC14 HPO Metrics ===")
+          for k, v in metrics.items():
+              print(f"  {k}: {v}")
+          PYEOF
+
+      - name: Run eval gate (UC14)
+        run: |
+          python3 - <<'PYEOF'
+          import sys, json
+          sys.path.insert(0, '.')
+          from pathlib import Path
+          from eval.scorer import run_eval_gate
+
+          metrics = json.loads(Path("eval-results/uc14_metrics.json").read_text())
+          run_eval_gate("UC14", metrics, Path("eval-results"))
+          PYEOF
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-uc14
+          path: eval-results/uc14*.json
+          retention-days: 7

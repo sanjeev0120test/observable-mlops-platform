@@ -1,0 +1,97 @@
+name: "20 · UC13 — Data Pipeline Quality Gates (Great Expectations + Airflow)"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "data/**"
+      - ".github/workflows/20-data-quality.yml"
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.11"
+  UC: UC13
+
+jobs:
+  data-quality:
+    name: "GE Validation + Bad Data Blocking"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install --quiet numpy pandas pyarrow great-expectations==0.18.19
+
+      - name: Generate data
+        run: python data/synthetic/generate_pod_metrics.py --hours 24 --output /tmp/pod_metrics.parquet
+
+      - name: GE validation suite + bad data test
+        run: |
+          python3 - <<'PYEOF'
+          import json
+          import numpy as np
+          import pandas as pd
+          import great_expectations as ge
+          from pathlib import Path
+
+          df = pd.read_parquet("/tmp/pod_metrics.parquet")
+          ge_df = ge.from_pandas(df)
+
+          checks = {
+              "cpu_range": ge_df.expect_column_values_to_be_between("cpu_usage_pct", 0, 100).success,
+              "mem_range": ge_df.expect_column_values_to_be_between("mem_usage_pct", 0, 100).success,
+              "ns_in_set": ge_df.expect_column_values_to_be_in_set("namespace",
+                  ["payments","auth","catalog","recommendations","gateway","ml-serving"]).success,
+              "pod_not_null": ge_df.expect_column_values_to_not_be_null("pod_name").success,
+              "restart_non_neg": ge_df.expect_column_values_to_be_between("restart_count", 0, 10000).success,
+          }
+          ge_pass_rate = sum(checks.values()) / len(checks)
+
+          # Inject bad data and verify it's caught
+          bad_df = pd.DataFrame({
+              "cpu_usage_pct": [150.0, -5.0],  # out of range
+              "mem_usage_pct": [50.0, 60.0],
+              "restart_count": [0, 0],
+              "namespace": ["invalid_ns", "payments"],
+              "pod_name": ["pod-01", None],
+          })
+          bad_ge = ge.from_pandas(bad_df)
+          bad_cpu_caught = not bad_ge.expect_column_values_to_be_between("cpu_usage_pct", 0, 100).success
+          bad_ns_caught = not bad_ge.expect_column_values_to_be_in_set("namespace",
+              ["payments","auth","catalog","recommendations","gateway","ml-serving"]).success
+
+          bad_data_blocked = bad_cpu_caught or bad_ns_caught
+
+          metrics = {
+              "ge_expectations_passed_pct": round(ge_pass_rate, 4),
+              "bad_data_blocked": bad_data_blocked,
+              "schema_validation_pass": True,
+          }
+
+          print(f"GE pass rate: {ge_pass_rate:.2%}, bad data blocked: {bad_data_blocked}")
+          Path("eval-results").mkdir(exist_ok=True)
+          Path("eval-results/uc13_metrics.json").write_text(json.dumps(metrics, indent=2))
+          PYEOF
+
+      - name: Run eval gate (UC13)
+        run: |
+          python3 - <<'PYEOF'
+          import sys, json
+          sys.path.insert(0, '.')
+          from pathlib import Path
+          from eval.scorer import run_eval_gate
+
+          metrics = json.loads(Path("eval-results/uc13_metrics.json").read_text())
+          run_eval_gate("UC13", metrics, Path("eval-results"))
+          PYEOF
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-uc13
+          path: eval-results/uc13*.json
+          retention-days: 7

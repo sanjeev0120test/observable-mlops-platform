@@ -1,0 +1,9 @@
+project: platform
+registry: data/feature_store/registry.db
+provider: local
+online_store:
+  type: redis
+  connection_string: "redis://redis:6379:0"
+offline_store:
+  type: file
+entity_key_serialization_version: 2

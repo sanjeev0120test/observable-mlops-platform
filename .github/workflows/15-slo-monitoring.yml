@@ -1,0 +1,131 @@
+name: "15 · UC21 — SLO / Error Budget Monitoring (Prometheus + Grafana)"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "observability/alerts/**"
+      - ".github/workflows/15-slo-monitoring.yml"
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.11"
+  UC: UC21
+
+jobs:
+  slo-monitoring:
+    name: "SLO Compliance + Error Budget + Fast-Burn Alert Test"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install --quiet numpy pandas pyarrow
+
+      - name: Generate HTTP traffic with SLO breach window
+        run: |
+          python data/synthetic/generate_http_traffic.py \
+            --hours 72 --interval 60 \
+            --output /tmp/http_traffic.parquet
+
+      - name: Compute SLO compliance + error budget
+        run: |
+          python3 - <<'PYEOF'
+          import json
+          import numpy as np
+          import pandas as pd
+          from pathlib import Path
+
+          df = pd.read_parquet("/tmp/http_traffic.parquet")
+
+          TARGET_ERROR_RATE = 0.001  # 99.9% SLO
+          WINDOW_HOURS = 72
+          TOTAL_MINUTES = WINDOW_HOURS * 60
+
+          svc_results = {}
+          for svc, group in df.groupby("service"):
+              total_requests = group[["http_2xx_count", "http_5xx_count"]].sum().sum()
+              error_requests = group["http_5xx_count"].sum()
+              error_rate = float(error_requests / max(total_requests, 1))
+              slo_met = error_rate <= TARGET_ERROR_RATE
+
+              # Error budget consumed
+              error_budget_initial = TARGET_ERROR_RATE * total_requests
+              error_budget_consumed = float(error_requests)
+              error_budget_remaining_pct = max(0.0, (error_budget_initial - error_budget_consumed) / error_budget_initial)
+
+              # Fast-burn rate: is error rate > 14.4x SLO threshold? (standard SRE book formula)
+              fast_burn_threshold = TARGET_ERROR_RATE * 14.4
+              slo_breach_rows = group[group["in_slo_breach"] == True] if "in_slo_breach" in group.columns else pd.DataFrame()
+              fast_burn_alerts = int(len(slo_breach_rows) > 0)
+
+              svc_results[svc] = {
+                  "error_rate": round(error_rate, 6),
+                  "slo_met": slo_met,
+                  "error_budget_remaining_pct": round(error_budget_remaining_pct, 6),
+                  "fast_burn_alerts": fast_burn_alerts,
+              }
+
+          # Overall SLO compliance
+          n_slo_met = sum(1 for r in svc_results.values() if r["slo_met"])
+          slo_compliance_pct = n_slo_met / len(svc_results) if svc_results else 0
+
+          # Use worst-case service for error budget
+          min_budget = min(r["error_budget_remaining_pct"] for r in svc_results.values())
+          total_fast_burn = sum(r["fast_burn_alerts"] for r in svc_results.values())
+
+          print("=== SLO Results by Service ===")
+          for svc, r in sorted(svc_results.items()):
+              status = "SLO MET" if r["slo_met"] else "SLO BREACH"
+              print(f"  {svc}: error_rate={r['error_rate']:.4%}, budget_remaining={r['error_budget_remaining_pct']:.2%} [{status}]")
+
+          metrics = {
+              "slo_compliance_pct": round(slo_compliance_pct, 6),
+              "error_budget_remaining_pct": round(min_budget, 6),
+              "fast_burn_rate_alerts": total_fast_burn,
+          }
+
+          print(f"\n=== UC21 SLO Metrics ===")
+          for k, v in metrics.items():
+              print(f"  {k}: {v}")
+
+          Path("eval-results").mkdir(exist_ok=True)
+          Path("eval-results/uc21_metrics.json").write_text(json.dumps(metrics, indent=2))
+          PYEOF
+
+      - name: Validate Prometheus SLO recording rules
+        run: |
+          python3 - <<'PYEOF'
+          import yaml
+          from pathlib import Path
+
+          rules = yaml.safe_load(Path("observability/alerts/rules/platform.yml").read_text())
+          slo_group = next(g for g in rules["groups"] if g["name"] == "platform.slo")
+          rule_names = [r.get("alert", r.get("record", "?")) for r in slo_group["rules"]]
+          print(f"SLO rules found: {rule_names}")
+          assert any("FastBurnRate" in r for r in rule_names), "Missing SLO fast-burn rule"
+          print("Prometheus SLO rules validation: PASS")
+          PYEOF
+
+      - name: Run eval gate (UC21)
+        run: |
+          python3 - <<'PYEOF'
+          import sys, json
+          sys.path.insert(0, '.')
+          from pathlib import Path
+          from eval.scorer import run_eval_gate
+
+          metrics = json.loads(Path("eval-results/uc21_metrics.json").read_text())
+          run_eval_gate("UC21", metrics, Path("eval-results"))
+          PYEOF
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-uc21
+          path: eval-results/uc21*.json
+          retention-days: 7

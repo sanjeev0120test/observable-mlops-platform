@@ -1,0 +1,106 @@
+name: "23 · UC17 — Model Explainability + Audit (SHAP + MLflow)"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/23-explainability.yml"
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.11"
+  UC: UC17
+
+jobs:
+  explainability:
+    name: "SHAP Explainability + MLflow Audit Log"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install --quiet shap==0.45.0 scikit-learn==1.5.0 numpy==1.26.4 pandas==2.2.2 pyarrow mlflow==2.13.0
+
+      - name: Generate data + train model + compute SHAP
+        run: |
+          python data/synthetic/generate_pod_metrics.py --hours 24 --output /tmp/pod_metrics.parquet
+
+      - name: Setup MLflow
+        env:
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+        run: bash scripts/setup-dagshub.sh
+
+      - name: Compute SHAP values + log to MLflow
+        run: |
+          python3 - <<'PYEOF'
+          import json
+          import shap
+          import numpy as np
+          import pandas as pd
+          import mlflow
+          from pathlib import Path
+          from sklearn.ensemble import GradientBoostingClassifier
+
+          df = pd.read_parquet("/tmp/pod_metrics.parquet")
+          df["will_fail"] = ((df["cpu_usage_pct"] > 85) | (df["mem_usage_pct"] > 90) | (df["restart_count"] > 3)).astype(int)
+
+          FEATURE_COLS = ["cpu_usage_pct", "mem_usage_pct", "restart_count"]
+          X = df[FEATURE_COLS].values
+          y = df["will_fail"].values
+
+          clf = GradientBoostingClassifier(n_estimators=100, max_depth=4, random_state=42)
+          clf.fit(X, y)
+
+          # Compute SHAP values on sample
+          X_sample = X[:200]
+          explainer = shap.TreeExplainer(clf)
+          shap_values = explainer.shap_values(X_sample)
+
+          importance = {col: float(np.abs(shap_values[:, i]).mean()) for i, col in enumerate(FEATURE_COLS)}
+          top_features = sorted(importance.items(), key=lambda x: -x[1])
+
+          print("SHAP feature importance:")
+          for feat, val in top_features:
+              print(f"  {feat}: {val:.4f}")
+
+          mlflow.set_experiment("model-explainability")
+          with mlflow.start_run(run_name="uc17-shap-ci"):
+              mlflow.log_dict(importance, "shap_importance.json")
+              mlflow.log_metric("n_explained_predictions", len(X_sample))
+              mlflow.set_tags({"uc": "UC17", "explainability_method": "SHAP-TreeExplainer"})
+
+          explanation_coverage = len(X_sample) / len(X)
+          metrics = {
+              "shap_values_generated": True,
+              "top_features_logged": len(importance),
+              "explanation_coverage_pct": round(explanation_coverage, 4),
+          }
+          Path("eval-results").mkdir(exist_ok=True)
+          Path("eval-results/uc17_metrics.json").write_text(json.dumps(metrics, indent=2))
+          print(f"\n=== UC17 Explainability Metrics ===")
+          for k, v in metrics.items():
+              print(f"  {k}: {v}")
+          PYEOF
+
+      - name: Run eval gate (UC17)
+        run: |
+          python3 - <<'PYEOF'
+          import sys, json
+          sys.path.insert(0, '.')
+          from pathlib import Path
+          from eval.scorer import run_eval_gate
+
+          metrics = json.loads(Path("eval-results/uc17_metrics.json").read_text())
+          run_eval_gate("UC17", metrics, Path("eval-results"))
+          PYEOF
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-uc17
+          path: eval-results/uc17*.json
+          retention-days: 7

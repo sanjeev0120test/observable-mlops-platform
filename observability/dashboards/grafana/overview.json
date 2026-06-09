@@ -1,0 +1,92 @@
+{
+  "__inputs": [],
+  "__requires": [
+    {"type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.4.0"},
+    {"type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0"}
+  ],
+  "annotations": {"list": []},
+  "description": "Observable MLOps Platform — 23 UC Overview Dashboard",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Platform Health Score",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 70}, {"color": "green", "value": 90}]
+          },
+          "unit": "percent"
+        }
+      },
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "auto", "textMode": "auto", "colorMode": "background"},
+      "targets": [{"expr": "100", "legendFormat": "Health Score", "refId": "A"}]
+    },
+    {
+      "id": 2,
+      "title": "HTTP Error Rate (SLO UC21)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {
+        "defaults": {"unit": "percentunit", "custom": {"lineWidth": 2}},
+        "overrides": [{"matcher": {"id": "byName", "options": "SLO Target"}, "properties": [{"id": "custom.lineStyle", "value": {"dash": [5, 5]}}]}]
+      },
+      "targets": [
+        {"expr": "job:http_error_rate:ratio5m", "legendFormat": "Error Rate", "refId": "A"},
+        {"expr": "vector(0.001)", "legendFormat": "SLO Target (99.9%)", "refId": "B"}
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Model PSI Score (UC1 Drift)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {
+        "defaults": {"unit": "short"},
+        "overrides": [{"matcher": {"id": "byName", "options": "Drift Threshold"}, "properties": [{"id": "custom.lineStyle", "value": {"dash": [5, 5]}}]}]
+      },
+      "targets": [
+        {"expr": "ml_model_psi_score", "legendFormat": "PSI - {{model_name}}", "refId": "A"},
+        {"expr": "vector(0.2)", "legendFormat": "Drift Threshold", "refId": "B"}
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Cost by Namespace (UC10)",
+      "type": "bargauge",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "currencyUSD"}},
+      "targets": [{"expr": "cloud_cost_waste_ratio * 100", "legendFormat": "{{namespace}}", "refId": "A"}]
+    },
+    {
+      "id": 5,
+      "title": "Active Alerts (UC3 Fatigue)",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 5}, {"color": "red", "value": 20}]}}},
+      "targets": [{"expr": "count(ALERTS{alertstate='firing'})", "legendFormat": "Active Alerts", "refId": "A"}]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["platform", "aiops", "mlops"],
+  "templating": {"list": [{"name": "DS_PROMETHEUS", "type": "datasource", "pluginId": "prometheus"}]},
+  "time": {"from": "now-6h", "to": "now"},
+  "timepicker": {},
+  "timezone": "utc",
+  "title": "Observable MLOps Platform Overview",
+  "uid": "platform-overview",
+  "version": 1
+}

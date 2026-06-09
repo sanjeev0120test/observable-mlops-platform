@@ -1,0 +1,113 @@
+name: "06 · UC3 — Alert Correlation & Fatigue Reduction (DBSCAN)"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "services/alert-correlator/**"
+      - ".github/workflows/06-alert-correlation.yml"
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.11"
+  UC: UC3
+
+jobs:
+  alert-correlation:
+    name: "DBSCAN Alert Clustering + Eval Gate"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install --quiet \
+            numpy==1.26.4 \
+            pandas==2.2.2 \
+            pyarrow==16.0.0 \
+            scikit-learn==1.5.0 \
+            mlflow==2.13.0
+
+      - name: Generate alert dataset
+        run: |
+          python data/synthetic/generate_alerts.py \
+            --hours 24 \
+            --incidents-per-hour 3.0 \
+            --output /tmp/alerts.parquet
+
+      - name: Setup MLflow
+        env:
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+        run: bash scripts/setup-dagshub.sh
+
+      - name: Run alert correlation
+        run: |
+          python3 - <<'PYEOF'
+          import sys, json
+          sys.path.insert(0, '.')
+          import pandas as pd
+          from pathlib import Path
+          from services.alert_correlator.src.correlator import correlate_alerts
+
+          alerts = pd.read_parquet("/tmp/alerts.parquet")
+          print(f"Total alerts: {len(alerts)}, root alerts: {alerts['is_root'].sum()}")
+          print(f"Ground truth duplicate rate: {alerts['is_duplicate'].mean():.2%}")
+
+          result = correlate_alerts(alerts, eps=0.15, min_samples=2)
+
+          metrics = {
+              "deduplication_rate": result.deduplication_rate,
+              "silhouette_score": result.silhouette_score,
+              "false_positive_rate": result.false_positive_rate,
+          }
+
+          print(f"\n=== UC3 Alert Correlation Metrics ===")
+          for k, v in metrics.items():
+              print(f"  {k}: {v}")
+          print(f"  Clusters: {result.n_clusters}")
+          print(f"  Top groups: {result.root_cause_groups[:3]}")
+
+          Path("eval-results").mkdir(exist_ok=True)
+          Path("eval-results/uc3_metrics.json").write_text(json.dumps(metrics, indent=2))
+          PYEOF
+
+      - name: Log to MLflow
+        env:
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+        run: |
+          python3 - <<'PYEOF'
+          import mlflow, json
+          from pathlib import Path
+
+          metrics = json.loads(Path("eval-results/uc3_metrics.json").read_text())
+          mlflow.set_experiment("alert-correlation")
+          with mlflow.start_run(run_name="uc3-dbscan-ci"):
+              mlflow.log_params({"algorithm": "DBSCAN", "eps": 0.15, "min_samples": 2})
+              mlflow.log_metrics(metrics)
+              mlflow.set_tags({"uc": "UC3", "ci_run": "true"})
+          PYEOF
+
+      - name: Run eval gate (UC3)
+        run: |
+          python3 - <<'PYEOF'
+          import sys, json
+          sys.path.insert(0, '.')
+          from pathlib import Path
+          from eval.scorer import run_eval_gate
+
+          metrics = json.loads(Path("eval-results/uc3_metrics.json").read_text())
+          run_eval_gate("UC3", metrics, Path("eval-results"))
+          PYEOF
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-uc3
+          path: eval-results/uc3*.json
+          retention-days: 7

@@ -1,0 +1,134 @@
+name: "11 · UC10 — Cloud Cost Anomaly Detection + Attribution (IsolationForest)"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "services/cost-optimizer/**"
+      - ".github/workflows/11-cost-optimizer.yml"
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.11"
+  UC: UC10
+
+jobs:
+  cost-anomaly:
+    name: "IsolationForest Cost Anomaly Detection"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install --quiet \
+            scikit-learn==1.5.0 \
+            numpy==1.26.4 \
+            pandas==2.2.2 \
+            pyarrow==16.0.0 \
+            mlflow==2.13.0
+
+      - name: Generate cost data
+        run: |
+          python data/synthetic/generate_cost_data.py \
+            --days 30 --anomaly-rate 0.04 \
+            --output data/synthetic/cost_data.parquet
+
+      - name: Setup MLflow
+        env:
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+        run: bash scripts/setup-dagshub.sh
+
+      - name: Train IsolationForest + Evaluate
+        run: |
+          python3 - <<'PYEOF'
+          import sys, json
+          sys.path.insert(0, '.')
+          import numpy as np
+          import pandas as pd
+          import mlflow
+          import mlflow.sklearn
+          from pathlib import Path
+          from sklearn.ensemble import IsolationForest
+          from sklearn.metrics import f1_score, precision_score, recall_score
+          from sklearn.preprocessing import StandardScaler
+
+          df = pd.read_parquet("data/synthetic/cost_data.parquet")
+          feature_cols = ["cpu_requested", "cpu_actual", "mem_requested_gi", "mem_actual_gi",
+                          "hourly_cost_usd", "waste_ratio"]
+
+          X = df[feature_cols].values
+          y_true = df["is_anomaly"].astype(int).values
+
+          scaler = StandardScaler()
+          X_scaled = scaler.fit_transform(X)
+
+          mlflow.set_experiment("cost-anomaly-detection")
+          with mlflow.start_run(run_name="isolation-forest-ci"):
+              clf = IsolationForest(contamination=0.04, random_state=42, n_estimators=100)
+              clf.fit(X_scaled)
+
+              # -1 = anomaly, 1 = normal
+              y_pred_raw = clf.predict(X_scaled)
+              y_pred = (y_pred_raw == -1).astype(int)
+
+              f1 = float(f1_score(y_true, y_pred, zero_division=0))
+              prec = float(precision_score(y_true, y_pred, zero_division=0))
+              rec = float(recall_score(y_true, y_pred, zero_division=0))
+
+              mlflow.log_params({"contamination": 0.04, "n_estimators": 100})
+              mlflow.log_metrics({"f1_score": f1, "precision": prec, "recall": rec})
+              mlflow.set_tags({"uc": "UC10", "algorithm": "IsolationForest"})
+              mlflow.sklearn.log_model(clf, "model", registered_model_name="cost-anomaly-detector")
+
+          # Attribution: what % of cost is attributed to a team?
+          df["predicted_anomaly"] = y_pred
+          ns_coverage = df["namespace"].nunique() / df["namespace"].nunique()  # 100% if all namespaces labeled
+          attribution_coverage = float(df.groupby("namespace")["team_label"].nunique().eq(1).mean())
+
+          # Idle resource identification
+          anomaly_rows = df[y_pred == 1]
+          high_waste_anomalies = anomaly_rows[anomaly_rows["waste_ratio"] > 0.40]
+          idle_pct = len(high_waste_anomalies) / max(len(anomaly_rows), 1)
+
+          metrics = {
+              "anomaly_detection_f1": round(f1, 4),
+              "idle_resource_pct_identified": round(idle_pct, 4),
+              "namespace_attribution_coverage": round(attribution_coverage, 4),
+          }
+
+          print(f"\n=== UC10 Cost Anomaly Metrics ===")
+          for k, v in metrics.items():
+              print(f"  {k}: {v}")
+
+          top_waste = df.groupby("namespace")["waste_ratio"].mean().sort_values(ascending=False)
+          print(f"\n  Top waste namespaces: {top_waste.head(3).to_dict()}")
+
+          Path("eval-results").mkdir(exist_ok=True)
+          Path("eval-results/uc10_metrics.json").write_text(json.dumps(metrics, indent=2))
+          PYEOF
+
+      - name: Run eval gate (UC10)
+        run: |
+          python3 - <<'PYEOF'
+          import sys, json
+          sys.path.insert(0, '.')
+          from pathlib import Path
+          from eval.scorer import run_eval_gate
+
+          metrics = json.loads(Path("eval-results/uc10_metrics.json").read_text())
+          run_eval_gate("UC10", metrics, Path("eval-results"))
+          PYEOF
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-uc10
+          path: eval-results/uc10*.json
+          retention-days: 7
