@@ -104,20 +104,24 @@ def correlate_alerts(
             except Exception:
                 pass
 
-    # False positive rate: root alerts marked as duplicates (incorrectly suppressed)
+    # False positive rate: root alerts incorrectly grouped as duplicates (suppressed)
+    # Denominator = total root alerts, rate is clamped to [0, 1].
     false_positives = 0
+    n_root_alerts = 0
     if "is_root" in alerts_df.columns and "root_cause_id" in alerts_df.columns:
         alerts_df = alerts_df.copy()
         alerts_df["cluster"] = labels
         for rc_id, group in alerts_df.groupby("root_cause_id"):
-            root_rows = group[group.get("is_root", pd.Series([False] * len(group))) == True]
+            root_rows = group[group["is_root"] == True]  # noqa: E712
+            n_root_alerts += len(root_rows)
             if not root_rows.empty:
                 root_cluster = root_rows.iloc[0]["cluster"]
                 if root_cluster != -1:
                     cluster_members = alerts_df[alerts_df["cluster"] == root_cluster]
                     if len(cluster_members) > 1:
                         false_positives += 1
-    false_positive_rate = false_positives / max(n_clusters, 1)
+    denom = max(n_root_alerts, n_clusters, 1)
+    false_positive_rate = min(1.0, false_positives / denom)
 
     # Build root cause groups
     groups = []
