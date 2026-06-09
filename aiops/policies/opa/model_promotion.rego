@@ -1,6 +1,8 @@
 package platform.model_promotion
 
-import rego.v1
+import future.keywords.contains
+import future.keywords.if
+import future.keywords.in
 
 # OPA policy: Only allow model promotion to production if all quality gates pass.
 # Called by UC9 (experiment tracking + serving) before KServe InferenceService is updated.
@@ -20,7 +22,7 @@ import rego.v1
 #   }
 
 default allow := false
-default deny_reasons := set()
+default deny_reasons := []
 
 # Promotion is allowed only when no deny reasons exist
 allow if {

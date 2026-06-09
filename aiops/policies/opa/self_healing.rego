@@ -1,6 +1,8 @@
 package platform.self_healing
 
-import rego.v1
+import future.keywords.contains
+import future.keywords.if
+import future.keywords.in
 
 # OPA policy: Gate every autonomous remediation action.
 # Called by the self-healing service (UC6) before executing any kubectl/API action.
@@ -14,7 +16,7 @@ import rego.v1
 #   }
 
 default allow := false
-default deny_reasons := set()
+default deny_reasons := []
 
 allow if {
     count(deny_reasons) == 0

@@ -22,11 +22,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install OPA
-        run: |
-          curl -L -o /usr/local/bin/opa \
-            https://github.com/open-policy-agent/opa/releases/download/v0.65.0/opa_linux_amd64_static
-          chmod +x /usr/local/bin/opa
-          opa version
+        uses: open-policy-agent/setup-opa@v2
+        with:
+          version: v0.65.0
 
       - name: Test model_promotion policy
         run: |
@@ -46,9 +44,9 @@ jobs:
             }
           }
           EOF
-          RESULT=$(opa eval --v1-compatible -d aiops/policies/opa/model_promotion.rego \
+          RESULT=$(opa eval -d aiops/policies/opa/model_promotion.rego \
             -i /tmp/test_model_promotion.json \
-            'data.platform.model_promotion.allow')
+            'data.platform.model_promotion.allow' 2>&1) || { echo "OPA ERROR: $RESULT"; exit 2; }
           echo "OPA model_promotion allow result: $RESULT"
           echo "$RESULT" | python3 -c "import sys,json; r=json.load(sys.stdin); assert r['result'][0]['expressions'][0]['value'] == True, f'Expected allow=true, got: {r}'"
           echo "OPA model promotion policy (allow case): PASS"
@@ -65,9 +63,9 @@ jobs:
             }
           }
           EOF
-          RESULT=$(opa eval --v1-compatible -d aiops/policies/opa/self_healing.rego \
+          RESULT=$(opa eval -d aiops/policies/opa/self_healing.rego \
             -i /tmp/test_self_healing_allow.json \
-            'data.platform.self_healing.allow')
+            'data.platform.self_healing.allow' 2>&1) || { echo "OPA ERROR: $RESULT"; exit 2; }
           echo "$RESULT" | python3 -c "import sys,json; r=json.load(sys.stdin); assert r['result'][0]['expressions'][0]['value'] == True, f'Expected allow=true: {r}'"
           echo "OPA self_healing allow (restart_pod + CrashLoop): PASS"
 
@@ -83,9 +81,9 @@ jobs:
             }
           }
           EOF
-          RESULT=$(opa eval --v1-compatible -d aiops/policies/opa/self_healing.rego \
+          RESULT=$(opa eval -d aiops/policies/opa/self_healing.rego \
             -i /tmp/test_self_healing_deny.json \
-            'data.platform.self_healing.allow')
+            'data.platform.self_healing.allow' 2>&1) || { echo "OPA ERROR: $RESULT"; exit 2; }
           echo "$RESULT" | python3 -c "import sys,json; r=json.load(sys.stdin); assert r['result'][0]['expressions'][0]['value'] == False, f'Expected allow=false for kube-system: {r}'"
           echo "OPA self_healing deny (protected namespace): PASS"
 
