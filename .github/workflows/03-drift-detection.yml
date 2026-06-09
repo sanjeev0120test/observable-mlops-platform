@@ -85,7 +85,7 @@ jobs:
             scipy==1.13.0 \
             evidently==0.4.30 \
             alibi-detect==0.12.0 \
-            nannyml==0.12.3 \
+            nannyml==0.13.1 \
             mlflow==2.13.0
 
       - name: Download datasets
@@ -104,10 +104,10 @@ jobs:
         run: |
           python3 - <<'PYEOF'
           import sys, json, os
-          sys.path.insert(0, '.')
+          sys.path.insert(0, 'services/drift-monitor/src')
           import pandas as pd
           from pathlib import Path
-          from services.drift_monitor.src.drift_engine import compute_drift
+          from drift_engine import compute_drift
 
           reference = pd.read_parquet("/tmp/reference.parquet")
           current = pd.read_parquet("/tmp/current.parquet")

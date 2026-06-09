@@ -50,10 +50,10 @@ jobs:
         run: |
           python3 - <<'PYEOF'
           import sys, json
-          sys.path.insert(0, '.')
+          sys.path.insert(0, 'services/alert-correlator/src')
           import pandas as pd
           from pathlib import Path
-          from services.alert_correlator.src.correlator import correlate_alerts
+          from correlator import correlate_alerts
 
           alerts = pd.read_parquet("/tmp/alerts.parquet")
           print(f"Total alerts: {len(alerts)}, root alerts: {alerts['is_root'].sum()}")

@@ -112,7 +112,8 @@ jobs:
               candidate_run_id = run_cand.info.run_id
 
           # Drift score on holdout (non-drifted portion)
-          from services.drift_monitor.src.drift_engine import compute_drift
+          sys.path.insert(0, 'services/drift-monitor/src')
+          from drift_engine import compute_drift
           ref = df[~df["is_drifted"]].head(500)
           cur = df[~df["is_drifted"]].tail(200)
           drift = compute_drift(ref, cur, report_output_dir=Path("/tmp"))
