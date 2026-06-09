@@ -144,6 +144,49 @@ jobs:
           echo "Prometheus rule groups loaded: $RULES"
           [ "$RULES" -gt 0 ] || { echo "No rule groups loaded"; exit 1; }
 
+      - name: Validate critical UC observability coverage (alerts + routing)
+        run: |
+          pip install pyyaml --quiet
+          python3 - <<'PYEOF'
+          import yaml
+          from pathlib import Path
+
+          rules = yaml.safe_load(Path("observability/alerts/rules/platform.yml").read_text())
+          am = yaml.safe_load(Path("observability/alerts/alertmanager.yml").read_text())
+
+          uc_from_rules = set()
+          alert_names = []
+          for group in rules["groups"]:
+              for rule in group["rules"]:
+                  if "alert" in rule:
+                      alert_names.append(rule["alert"])
+                      uc = rule.get("labels", {}).get("uc")
+                      if uc:
+                          uc_from_rules.add(uc)
+
+          critical_ucs = {"UC1", "UC2", "UC4", "UC10", "UC21"}
+          missing = critical_ucs - uc_from_rules
+          assert not missing, f"Missing Prometheus alert uc: labels for {missing}"
+
+          required_alerts = {
+              "MLModelDriftDetected", "PodCrashLoopBackOff",
+              "HighCPUPreScale", "IdleResourceWaste", "SLOFastBurnRate",
+          }
+          assert required_alerts.issubset(set(alert_names)), \
+              f"Missing alerts: {required_alerts - set(alert_names)}"
+
+          routes = str(am.get("route", {}))
+          assert "UC6" in routes, "Alertmanager missing UC6 self-healing route"
+          assert "UC23" in routes, "Alertmanager missing UC23 post-mortem route"
+
+          otel = Path("observability/otel/otelcol.yml").read_text()
+          for exporter in ("otlp/tempo", "loki", "prometheusremotewrite"):
+              assert exporter in otel, f"OTEL missing exporter: {exporter}"
+
+          print(f"Prometheus alerts cover UCs: {sorted(uc_from_rules)}")
+          print("Critical UC observability coverage: PASS")
+          PYEOF
+
       - name: Emit platform metrics to Prometheus
         run: |
           pip install prometheus-client --quiet

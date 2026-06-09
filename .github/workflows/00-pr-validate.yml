@@ -252,3 +252,39 @@ jobs:
           COUNT=$(ls .github/workflows/*.yml | wc -l)
           echo ""
           echo "Total workflow files: $COUNT"
+          [ "$COUNT" -ge 26 ] || { echo "Expected at least 26 workflow files"; exit 1; }
+
+  observability-coverage-check:
+    name: "Observability UC Coverage (static)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install pyyaml --quiet
+      - name: Verify alert rules, OTEL pipelines, and Grafana UC panels
+        run: |
+          python3 - <<'PYEOF'
+          import json, yaml
+          from pathlib import Path
+
+          rules = yaml.safe_load(Path("observability/alerts/rules/platform.yml").read_text())
+          uc_labels = {
+              rule.get("labels", {}).get("uc")
+              for group in rules["groups"]
+              for rule in group["rules"]
+              if "alert" in rule and rule.get("labels", {}).get("uc")
+          }
+          critical = {"UC1", "UC2", "UC4", "UC10", "UC21"}
+          assert critical.issubset(uc_labels), f"Missing critical UC alerts: {critical - uc_labels}"
+
+          otel = Path("observability/otel/otelcol.yml").read_text()
+          for pipe in ("traces", "metrics", "logs"):
+              assert pipe in otel, f"OTEL missing pipeline: {pipe}"
+
+          dash = json.loads(Path("observability/dashboards/grafana/overview.json").read_text())
+          titles = " ".join(p.get("title", "") for p in dash.get("panels", []))
+          for uc in ("UC21", "UC1", "UC10", "UC3"):
+              assert uc in titles, f"Grafana overview missing panel for {uc}"
+
+          print(f"Alert rules tagged for UCs: {sorted(uc_labels)}")
+          print("Observability static coverage: PASS")
+          PYEOF
