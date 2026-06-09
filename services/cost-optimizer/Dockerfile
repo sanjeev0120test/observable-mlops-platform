@@ -7,7 +7,7 @@ RUN pip install --no-cache-dir \
     uvicorn[standard]==0.30.1 \
     numpy==1.26.4 \
     pandas==2.2.2 \
-    pyarrow==16.0.0 \
+    pyarrow==15.0.2 \
     scikit-learn==1.5.0 \
     mlflow==2.13.0 \
     httpx==0.27.0 \
