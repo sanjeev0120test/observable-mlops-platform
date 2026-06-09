@@ -3,6 +3,8 @@ name: "90 · E2E Integration — All 23 UC Eval Results Aggregation"
 on:
   workflow_run:
     workflows:
+      - "01 · Observability Stack (Prometheus + Grafana + Loki + Tempo + OTEL)"
+      - "02 · Data Pipeline (DVC + Synthetic Data + Great Expectations)"
       - "03 · UC1 — Drift Detection + Auto-Retraining (Evidently + NannyML + Alibi)"
       - "04 · UC2 — Log Anomaly Detection (PyTorch LSTM + Qdrant)"
       - "05 · UC5 — Feature Store + Training-Serving Skew (Feast + GE + Evidently)"
@@ -13,6 +15,17 @@ on:
       - "10 · UC9/UC22 — Experiment Tracking + Registry + Canary Serving + A/B Test"
       - "11 · UC10 — Cloud Cost Anomaly Detection + Attribution (IsolationForest)"
       - "13 · UC7 — Security Policy Enforcement (Trivy + Falco + Kyverno + OPA)"
+      - "14 · UC15 — DORA Metrics Dashboard (4 Keys from GHA Events)"
+      - "15 · UC21 — SLO / Error Budget Monitoring (Prometheus + Grafana)"
+      - "18 · UC11 — Distributed Tracing + RCA (OTEL + Tempo)"
+      - "19 · UC12 — GitOps Compliance Drift (Kyverno + OPA)"
+      - "20 · UC13 — Data Pipeline Quality Gates (Great Expectations + Airflow)"
+      - "21 · UC14 — Hyperparameter Optimization (Optuna + MLflow)"
+      - "22 · UC16 — Intelligent Error Classification (sklearn + sentence-transformers)"
+      - "23 · UC17 — Model Explainability + Audit (SHAP + MLflow)"
+      - "24 · UC18 — Predictive Rate Limiting (Redis + sklearn)"
+      - "25 · UC19 — Feature Monitoring (WhyLogs + WhyLabs opt-in)"
+      - "26 · UC20 — Backstage Service Catalog Validation"
     types: [completed]
   workflow_dispatch:
 
@@ -38,7 +51,7 @@ jobs:
         with:
           path: eval-results/
           merge-multiple: true
-        continue-on-error: true  # Some artifacts may not exist yet
+        continue-on-error: true
 
       - name: Aggregate all UC results
         run: |
@@ -47,12 +60,15 @@ jobs:
           sys.path.insert(0, '.')
           from pathlib import Path
           from eval.scorer import aggregate_all_results
+          from eval.metrics import THRESHOLDS
 
-          # Look for result files
           eval_dir = Path("eval-results")
           eval_dir.mkdir(exist_ok=True)
 
           summary = aggregate_all_results(eval_dir)
+          expected = {f"UC{i}" for i in range(1, 24)}
+          found = set(summary["ucs"].keys())
+          missing = sorted(expected - found)
 
           print("=" * 60)
           print("  PLATFORM EVAL SUMMARY — All 23 Use Cases")
@@ -64,15 +80,23 @@ jobs:
               status = "PASS" if r["passed"] else "FAIL"
               print(f"  {status}  {uc}  score={r['score']:.1f}  threshold={r['threshold']}")
 
-          Path("eval-results/summary.json").write_text(json.dumps(summary, indent=2))
+          if missing:
+              print(f"\n  Not yet evaluated ({len(missing)}): {', '.join(missing)}")
+              print("  Run: bash scripts/run-all-workflows.sh  (or dispatch missing workflows manually)")
+
+          Path("eval-results/summary.json").write_text(json.dumps({
+              **summary,
+              "expected_total": len(expected),
+              "missing_ucs": missing,
+          }, indent=2))
 
           if summary["total"] > 0:
               pass_rate = summary["passed"] / summary["total"]
               print(f"\n  Overall pass rate: {pass_rate:.0%}")
               if pass_rate < 1.0:
-                  print(f"\n  WARNING: {summary['failed']} UC(s) failing — see individual reports above")
+                  print(f"  WARNING: {summary['failed']} UC(s) failing")
           else:
-              print("  No eval results found yet — run individual UC workflows first")
+              print("  No eval results found — run individual UC workflows first")
           PYEOF
 
       - uses: actions/upload-artifact@v4
