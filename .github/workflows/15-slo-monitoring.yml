@@ -24,7 +24,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-      - run: pip install --quiet numpy pandas pyarrow
+      - run: pip install --quiet numpy pandas pyarrow pyyaml
 
       - name: Generate HTTP traffic with SLO breach window
         run: |

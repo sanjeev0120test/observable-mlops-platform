@@ -47,6 +47,11 @@ exporters:
     verbosity: basic
 
 service:
+  telemetry:
+    metrics:
+      address: "0.0.0.0:8889"   # expose OTEL collector's own metrics on the mapped port
+    logs:
+      level: warn
   pipelines:
     traces:
       receivers: [otlp]

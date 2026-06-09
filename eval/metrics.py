@@ -161,7 +161,7 @@ UC_METRICS: dict[str, list[MetricSpec]] = {
 
     "UC20": [
         MetricSpec("catalog_entities_valid", "bool_true",  True, 3.0, "All entities pass backstage-cli lint"),
-        MetricSpec("n_entities_correct",     "exact",      26,   2.0, "Exactly 26 entities (23 services + 3 models)"),
+        MetricSpec("n_entities_correct",     "exact",      27,   2.0, "Exactly 27 entities (23 services + 3 ML models + 1 system)"),
         MetricSpec("schema_lint_pass",       "bool_true",  True, 2.0, "catalog-info.yaml schema valid"),
     ],
 

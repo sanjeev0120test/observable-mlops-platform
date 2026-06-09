@@ -58,7 +58,7 @@ jobs:
           n_entities = len(entities)
           print(f"All {n_entities} entities valid")
 
-          # Expect exactly 26 entities (23 UC services + 3 ML models + 1 system)
+          # Expect exactly 27 entities (23 UC services + 3 ML models + 1 system)
           catalog_entities_valid = len(errors) == 0
           schema_lint_pass = catalog_entities_valid
           n_entities_correct = n_entities  # use actual count for scoring

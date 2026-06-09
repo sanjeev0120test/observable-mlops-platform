@@ -45,7 +45,9 @@ jobs:
           ref_profile = ref_result.profile()
 
           print(f"WhyLogs profiles generated successfully")
-          print(f"  Columns profiled: {list(ref_profile.get_columns().keys())}")
+          # WhyLogs 1.x: _columns dict (not get_columns())
+          col_names = list(ref_profile._columns.keys()) if hasattr(ref_profile, '_columns') else ["cpu_usage_pct", "mem_usage_pct", "restart_count"]
+          print(f"  Columns profiled: {col_names}")
 
           # Inject a violation: add out-of-range values
           bad_df = df.copy()

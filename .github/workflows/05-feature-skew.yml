@@ -63,7 +63,7 @@ jobs:
 
       - name: Feast apply (register feature definitions)
         run: |
-          mkdir -p data/feature_store
+          mkdir -p mlops/feature-store/feature_repo/data/feature_store
           cd mlops/feature-store/feature_repo
           # Update feature_store.yaml for CI (file-based offline, redis online)
           sed -i 's|connection_string: "redis://redis:6379:0"|connection_string: "redis://localhost:6379:0"|' feature_store.yaml

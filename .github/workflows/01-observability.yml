@@ -74,13 +74,21 @@ jobs:
 
       - name: Wait for OTEL Collector
         run: |
-          for i in $(seq 1 15); do
-            if curl -sf http://localhost:8889/metrics | grep -q "otelcol"; then
-              echo "OTEL Collector ready"
+          echo "OTEL Collector depends on Tempo+Loki+Prometheus — allowing extra startup time..."
+          sleep 15
+          for i in $(seq 1 24); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8889/metrics 2>/dev/null || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "OTEL Collector metrics endpoint ready (HTTP $STATUS)"
               break
             fi
+            echo "  Attempt $i/24: HTTP $STATUS — waiting 5s..."
             sleep 5
-            if [ $i -eq 15 ]; then echo "OTEL Collector timeout" && exit 1; fi
+            if [ $i -eq 24 ]; then
+              echo "OTEL Collector timeout — dumping container logs:"
+              docker compose -f ${{ env.COMPOSE_FILE }} logs otel-collector --tail=30
+              exit 1
+            fi
           done
 
       - name: Validate Prometheus datasource in Grafana
