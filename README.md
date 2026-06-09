@@ -437,7 +437,7 @@ flowchart LR
 
 | Approach | Pros | Cons | This repo |
 |---|---|---|---|
-| **RAG** | Updatable KB, cite sources, no GPU retrain | Retrieval quality matters | ✅ UC8, UC23 |
+| **RAG** | Updatable KB, cite sources, no GPU retrain | Retrieval quality matters | Yes (UC8, UC23) |
 | **Fine-tuning** | Style/domain baked in | Expensive, stale, hard to audit | Not in CI scope |
 | **Prompt only** | Zero infra | Hallucinates ops steps | Insufficient for incidents |
 
@@ -693,7 +693,7 @@ This README is organized **top-down** — from executive intent to implementatio
 ```mermaid
 flowchart TB
     subgraph L0["Level 0 — Business Outcomes"]
-        OUT["Outcomes: MTTR ↓ · Drift caught · Waste flagged · Compliance ✓"]
+        OUT["Outcomes: MTTR down, drift caught, waste flagged, compliance verified"]
     end
 
     subgraph L1["Level 1 — Platform Planes"]
@@ -1164,7 +1164,7 @@ mindmap
 
 ---
 
-### 2. Closed-loop feedback systems ⭐ CRITICAL
+### 2. Closed-loop feedback systems [CRITICAL]
 
 **Definition**: A system that **observes its own output**, compares to a target, and **acts to reduce error** — the same principle as a thermostat or PID controller. This is the **central organizing idea** of the entire platform: without closed loops, observability becomes expensive theater.
 
@@ -1256,7 +1256,7 @@ This platform uses **three overlapping planes** (Business · ML · Ops) — see 
 
 ---
 
-### 6. Fail-closed vs fail-open (policy defaults) ⭐ CRITICAL
+### 6. Fail-closed vs fail-open (policy defaults) [CRITICAL]
 
 **Definition**: When the policy engine is uncertain or unavailable, does the system **deny** (fail-closed) or **allow** (fail-open)? In safety-critical paths — admission, promotion, self-heal — **fail-closed is mandatory**.
 
@@ -1430,7 +1430,7 @@ flowchart LR
 
 ---
 
-### 14. Quality gates as executable contracts ⭐ CRITICAL
+### 14. Quality gates as executable contracts [CRITICAL]
 
 **Definition**: An **eval gate** is a machine-enforceable contract: "this capability meets minimum quality" before merge or promotion — analogous to SLOs for code. This replaces slide-deck claims with **provable** outcomes: every UC writes `eval-results/ucN.json` or CI fails.
 
@@ -2888,13 +2888,13 @@ flowchart TD
 
 | Phase | Scope | Status | Key artifacts |
 |---|---|---|---|
-| **0** | Repo scaffold, eval framework, lint CI | ✅ Done | `eval/`, `00-pr-validate` |
-| **1** | Observability stack (OTEL, Prom, Grafana, Loki, Tempo) | ✅ Done | `01-observability`, `observability/` |
-| **2** | Data pipeline + synthetic generators | ✅ Done | `02-data-pipeline`, `data/synthetic/` |
-| **3** | Core ML ops (drift, logs, features, alerts) | ✅ Done | UC1–UC5 workflows |
-| **4** | AIOps (self-heal, RAG, security) | ✅ Done | UC6–UC8, UC7 |
-| **5** | Model lifecycle (serving, cost, tracing, gitops) | ✅ Done | UC9–UC12, UC10–UC11 |
-| **6** | Platform maturity (DORA, SLO, HPO, catalog, portal) | ✅ Done | UC13–UC23, `90`, `91` |
+| **0** | Repo scaffold, eval framework, lint CI | Complete | `eval/`, `00-pr-validate` |
+| **1** | Observability stack (OTEL, Prom, Grafana, Loki, Tempo) | Complete | `01-observability`, `observability/` |
+| **2** | Data pipeline + synthetic generators | Complete | `02-data-pipeline`, `data/synthetic/` |
+| **3** | Core ML ops (drift, logs, features, alerts) | Complete | UC1–UC5 workflows |
+| **4** | AIOps (self-heal, RAG, security) | Complete | UC6–UC8, UC7 |
+| **5** | Model lifecycle (serving, cost, tracing, gitops) | Complete | UC9–UC12, UC10–UC11 |
+| **6** | Platform maturity (DORA, SLO, HPO, catalog, portal) | Complete | UC13–UC23, `90`, `91` |
 
 **Nothing is missing from the original 23-UC plan.** Optional enhancements (not required for green CI):
 
@@ -4107,32 +4107,32 @@ This section documents **real CI failures** encountered during implementation an
 
 | Workflow | UC | Status | Evidence link |
 |---|---|---|---|
-| `00-pr-validate.yml` | Platform | ✅ success | [Actions → 00 PR Validate](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/00-pr-validate.yml) |
-| `01-observability.yml` | Stack B | ✅ success | [Actions → 01 Observability](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/01-observability.yml) |
-| `02-data-pipeline.yml` | Data | ✅ success | [Actions → 02 Data Pipeline](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/02-data-pipeline.yml) |
-| `03-drift-detection.yml` | UC1 | ✅ success | [Actions → 03 UC1 Drift](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/03-drift-detection.yml) |
-| `04-log-anomaly.yml` | UC2 | ✅ success | [Actions → 04 UC2 Log Anomaly](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/04-log-anomaly.yml) |
-| `05-feature-skew.yml` | UC5 | ✅ success | [Actions → 05 UC5 Feature Skew](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/05-feature-skew.yml) |
-| `06-alert-correlation.yml` | UC3 | ✅ success | [Actions → 06 UC3 Alerts](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/06-alert-correlation.yml) |
-| `07-predictive-scaling.yml` | UC4 | ✅ success | [Actions → 07 UC4 Scaling](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/07-predictive-scaling.yml) |
-| `08-self-healing.yml` | UC6 | ✅ success | [Actions → 08 UC6 Self-Healing](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/08-self-healing.yml) |
-| `09-rag-runbook.yml` | UC8, UC23 | ✅ success | [Actions → 09 UC8/UC23 RAG](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/09-rag-runbook.yml) |
-| `10-model-serving.yml` | UC9, UC17, UC22 | ✅ success | [Actions → 10 UC9/UC22 Serving](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/10-model-serving.yml) |
-| `11-cost-optimizer.yml` | UC10 | ✅ success | [Actions → 11 UC10 Cost](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/11-cost-optimizer.yml) |
-| `13-security-policy.yml` | UC7 | ✅ success | [Actions → 13 UC7 Security](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/13-security-policy.yml) |
-| `14-dora-metrics.yml` | UC15 | ✅ success | [Actions → 14 UC15 DORA](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/14-dora-metrics.yml) |
-| `15-slo-monitoring.yml` | UC21 | ✅ success | [Actions → 15 UC21 SLO](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/15-slo-monitoring.yml) |
-| `18-distributed-tracing.yml` | UC11 | ✅ success | [Actions → 18 UC11 Tracing](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/18-distributed-tracing.yml) |
-| `19-gitops-drift.yml` | UC12 | ✅ success | [Actions → 19 UC12 GitOps](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/19-gitops-drift.yml) |
-| `20-data-quality.yml` | UC13 | ✅ success | [Actions → 20 UC13 Data Quality](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/20-data-quality.yml) |
-| `21-hpo.yml` | UC14 | ✅ success | [Actions → 21 UC14 HPO](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/21-hpo.yml) |
-| `22-error-classification.yml` | UC16 | ✅ success | [Actions → 22 UC16 Errors](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/22-error-classification.yml) |
-| `23-explainability.yml` | UC17 | ✅ success | [Actions → 23 UC17 SHAP](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/23-explainability.yml) |
-| `24-rate-limiting.yml` | UC18 | ✅ success | [Actions → 24 UC18 Rate Limit](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/24-rate-limiting.yml) |
-| `25-feature-monitoring.yml` | UC19 | ✅ success | [Actions → 25 UC19 WhyLogs](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/25-feature-monitoring.yml) |
-| `26-catalog-validate.yml` | UC20 | ✅ success | [Actions → 26 UC20 Catalog](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/26-catalog-validate.yml) |
-| `90-e2e-integration.yml` | All | ✅ success | [Actions → 90 E2E](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/90-e2e-integration.yml) |
-| `91-publish-portal.yml` | Portal | ✅ success | [Actions → 91 Portal](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/91-publish-portal.yml) |
+| `00-pr-validate.yml` | Platform | Pass | [Actions → 00 PR Validate](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/00-pr-validate.yml) |
+| `01-observability.yml` | Stack B | Pass | [Actions → 01 Observability](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/01-observability.yml) |
+| `02-data-pipeline.yml` | Data | Pass | [Actions → 02 Data Pipeline](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/02-data-pipeline.yml) |
+| `03-drift-detection.yml` | UC1 | Pass | [Actions → 03 UC1 Drift](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/03-drift-detection.yml) |
+| `04-log-anomaly.yml` | UC2 | Pass | [Actions → 04 UC2 Log Anomaly](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/04-log-anomaly.yml) |
+| `05-feature-skew.yml` | UC5 | Pass | [Actions → 05 UC5 Feature Skew](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/05-feature-skew.yml) |
+| `06-alert-correlation.yml` | UC3 | Pass | [Actions → 06 UC3 Alerts](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/06-alert-correlation.yml) |
+| `07-predictive-scaling.yml` | UC4 | Pass | [Actions → 07 UC4 Scaling](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/07-predictive-scaling.yml) |
+| `08-self-healing.yml` | UC6 | Pass | [Actions → 08 UC6 Self-Healing](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/08-self-healing.yml) |
+| `09-rag-runbook.yml` | UC8, UC23 | Pass | [Actions → 09 UC8/UC23 RAG](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/09-rag-runbook.yml) |
+| `10-model-serving.yml` | UC9, UC17, UC22 | Pass | [Actions → 10 UC9/UC22 Serving](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/10-model-serving.yml) |
+| `11-cost-optimizer.yml` | UC10 | Pass | [Actions → 11 UC10 Cost](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/11-cost-optimizer.yml) |
+| `13-security-policy.yml` | UC7 | Pass | [Actions → 13 UC7 Security](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/13-security-policy.yml) |
+| `14-dora-metrics.yml` | UC15 | Pass | [Actions → 14 UC15 DORA](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/14-dora-metrics.yml) |
+| `15-slo-monitoring.yml` | UC21 | Pass | [Actions → 15 UC21 SLO](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/15-slo-monitoring.yml) |
+| `18-distributed-tracing.yml` | UC11 | Pass | [Actions → 18 UC11 Tracing](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/18-distributed-tracing.yml) |
+| `19-gitops-drift.yml` | UC12 | Pass | [Actions → 19 UC12 GitOps](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/19-gitops-drift.yml) |
+| `20-data-quality.yml` | UC13 | Pass | [Actions → 20 UC13 Data Quality](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/20-data-quality.yml) |
+| `21-hpo.yml` | UC14 | Pass | [Actions → 21 UC14 HPO](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/21-hpo.yml) |
+| `22-error-classification.yml` | UC16 | Pass | [Actions → 22 UC16 Errors](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/22-error-classification.yml) |
+| `23-explainability.yml` | UC17 | Pass | [Actions → 23 UC17 SHAP](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/23-explainability.yml) |
+| `24-rate-limiting.yml` | UC18 | Pass | [Actions → 24 UC18 Rate Limit](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/24-rate-limiting.yml) |
+| `25-feature-monitoring.yml` | UC19 | Pass | [Actions → 25 UC19 WhyLogs](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/25-feature-monitoring.yml) |
+| `26-catalog-validate.yml` | UC20 | Pass | [Actions → 26 UC20 Catalog](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/26-catalog-validate.yml) |
+| `90-e2e-integration.yml` | All | Pass | [Actions → 90 E2E](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/90-e2e-integration.yml) |
+| `91-publish-portal.yml` | Portal | Pass | [Actions → 91 Portal](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/91-publish-portal.yml) |
 
 ### How to re-verify yourself (no local runtime)
 
