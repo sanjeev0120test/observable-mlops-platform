@@ -1,0 +1,360 @@
+---
+# Observable MLOps Platform — Backstage Service Catalog
+# Validated by workflow 26-catalog-validate.yml using backstage-cli entity-descriptor lint.
+# UC20: Exactly 26 entities expected (23 UC services + 3 ML model entities)
+
+# ---------- Platform System ----------
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: observable-mlops-platform
+  title: Observable MLOps Platform
+  description: Enterprise AIOps + MLOps platform — 23 use cases, all CI-gated
+  tags: [aiops, mlops, platform]
+  links:
+    - url: https://github.com/observable-mlops/observable-mlops-platform
+      title: GitHub Repository
+spec:
+  owner: team-platform
+---
+# ---------- UC1: Drift Detection ----------
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: drift-monitor
+  title: "UC1: ML Drift Monitor"
+  description: Evidently + NannyML + Alibi Detect drift detection with Airflow-triggered retraining
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+    github.com/project-slug: observable-mlops/observable-mlops-platform
+  tags: [mlops, drift, evidently, nannyml, uc1]
+spec:
+  type: service
+  lifecycle: production
+  owner: team-ml
+  system: observable-mlops-platform
+  dependsOn:
+    - component:mlflow
+    - component:airflow
+---
+# ---------- UC2: Log Anomaly ----------
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: anomaly-detector
+  title: "UC2: Log Anomaly Detector"
+  description: PyTorch LSTM autoencoder for log anomaly detection with Qdrant vector store
+  tags: [aiops, anomaly, pytorch, qdrant, uc2]
+spec:
+  type: service
+  lifecycle: production
+  owner: team-ml
+  system: observable-mlops-platform
+  dependsOn:
+    - component:qdrant
+---
+# ---------- UC3: Alert Correlation ----------
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: alert-correlator
+  title: "UC3: Alert Correlator"
+  description: DBSCAN-based alert deduplication and root cause grouping
+  tags: [aiops, alerts, sklearn, prometheus, uc3]
+spec:
+  type: service
+  lifecycle: production
+  owner: team-platform
+  system: observable-mlops-platform
+---
+# ---------- UC4: Predictive Scaling ----------
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: predictive-scaler
+  title: "UC4: Predictive Autoscaler"
+  description: Prophet forecast + KEDA ScaledObject for pre-emptive pod scaling
+  tags: [aiops, scaling, prophet, keda, uc4]
+spec:
+  type: service
+  lifecycle: production
+  owner: team-infra
+  system: observable-mlops-platform
+---
+# ---------- UC5: Feature Store ----------
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: feast-feature-store
+  title: "UC5: Feature Store + Skew Monitor"
+  description: Feast offline/online feature store with training-serving skew detection
+  tags: [mlops, feast, features, uc5]
+spec:
+  type: service
+  lifecycle: production
+  owner: team-ml
+  system: observable-mlops-platform
+---
+# ---------- UC6: Self-Healing ----------
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: self-healing
+  title: "UC6: Agentic Self-Healing"
+  description: n8n workflows + OPA gate for autonomous incident remediation
+  tags: [aiops, remediation, n8n, opa, uc6]
+spec:
+  type: service
+  lifecycle: production
+  owner: team-platform
+  system: observable-mlops-platform
+---
+# ---------- UC7: Security ----------
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: security-enforcer
+  title: "UC7: Security Policy Enforcer"
+  description: Trivy CVE scanning + Falco runtime security + Kyverno admission control
+  tags: [security, trivy, falco, kyverno, uc7]
+spec:
+  type: service
+  lifecycle: production
+  owner: team-platform
+  system: observable-mlops-platform
+---
+# ---------- UC8: RAG Runbook Agent ----------
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: runbook-agent
+  title: "UC8: RAG Runbook Agent"
+  description: Qdrant + TinyLlama + LangChain RAG for automated runbook Q&A
+  tags: [aiops, rag, llm, qdrant, langchain, uc8]
+spec:
+  type: service
+  lifecycle: production
+  owner: team-platform
+  system: observable-mlops-platform
+---
+# ---------- UC9: Model Serving ----------
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: model-serving
+  title: "UC9: Experiment Tracking + Canary Serving"
+  description: MLflow experiments + DVC versioning + KServe canary deployment
+  tags: [mlops, mlflow, kserve, uc9]
+spec:
+  type: service
+  lifecycle: production
+  owner: team-ml
+  system: observable-mlops-platform
+---
+# ---------- UC10: Cost Optimizer ----------
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: cost-optimizer
+  title: "UC10: Cloud Cost Anomaly Detector"
+  description: IsolationForest cost anomaly detection with namespace attribution
+  tags: [finops, cost, sklearn, uc10]
+spec:
+  type: service
+  lifecycle: production
+  owner: team-finance
+  system: observable-mlops-platform
+---
+# ---------- UC11-UC20 (condensed) ----------
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: tracing-rca
+  title: "UC11: Distributed Tracing + RCA"
+  tags: [observability, otel, tempo, uc11]
+spec:
+  type: service
+  lifecycle: production
+  owner: team-platform
+  system: observable-mlops-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: gitops-compliance
+  title: "UC12: GitOps Compliance Drift"
+  tags: [gitops, kyverno, opa, uc12]
+spec:
+  type: service
+  lifecycle: production
+  owner: team-platform
+  system: observable-mlops-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: data-quality-gates
+  title: "UC13: Data Pipeline Quality Gates"
+  tags: [data, great-expectations, airflow, uc13]
+spec:
+  type: service
+  lifecycle: production
+  owner: team-data
+  system: observable-mlops-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: hpo-service
+  title: "UC14: Hyperparameter Optimization"
+  tags: [mlops, optuna, mlflow, uc14]
+spec:
+  type: service
+  lifecycle: production
+  owner: team-ml
+  system: observable-mlops-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: dora-metrics
+  title: "UC15: DORA Metrics Dashboard"
+  tags: [dora, devops, grafana, uc15]
+spec:
+  type: service
+  lifecycle: production
+  owner: team-platform
+  system: observable-mlops-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: error-classifier
+  title: "UC16: Intelligent Error Classification"
+  tags: [aiops, nlp, sklearn, uc16]
+spec:
+  type: service
+  lifecycle: production
+  owner: team-platform
+  system: observable-mlops-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: model-explainability
+  title: "UC17: Model Explainability + Audit"
+  tags: [mlops, shap, explainability, uc17]
+spec:
+  type: service
+  lifecycle: production
+  owner: team-ml
+  system: observable-mlops-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: rate-limiter
+  title: "UC18: Predictive Rate Limiting"
+  tags: [aiops, redis, sklearn, uc18]
+spec:
+  type: service
+  lifecycle: production
+  owner: team-platform
+  system: observable-mlops-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: feature-monitor
+  title: "UC19: Feature Monitoring (WhyLogs)"
+  tags: [mlops, whylogs, monitoring, uc19]
+spec:
+  type: service
+  lifecycle: production
+  owner: team-ml
+  system: observable-mlops-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: service-catalog
+  title: "UC20: Backstage Service Catalog"
+  tags: [dx, backstage, catalog, uc20]
+spec:
+  type: service
+  lifecycle: production
+  owner: team-platform
+  system: observable-mlops-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: slo-monitor
+  title: "UC21: SLO / Error Budget Monitor"
+  tags: [slo, prometheus, grafana, uc21]
+spec:
+  type: service
+  lifecycle: production
+  owner: team-platform
+  system: observable-mlops-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: ab-testing
+  title: "UC22: Model A/B Testing"
+  tags: [mlops, kserve, ab-testing, uc22]
+spec:
+  type: service
+  lifecycle: production
+  owner: team-ml
+  system: observable-mlops-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: postmortem-generator
+  title: "UC23: Automated Post-Mortem Generator"
+  tags: [aiops, n8n, llm, uc23]
+spec:
+  type: service
+  lifecycle: production
+  owner: team-platform
+  system: observable-mlops-platform
+---
+# ---------- 3 ML Model Entities ----------
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: pod-failure-prediction-model
+  title: Pod Failure Prediction Model
+  description: scikit-learn GradientBoosting model for UC1/UC4 predictions
+  tags: [model, sklearn, mlflow]
+spec:
+  type: ml-model
+  owner: team-ml
+  system: observable-mlops-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: log-anomaly-lstm-model
+  title: Log Anomaly LSTM Model
+  description: PyTorch LSTM autoencoder for UC2 log anomaly detection
+  tags: [model, pytorch, mlflow]
+spec:
+  type: ml-model
+  owner: team-ml
+  system: observable-mlops-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: cost-anomaly-isolation-forest
+  title: Cost Anomaly IsolationForest Model
+  description: scikit-learn IsolationForest for UC10 cost anomaly detection
+  tags: [model, sklearn, mlflow]
+spec:
+  type: ml-model
+  owner: team-finance
+  system: observable-mlops-platform

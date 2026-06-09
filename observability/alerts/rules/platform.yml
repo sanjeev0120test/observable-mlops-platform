@@ -1,0 +1,76 @@
+groups:
+  - name: platform.slo
+    interval: 30s
+    rules:
+      # UC21 — SLO / Error Budget
+      - record: job:http_error_rate:ratio5m
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m])) by (job)
+          /
+          sum(rate(http_requests_total[5m])) by (job)
+
+      - alert: SLOFastBurnRate
+        expr: job:http_error_rate:ratio5m > 0.02
+        for: 2m
+        labels:
+          severity: critical
+          uc: UC21
+        annotations:
+          summary: "Fast SLO burn rate detected for {{ $labels.job }}"
+          description: "Error rate {{ $value | humanizePercentage }} > 2% SLO burn threshold"
+
+      - alert: SLOSlowBurnRate
+        expr: job:http_error_rate:ratio5m > 0.005
+        for: 15m
+        labels:
+          severity: warning
+          uc: UC21
+        annotations:
+          summary: "Slow SLO burn rate for {{ $labels.job }}"
+
+  - name: platform.pods
+    rules:
+      # UC4 — Predictive Scaling trigger
+      - alert: HighCPUPreScale
+        expr: avg(container_cpu_usage_seconds_total) by (namespace) > 0.70
+        for: 5m
+        labels:
+          severity: warning
+          uc: UC4
+        annotations:
+          summary: "High CPU — pre-scale KEDA trigger for {{ $labels.namespace }}"
+
+      # UC2 — Log anomaly
+      - alert: PodCrashLoopBackOff
+        expr: kube_pod_container_status_restarts_total > 5
+        for: 5m
+        labels:
+          severity: critical
+          uc: UC2
+        annotations:
+          summary: "Pod {{ $labels.pod }} in CrashLoopBackOff"
+
+  - name: platform.drift
+    rules:
+      # UC1 — Drift detection alert
+      - alert: MLModelDriftDetected
+        expr: ml_model_psi_score > 0.2
+        for: 5m
+        labels:
+          severity: warning
+          uc: UC1
+        annotations:
+          summary: "Model drift detected: PSI {{ $value }} > 0.2"
+          description: "Model {{ $labels.model_name }} requires retraining"
+
+  - name: platform.cost
+    rules:
+      # UC10 — Cost anomaly
+      - alert: IdleResourceWaste
+        expr: cloud_cost_waste_ratio > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          uc: UC10
+        annotations:
+          summary: "Idle resource waste {{ $value | humanizePercentage }} in {{ $labels.namespace }}"

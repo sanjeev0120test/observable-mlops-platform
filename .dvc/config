@@ -1,0 +1,5 @@
+[core]
+    autostage = true
+    analytics = false
+# Remote is configured by scripts/setup-dagshub.sh at workflow runtime.
+# Local fallback: /tmp/dvc-remote

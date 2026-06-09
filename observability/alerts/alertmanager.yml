@@ -1,0 +1,57 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ["alertname", "uc", "namespace"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 12h
+  receiver: "null"
+
+  routes:
+    - matchers:
+        - severity="critical"
+      receiver: "critical-receiver"
+      continue: true
+
+    - matchers:
+        - uc="UC6"  # Self-healing — route to n8n webhook
+      receiver: "n8n-self-healing"
+      continue: false
+
+    - matchers:
+        - uc="UC23"  # Post-mortem — route to n8n webhook
+      receiver: "n8n-postmortem"
+      continue: false
+
+receivers:
+  - name: "null"
+
+  - name: "critical-receiver"
+    webhook_configs:
+      - url: "http://n8n:5678/webhook/critical-alert"
+        send_resolved: true
+
+  - name: "n8n-self-healing"
+    webhook_configs:
+      - url: "http://n8n:5678/webhook/self-heal"
+        send_resolved: false
+
+  - name: "n8n-postmortem"
+    webhook_configs:
+      - url: "http://n8n:5678/webhook/postmortem"
+        send_resolved: false
+
+inhibit_rules:
+  # Suppress downstream alerts when root cause is active
+  - source_matchers:
+      - alertname="PodCrashLoopBackOff"
+    target_matchers:
+      - alertname=~"PodNotReady|EndpointDown"
+    equal: ["namespace"]
+
+  - source_matchers:
+      - alertname="NodeNotReady"
+    target_matchers:
+      - alertname=~"PodEvicted|PodPending"
+    equal: ["instance"]

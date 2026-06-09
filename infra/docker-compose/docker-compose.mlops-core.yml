@@ -1,0 +1,198 @@
+# Stack A — MLOps core services
+# Total target memory: ~5.5 GB on a GitHub Actions ubuntu-latest runner (7 GB available)
+#
+# Services:
+#   mlflow      — Experiment tracking + Model Registry (DagsHub backend in CI)
+#   feast-redis — Redis for Feast online store
+#   postgresql  — Feast registry + Airflow metadata
+#   airflow     — ML pipeline orchestration + auto-retrain DAGs (UC1, UC13)
+#   n8n         — Agentic workflow automation (UC6, UC23)
+#   qdrant      — Vector store for RAG runbook agent (UC2, UC8, UC23)
+#   ollama      — Local LLM serving (TinyLlama 1.1B, ~700MB) (UC8, UC23)
+
+services:
+
+  postgresql:
+    image: postgres:16-alpine
+    container_name: platform-postgres
+    environment:
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: platform
+      POSTGRES_DB: platform
+      POSTGRES_MULTIPLE_DATABASES: "mlflow,airflow,feast"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts/postgres-init-dbs.sh:/docker-entrypoint-initdb.d/01-init-dbs.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform -d platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: 512m
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  redis:
+    image: redis:7-alpine
+    container_name: platform-redis
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: 300m
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.13.0
+    container_name: platform-mlflow
+    command: >
+      mlflow server
+      --backend-store-uri postgresql://platform:platform@postgresql:5432/mlflow
+      --default-artifact-root ${MLFLOW_ARTIFACT_ROOT:-/mlflow/artifacts}
+      --host 0.0.0.0
+      --port 5000
+      --serve-artifacts
+    environment:
+      MLFLOW_TRACKING_URI: http://localhost:5000
+      # When DAGSHUB_TOKEN is set, artifact root is overridden in CI to point at DagsHub
+      DAGSHUB_TOKEN: ${DAGSHUB_TOKEN:-}
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow_artifacts:/mlflow/artifacts
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 30s
+    mem_limit: 512m
+
+  airflow-init:
+    image: apache/airflow:2.9.2-python3.11
+    container_name: platform-airflow-init
+    command: >
+      bash -c "
+      airflow db migrate &&
+      airflow users create --username admin --password admin
+        --firstname Admin --lastname Admin
+        --role Admin --email admin@example.com || true
+      "
+    environment: &airflow-env
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://platform:platform@postgresql:5432/airflow
+      AIRFLOW__CORE__FERNET_KEY: "46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLt0nIe3aI="
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__LOGGING__LOGGING_LEVEL: WARNING
+      DAGSHUB_TOKEN: ${DAGSHUB_TOKEN:-}
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    restart: "no"
+    mem_limit: 1g
+
+  airflow-webserver:
+    image: apache/airflow:2.9.2-python3.11
+    container_name: platform-airflow-webserver
+    command: airflow webserver
+    environment: *airflow-env
+    ports:
+      - "8080:8080"
+    volumes:
+      - ../../mlops/pipelines/airflow/dags:/opt/airflow/dags:ro
+      - airflow_logs:/opt/airflow/logs
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      postgresql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    mem_limit: 1g
+
+  airflow-scheduler:
+    image: apache/airflow:2.9.2-python3.11
+    container_name: platform-airflow-scheduler
+    command: airflow scheduler
+    environment: *airflow-env
+    volumes:
+      - ../../mlops/pipelines/airflow/dags:/opt/airflow/dags:ro
+      - airflow_logs:/opt/airflow/logs
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    mem_limit: 1g
+
+  n8n:
+    image: n8nio/n8n:1.39.1
+    container_name: platform-n8n
+    environment:
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: admin
+      N8N_BASIC_AUTH_PASSWORD: admin
+      N8N_PORT: 5678
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgresql
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: platform
+      DB_POSTGRESDB_USER: platform
+      DB_POSTGRESDB_PASSWORD: platform
+      WEBHOOK_URL: http://localhost:5678/
+      N8N_LOG_LEVEL: warn
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ../../aiops/n8n-workflows:/home/node/workflows:ro
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    mem_limit: 512m
+
+  qdrant:
+    image: qdrant/qdrant:v1.9.2
+    container_name: platform-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__LOG_LEVEL: WARN
+    mem_limit: 512m
+
+  ollama:
+    image: ollama/ollama:0.1.44
+    container_name: platform-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    environment:
+      OLLAMA_KEEP_ALIVE: "5m"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+    # TinyLlama 1.1B — pulled by scripts/setup-ollama.sh in the workflow, not at startup
+    mem_limit: 2g
+
+volumes:
+  postgres_data:
+  mlflow_artifacts:
+  airflow_logs:
+  n8n_data:
+  qdrant_data:
+  ollama_models:
+
+networks:
+  default:
+    name: platform-net

@@ -1,0 +1,19 @@
+# KServe values for CI Kind cluster — minimal footprint
+kserve:
+  controller:
+    resources:
+      limits:
+        cpu: "1"
+        memory: 512Mi
+      requests:
+        cpu: "0.1"
+        memory: 128Mi
+  modelmesh:
+    enabled: false  # Use raw KServe, not ModelMesh
+  localModel:
+    enabled: false
+
+# Use Knative Serving (installed separately)
+knative:
+  serving:
+    enabled: true

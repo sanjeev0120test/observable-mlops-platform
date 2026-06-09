@@ -1,0 +1,28 @@
+# KEDA values for CI Kind cluster
+replicaCount: 1
+
+resources:
+  operator:
+    limits:
+      memory: 256Mi
+      cpu: 200m
+    requests:
+      memory: 64Mi
+      cpu: 50m
+  metricServer:
+    limits:
+      memory: 128Mi
+      cpu: 100m
+    requests:
+      memory: 32Mi
+      cpu: 25m
+
+prometheus:
+  operator:
+    enabled: true
+    podMonitor:
+      enabled: false
+  metricServer:
+    enabled: true
+    podMonitor:
+      enabled: false

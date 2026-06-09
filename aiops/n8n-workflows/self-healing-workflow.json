@@ -1,0 +1,84 @@
+{
+  "name": "UC6 Self-Healing Remediation",
+  "nodes": [
+    {
+      "id": "webhook-trigger",
+      "name": "Alertmanager Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "self-heal",
+        "responseMode": "responseNode"
+      },
+      "position": [240, 300]
+    },
+    {
+      "id": "parse-alert",
+      "name": "Parse Alert Payload",
+      "type": "n8n-nodes-base.code",
+      "parameters": {
+        "jsCode": "const alerts = $input.body.alerts || [];\nreturn alerts.map(a => ({\n  alertname: a.labels?.alertname,\n  namespace: a.labels?.namespace,\n  severity: a.labels?.severity,\n  pod: a.labels?.pod,\n  uc: a.labels?.uc\n}));"
+      },
+      "position": [460, 300]
+    },
+    {
+      "id": "opa-gate",
+      "name": "OPA Policy Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "method": "POST",
+        "url": "http://opa:8181/v1/data/platform/self_healing/allow",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "body": "={{ JSON.stringify({ input: { action: $json.action, target: { namespace: $json.namespace, name: $json.pod }, trigger: { alert_name: $json.alertname, severity: $json.severity }, dry_run: false } }) }}"
+      },
+      "position": [680, 300]
+    },
+    {
+      "id": "check-opa",
+      "name": "Check OPA Decision",
+      "type": "n8n-nodes-base.if",
+      "parameters": {
+        "conditions": {
+          "boolean": [{ "value1": "={{ $json.result }}", "value2": true }]
+        }
+      },
+      "position": [900, 300]
+    },
+    {
+      "id": "execute-remediation",
+      "name": "Execute Remediation",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "method": "POST",
+        "url": "http://self-healing:8000/api/v1/remediate",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "body": "={{ JSON.stringify($json) }}"
+      },
+      "position": [1120, 200]
+    },
+    {
+      "id": "denied-log",
+      "name": "Log OPA Denial",
+      "type": "n8n-nodes-base.code",
+      "parameters": {
+        "jsCode": "console.log('OPA denied action:', JSON.stringify($json)); return $input.all();"
+      },
+      "position": [1120, 420]
+    }
+  ],
+  "connections": {
+    "webhook-trigger": { "main": [[{ "node": "parse-alert", "type": "main", "index": 0 }]] },
+    "parse-alert": { "main": [[{ "node": "opa-gate", "type": "main", "index": 0 }]] },
+    "opa-gate": { "main": [[{ "node": "check-opa", "type": "main", "index": 0 }]] },
+    "check-opa": {
+      "main": [
+        [{ "node": "execute-remediation", "type": "main", "index": 0 }],
+        [{ "node": "denied-log", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": true,
+  "settings": { "executionOrder": "v1" }
+}

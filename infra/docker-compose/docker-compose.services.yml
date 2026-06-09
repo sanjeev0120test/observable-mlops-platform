@@ -1,0 +1,148 @@
+# Stack C — Platform microservices (ML services + AIOps services)
+# These expose HTTP APIs consumed by the workflow eval steps.
+# Each service is a FastAPI app built from its respective services/ directory.
+
+services:
+
+  anomaly-detector:
+    build:
+      context: ../../services/anomaly-detector
+      dockerfile: Dockerfile
+    container_name: platform-anomaly-detector
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      QDRANT_URL: http://qdrant:6333
+      REDIS_URL: redis://redis:6379/0
+      LOG_LEVEL: warning
+    ports:
+      - "8001:8000"
+    depends_on:
+      - qdrant
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    mem_limit: 512m
+
+  drift-monitor:
+    build:
+      context: ../../services/drift-monitor
+      dockerfile: Dockerfile
+    container_name: platform-drift-monitor
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      DAGSHUB_TOKEN: ${DAGSHUB_TOKEN:-}
+      REPORT_OUTPUT_DIR: /app/reports
+    ports:
+      - "8002:8000"
+    volumes:
+      - ../../services/drift-monitor/reports:/app/reports
+    depends_on:
+      - mlflow
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    mem_limit: 512m
+
+  alert-correlator:
+    build:
+      context: ../../services/alert-correlator
+      dockerfile: Dockerfile
+    container_name: platform-alert-correlator
+    environment:
+      PROMETHEUS_URL: http://prometheus:9090
+      ALERTMANAGER_URL: http://alertmanager:9093
+      REDIS_URL: redis://redis:6379/1
+    ports:
+      - "8003:8000"
+    depends_on:
+      - prometheus
+      - redis
+    mem_limit: 256m
+
+  predictive-scaler:
+    build:
+      context: ../../services/predictive-scaler
+      dockerfile: Dockerfile
+    container_name: platform-predictive-scaler
+    environment:
+      PROMETHEUS_URL: http://prometheus:9090
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    ports:
+      - "8004:8000"
+    depends_on:
+      - prometheus
+      - mlflow
+    mem_limit: 256m
+
+  self-healing:
+    build:
+      context: ../../services/self-healing
+      dockerfile: Dockerfile
+    container_name: platform-self-healing
+    environment:
+      N8N_URL: http://n8n:5678
+      OPA_URL: http://opa:8181
+      PROMETHEUS_URL: http://prometheus:9090
+      DRY_RUN: ${SELF_HEALING_DRY_RUN:-true}
+    ports:
+      - "8005:8000"
+    depends_on:
+      - n8n
+      - opa
+    mem_limit: 256m
+
+  runbook-agent:
+    build:
+      context: ../../services/runbook-agent
+      dockerfile: Dockerfile
+    container_name: platform-runbook-agent
+    environment:
+      QDRANT_URL: http://qdrant:6333
+      OLLAMA_URL: http://ollama:11434
+      COLLECTION_NAME: runbook_chunks
+    ports:
+      - "8006:8000"
+    depends_on:
+      - qdrant
+      - ollama
+    mem_limit: 512m
+
+  cost-optimizer:
+    build:
+      context: ../../services/cost-optimizer
+      dockerfile: Dockerfile
+    container_name: platform-cost-optimizer
+    environment:
+      PROMETHEUS_URL: http://prometheus:9090
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    ports:
+      - "8007:8000"
+    depends_on:
+      - prometheus
+      - mlflow
+    mem_limit: 256m
+
+  opa:
+    image: openpolicyagent/opa:0.65.0-rootless
+    container_name: platform-opa
+    command:
+      - "run"
+      - "--server"
+      - "--log-level=error"
+      - "--bundle=/policies"
+    volumes:
+      - ../../aiops/policies/opa:/policies:ro
+    ports:
+      - "8181:8181"
+    mem_limit: 128m
+
+networks:
+  default:
+    name: platform-net
+    external: true

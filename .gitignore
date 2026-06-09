@@ -1,0 +1,97 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+.installed.cfg
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# MLflow
+mlruns/
+mlflow.db
+
+# DVC
+.dvc/tmp/
+.dvc/cache/
+/tmp/
+
+# Data (large files tracked by DVC, not git)
+data/raw/
+data/processed/
+*.parquet
+*.csv
+*.arrow
+!data/synthetic/*.py
+
+# Models (tracked by DVC/HF Hub, not git)
+*.pt
+*.pth
+*.pkl
+*.joblib
+*.onnx
+!services/*/src/
+
+# Reports generated at runtime
+services/drift-monitor/reports/*.html
+portal/reports/
+
+# Docker
+.docker/
+
+# Secrets — never commit these
+.env
+.env.*
+secrets/
+*.pem
+*.key
+credentials.json
+
+# Kind / kubectl
+kubeconfig
+*.kubeconfig
+
+# Terraform state
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# Helm chart cache
+charts/*.tgz
+
+# n8n exports (large, committed manually)
+# aiops/n8n-workflows/*.json  <- these ARE committed (small JSON configs)
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# OS
+*~
+.fuse_hidden*
+.Trash-*

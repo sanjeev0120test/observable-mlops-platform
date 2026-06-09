@@ -1,0 +1,251 @@
+name: "00 · PR Validate (lint + structure + eval framework)"
+
+on:
+  push:
+    branches: [main, "feature/**", "fix/**"]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: "pr-validate-${{ github.ref }}"
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  lint:
+    name: "Lint (Ruff + Black + YAML)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install lint tools
+        run: pip install ruff black pre-commit
+
+      - name: Ruff check
+        run: ruff check . --output-format=github
+
+      - name: Black format check
+        run: black --check . --diff
+
+      - name: YAML lint (actionlint)
+        uses: rhysd/actionlint@v1.7.3
+
+      - name: Validate pyproject.toml
+        run: python -c "import tomllib; tomllib.loads(open('pyproject.toml').read())"
+
+  structure-check:
+    name: "Directory Structure Check"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify required directories
+        run: |
+          declare -a REQUIRED_DIRS=(
+            ".github/workflows"
+            "infra/docker-compose"
+            "infra/kind"
+            "services/anomaly-detector/src"
+            "services/drift-monitor/src"
+            "services/alert-correlator/src"
+            "services/predictive-scaler/src"
+            "services/self-healing/src"
+            "services/runbook-agent/src"
+            "services/cost-optimizer/src"
+            "mlops/feature-store/feature_repo"
+            "mlops/pipelines/airflow/dags"
+            "mlops/pipelines/kubeflow"
+            "mlops/experiments/pod_failure_prediction"
+            "mlops/experiments/log_anomaly"
+            "mlops/experiments/cost_anomaly"
+            "mlops/serving/kserve"
+            "mlops/serving/fastapi"
+            "aiops/n8n-workflows"
+            "aiops/policies/opa"
+            "aiops/policies/kyverno"
+            "aiops/falco"
+            "observability/dashboards/grafana"
+            "observability/alerts"
+            "observability/otel"
+            "data/synthetic"
+            "eval"
+            "scripts"
+          )
+          MISSING=0
+          for d in "${REQUIRED_DIRS[@]}"; do
+            if [ ! -d "$d" ]; then
+              echo "MISSING directory: $d"
+              MISSING=$((MISSING + 1))
+            fi
+          done
+          echo "Missing: $MISSING directories"
+          [ $MISSING -eq 0 ]
+
+      - name: Verify required files
+        run: |
+          declare -a REQUIRED_FILES=(
+            "pyproject.toml"
+            ".pre-commit-config.yaml"
+            ".gitignore"
+            "README.md"
+            "eval/__init__.py"
+            "eval/metrics.py"
+            "eval/scorer.py"
+            "data/synthetic/generate_pod_metrics.py"
+            "data/synthetic/generate_container_logs.py"
+            "data/synthetic/generate_cost_data.py"
+            "data/synthetic/generate_alerts.py"
+            "data/synthetic/generate_http_traffic.py"
+          )
+          MISSING=0
+          for f in "${REQUIRED_FILES[@]}"; do
+            if [ ! -f "$f" ]; then
+              echo "MISSING file: $f"
+              MISSING=$((MISSING + 1))
+            fi
+          done
+          echo "Missing: $MISSING files"
+          [ $MISSING -eq 0 ]
+
+  eval-framework-test:
+    name: "Eval Framework Unit Tests"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install test dependencies
+        run: pip install pytest numpy pandas
+
+      - name: Test eval framework
+        run: |
+          python -c "
+          import sys
+          sys.path.insert(0, '.')
+          from eval.metrics import UC_METRICS, THRESHOLDS, EvalResult
+          from eval.scorer import compute_score
+
+          # All 23 UCs must be defined
+          expected_ucs = {f'UC{i}' for i in [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23]}
+          assert expected_ucs == set(UC_METRICS.keys()), f'Missing UCs: {expected_ucs - set(UC_METRICS.keys())}'
+          assert expected_ucs == set(THRESHOLDS.keys()), f'Missing thresholds: {expected_ucs - set(THRESHOLDS.keys())}'
+          print(f'All {len(expected_ucs)} UCs registered: OK')
+
+          # Every threshold must be 0-100
+          for uc, t in THRESHOLDS.items():
+              assert 0 <= t <= 100, f'{uc} threshold {t} out of range'
+          print('All thresholds in valid range: OK')
+
+          # Smoke-test scorer with perfect values for UC1
+          result = compute_score('UC1', {
+              'ks_statistic': 0.05,
+              'psi_score': 0.01,
+              'nannyml_performance_estimate': 0.95,
+              'alibi_lsdd_p_value': 0.8,
+              'retrain_triggered': True,
+          })
+          assert result.passed, f'UC1 perfect metrics should pass, got score={result.score}'
+          print(f'UC1 smoke test PASS (score={result.score}): OK')
+
+          # Smoke-test scorer with failing values for UC1
+          result_fail = compute_score('UC1', {
+              'ks_statistic': 0.99,
+              'psi_score': 0.99,
+              'nannyml_performance_estimate': 0.01,
+              'alibi_lsdd_p_value': 0.001,
+              'retrain_triggered': False,
+          })
+          assert not result_fail.passed, f'UC1 bad metrics should fail, got score={result_fail.score}'
+          print(f'UC1 fail test PASS (score={result_fail.score}): OK')
+
+          # EvalResult serialisation
+          d = result.to_dict()
+          assert 'uc' in d and 'score' in d and 'passed' in d
+          print('EvalResult serialisation: OK')
+          print()
+          print('=== EVAL FRAMEWORK VALIDATION COMPLETE ===')
+          "
+
+  data-generator-test:
+    name: "Synthetic Data Generator Smoke Tests"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install data dependencies
+        run: pip install numpy pandas pyarrow
+
+      - name: Run all generators
+        run: |
+          python data/synthetic/generate_pod_metrics.py --hours 4 --output /tmp/pod_metrics.parquet
+          python data/synthetic/generate_container_logs.py --hours 1 --output /tmp/container_logs.ndjson
+          python data/synthetic/generate_cost_data.py --days 2 --output /tmp/cost_data.parquet
+          python data/synthetic/generate_alerts.py --hours 4 --output /tmp/alerts.parquet
+          python data/synthetic/generate_http_traffic.py --hours 4 --output /tmp/http_traffic.parquet
+
+      - name: Validate generator outputs
+        run: |
+          python -c "
+          import pandas as pd, json
+          from pathlib import Path
+
+          df = pd.read_parquet('/tmp/pod_metrics.parquet')
+          assert len(df) > 0, 'pod_metrics empty'
+          assert 'cpu_usage_pct' in df.columns, 'pod_metrics missing cpu_usage_pct'
+          assert df['cpu_usage_pct'].between(0, 100).all(), 'cpu_usage out of range'
+          print(f'pod_metrics: {len(df)} rows OK')
+
+          logs = Path('/tmp/container_logs.ndjson').read_text().splitlines()
+          assert len(logs) > 0, 'container_logs empty'
+          first = json.loads(logs[0])
+          assert 'timestamp' in first and 'level' in first, 'log missing fields'
+          print(f'container_logs: {len(logs)} lines OK')
+
+          df = pd.read_parquet('/tmp/cost_data.parquet')
+          assert 'hourly_cost_usd' in df.columns, 'cost_data missing hourly_cost_usd'
+          print(f'cost_data: {len(df)} rows OK')
+
+          df = pd.read_parquet('/tmp/alerts.parquet')
+          assert 'root_cause_id' in df.columns, 'alerts missing root_cause_id'
+          dup_rate = df['is_duplicate'].mean()
+          assert dup_rate > 0.3, f'Expected >30% duplicates for UC3, got {dup_rate:.2f}'
+          print(f'alerts: {len(df)} rows, dup_rate={dup_rate:.2f} OK')
+
+          df = pd.read_parquet('/tmp/http_traffic.parquet')
+          assert 'requests_per_second' in df.columns, 'http_traffic missing rps'
+          print(f'http_traffic: {len(df)} rows OK')
+          print()
+          print('=== DATA GENERATOR VALIDATION COMPLETE ===')
+          "
+
+  workflow-count-check:
+    name: "Workflow File Inventory"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Count and list workflows
+        run: |
+          echo "=== GitHub Actions Workflows ==="
+          ls -1 .github/workflows/*.yml | sort
+          COUNT=$(ls .github/workflows/*.yml | wc -l)
+          echo ""
+          echo "Total workflow files: $COUNT"

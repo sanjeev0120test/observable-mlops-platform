@@ -1,0 +1,39 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-team-labels
+  annotations:
+    policies.kyverno.io/title: Require Team Labels
+    policies.kyverno.io/description: >
+      All Deployments, StatefulSets, and DaemonSets must have
+      'app.kubernetes.io/team' and 'app.kubernetes.io/uc' labels
+      for cost attribution (UC10) and DORA metrics (UC15).
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: check-team-label
+      match:
+        any:
+          - resources:
+              kinds: [Deployment, StatefulSet, DaemonSet]
+              namespaces: ["payments", "auth", "catalog", "recommendations", "gateway", "ml-serving"]
+      validate:
+        message: "Label 'app.kubernetes.io/team' is required for cost attribution."
+        pattern:
+          metadata:
+            labels:
+              app.kubernetes.io/team: "?*"
+
+    - name: check-uc-label
+      match:
+        any:
+          - resources:
+              kinds: [Deployment, StatefulSet]
+              namespaces: ["ml-serving"]
+      validate:
+        message: "Label 'app.kubernetes.io/uc' is required for ML serving workloads."
+        pattern:
+          metadata:
+            labels:
+              app.kubernetes.io/uc: "?*"

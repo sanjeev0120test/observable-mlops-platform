@@ -1,0 +1,135 @@
+# Stack B — Observability services
+# Target memory: ~1.8 GB
+#
+# Services:
+#   prometheus     — Metrics scraping + alerting rules
+#   alertmanager   — Alert routing + deduplication
+#   grafana        — Dashboards (10 pre-provisioned)
+#   loki           — Log aggregation
+#   fluentbit      — Log shipping from containers
+#   tempo          — Distributed tracing backend (UC11)
+#   otel-collector — OTEL receiver → Prometheus + Loki + Tempo
+
+services:
+
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: platform-prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+      - "--web.enable-lifecycle"
+      - "--log.level=warn"
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../../observability/alerts:/etc/prometheus:ro
+      - prometheus_data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    mem_limit: 512m
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: platform-alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--log.level=warn"
+    ports:
+      - "9093:9093"
+    volumes:
+      - ../../observability/alerts/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    mem_limit: 128m
+
+  grafana:
+    image: grafana/grafana:10.4.3
+    container_name: platform-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_USER: admin
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_LOG_LEVEL: warn
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/overview.json
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../../observability/dashboards/grafana:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana-provisioning:/etc/grafana/provisioning/datasources:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    mem_limit: 256m
+
+  loki:
+    image: grafana/loki:3.0.0
+    container_name: platform-loki
+    command: -config.file=/etc/loki/loki.yml
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./config/loki.yml:/etc/loki/loki.yml:ro
+      - loki_data:/loki
+    mem_limit: 256m
+
+  fluentbit:
+    image: cr.fluentbit.io/fluent/fluent-bit:3.0.6
+    container_name: platform-fluentbit
+    command: ["-c", "/fluent-bit/etc/fluent-bit.conf"]
+    volumes:
+      - ./config/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    depends_on:
+      - loki
+    mem_limit: 64m
+
+  tempo:
+    image: grafana/tempo:2.4.2
+    container_name: platform-tempo
+    command: ["-config.file=/etc/tempo/tempo.yml"]
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "3200:3200"   # Tempo HTTP API
+    volumes:
+      - ./config/tempo.yml:/etc/tempo/tempo.yml:ro
+      - tempo_data:/var/tempo
+    mem_limit: 256m
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.102.0
+    container_name: platform-otel-collector
+    command: ["--config=/etc/otelcol/otelcol.yml"]
+    ports:
+      - "4319:4317"   # OTLP gRPC (offset to avoid conflict with Tempo)
+      - "8889:8889"   # Prometheus exporter
+    volumes:
+      - ../../observability/otel/otelcol.yml:/etc/otelcol/otelcol.yml:ro
+    depends_on:
+      - tempo
+      - loki
+      - prometheus
+    mem_limit: 128m
+
+volumes:
+  prometheus_data:
+  alertmanager_data:
+  grafana_data:
+  loki_data:
+  tempo_data:
+
+networks:
+  default:
+    name: platform-net
+    external: true

@@ -1,0 +1,22 @@
+# Kyverno values for CI Kind cluster (single replica, no HA)
+replicaCount: 1
+
+resources:
+  limits:
+    memory: 384Mi
+    cpu: 500m
+  requests:
+    memory: 128Mi
+    cpu: 100m
+
+admissionController:
+  replicas: 1
+
+backgroundController:
+  enabled: false  # Not needed in ephemeral CI
+
+cleanupController:
+  enabled: false
+
+reportsController:
+  enabled: false

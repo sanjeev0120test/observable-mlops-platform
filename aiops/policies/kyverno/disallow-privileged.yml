@@ -1,0 +1,32 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-privileged-containers
+  annotations:
+    policies.kyverno.io/title: Disallow Privileged Containers
+    policies.kyverno.io/description: >
+      Containers must not run in privileged mode.
+      Part of UC7 security policy enforcement.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: check-privileged
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, falco]
+      validate:
+        message: "Privileged containers are not allowed (UC7 policy)."
+        pattern:
+          spec:
+            containers:
+              - =(securityContext):
+                  =(privileged): "false"
+            =(initContainers):
+              - =(securityContext):
+                  =(privileged): "false"

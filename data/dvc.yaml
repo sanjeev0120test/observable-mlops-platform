@@ -1,0 +1,63 @@
+stages:
+  generate_pod_metrics:
+    cmd: python data/synthetic/generate_pod_metrics.py
+      --hours 72
+      --interval 5
+      --anomaly-rate 0.03
+      --output data/synthetic/pod_metrics.parquet
+      --drift-after-hour 48
+    deps:
+      - data/synthetic/generate_pod_metrics.py
+    outs:
+      - data/synthetic/pod_metrics.parquet
+
+  generate_container_logs:
+    cmd: python data/synthetic/generate_container_logs.py
+      --hours 24
+      --logs-per-second 10.0
+      --output data/synthetic/container_logs.ndjson
+    deps:
+      - data/synthetic/generate_container_logs.py
+    outs:
+      - data/synthetic/container_logs.ndjson
+
+  generate_cost_data:
+    cmd: python data/synthetic/generate_cost_data.py
+      --days 30
+      --anomaly-rate 0.04
+      --output data/synthetic/cost_data.parquet
+    deps:
+      - data/synthetic/generate_cost_data.py
+    outs:
+      - data/synthetic/cost_data.parquet
+
+  generate_alerts:
+    cmd: python data/synthetic/generate_alerts.py
+      --hours 24
+      --incidents-per-hour 2.0
+      --output data/synthetic/alerts.parquet
+    deps:
+      - data/synthetic/generate_alerts.py
+    outs:
+      - data/synthetic/alerts.parquet
+
+  generate_http_traffic:
+    cmd: python data/synthetic/generate_http_traffic.py
+      --hours 72
+      --interval 60
+      --output data/synthetic/http_traffic.parquet
+    deps:
+      - data/synthetic/generate_http_traffic.py
+    outs:
+      - data/synthetic/http_traffic.parquet
+
+  validate_all:
+    cmd: python scripts/validate_data.py
+    deps:
+      - data/synthetic/pod_metrics.parquet
+      - data/synthetic/container_logs.ndjson
+      - data/synthetic/cost_data.parquet
+      - data/synthetic/alerts.parquet
+      - data/synthetic/http_traffic.parquet
+    outs:
+      - data/synthetic/validation_report.json
