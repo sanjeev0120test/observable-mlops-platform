@@ -10,14 +10,12 @@ from feast import Entity, Feature, FeatureView, FileSource, ValueType
 # ---------- Entities ----------
 pod_entity = Entity(
     name="pod_name",
-    join_key="pod_name",
     value_type=ValueType.STRING,
     description="Kubernetes pod identifier (namespace/pod-name)",
 )
 
 namespace_entity = Entity(
     name="namespace",
-    join_key="namespace",
     value_type=ValueType.STRING,
     description="Kubernetes namespace",
 )
