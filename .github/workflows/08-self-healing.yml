@@ -30,18 +30,16 @@ jobs:
         run: |
           cat > /tmp/test_model_promotion.json << 'EOF'
           {
-            "input": {
-              "model_name": "pod-failure-prediction",
-              "new_version": "v2",
-              "metrics": {
-                "accuracy": 0.92,
-                "drift_score": 0.05,
-                "test_dataset_size": 500,
-                "shap_values_logged": true
-              },
-              "requestor": "ci-system",
-              "environment": "production"
-            }
+            "model_name": "pod-failure-prediction",
+            "new_version": "v2",
+            "metrics": {
+              "accuracy": 0.92,
+              "drift_score": 0.05,
+              "test_dataset_size": 500,
+              "shap_values_logged": true
+            },
+            "requestor": "ci-system",
+            "environment": "production"
           }
           EOF
           RESULT=$(opa eval -d aiops/policies/opa/model_promotion.rego \
@@ -59,12 +57,10 @@ jobs:
           opa parse aiops/policies/opa/self_healing.rego && echo "PARSE OK"
           cat > /tmp/test_self_healing_allow.json << 'EOF'
           {
-            "input": {
-              "action": "restart_pod",
-              "target": {"namespace": "payments", "name": "payments-pod-01"},
-              "trigger": {"alert_name": "PodCrashLoopBackOff", "severity": "critical", "value": 8},
-              "dry_run": false
-            }
+            "action": "restart_pod",
+            "target": {"namespace": "payments", "name": "payments-pod-01"},
+            "trigger": {"alert_name": "PodCrashLoopBackOff", "severity": "critical", "value": 8},
+            "dry_run": false
           }
           EOF
           echo "=== Input file ==="
@@ -81,12 +77,10 @@ jobs:
         run: |
           cat > /tmp/test_self_healing_deny.json << 'EOF'
           {
-            "input": {
-              "action": "restart_pod",
-              "target": {"namespace": "kube-system", "name": "kube-dns"},
-              "trigger": {"alert_name": "PodCrashLoopBackOff", "severity": "critical", "value": 8},
-              "dry_run": false
-            }
+            "action": "restart_pod",
+            "target": {"namespace": "kube-system", "name": "kube-dns"},
+            "trigger": {"alert_name": "PodCrashLoopBackOff", "severity": "critical", "value": 8},
+            "dry_run": false
           }
           EOF
           RESULT=$(opa eval -d aiops/policies/opa/self_healing.rego \
