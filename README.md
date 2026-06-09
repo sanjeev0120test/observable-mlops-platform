@@ -2572,7 +2572,9 @@ sequenceDiagram
     RAG->>GH: Create issue with timeline + similar incidents
 ```
 
-**Production parallel**: Spotify Backstage + internal runbooks; RAG reduces MTTR lookup time ([LangChain RAG](https://python.langchain.com/docs/tutorials/rag/), [Qdrant](https://qdrant.tech/documentation/)).
+**CI vs this diagram**: `09-rag-runbook.yml` runs retrieval + eval gates in-process (Qdrant in-memory, no Ollama call). The sequence above is the **target production path** via Compose services and n8n; Issue creation is stubbed in CI today. See [implementation scope](#how-concepts-map-to-this-repo-read-this-first).
+
+**Production parallel**: Spotify Backstage + internal runbooks; RAG reduces MTTR lookup time ([RAG pattern](https://python.langchain.com/docs/tutorials/rag/), [Qdrant](https://qdrant.tech/documentation/)).
 
 ### UC21 — SLO error budget burn
 
@@ -3122,8 +3124,8 @@ This summary feeds the published portal (workflow 91).
 
 ## Technology Stack
 
-**MLOps**: MLflow · Feast · DVC · Airflow · Kubeflow · KServe · Optuna · SHAP · SciPy  
-**AIOps**: n8n · Qdrant · Ollama/TinyLlama · LangChain · Falco · OPA · Rego  
+**MLOps**: MLflow · Feast · DVC · Airflow · Kubeflow Pipelines (Kind) · KServe · Optuna · SHAP · SciPy  
+**AIOps**: n8n · Qdrant · sentence-transformers (CI) · Ollama/TinyLlama + LangChain (Compose/scaffold) · Falco · OPA · Rego  
 **Observability**: OpenTelemetry · OTLP · Prometheus · PromQL · Grafana · Loki · LogQL · Tempo · FluentBit · Alertmanager  
 **Drift/Monitoring**: Evidently · NannyML · Alibi Detect · WhyLogs · Great Expectations  
 **ML**: PyTorch · scikit-learn (DBSCAN, IsolationForest) · NumPy · Pandas · PyArrow · Prophet · sentence-transformers  
@@ -3659,7 +3661,7 @@ This section documents **everything used in the repo that was missing or only br
 
 - **Official definition**: Declarative GitOps continuous delivery tool for Kubernetes ([argo-cd.readthedocs.io](https://argo-cd.readthedocs.io/)).
 - **Problem solved**: Cluster state must match git; drift detection triggers reconcile.
-- **Real use case**: UC12 validates drift detection + reconcile semantics; production path uses ArgoCD sync after Kyverno admission (referenced in `19-gitops-drift.yml`).
+- **Real use case**: UC12 workflow simulates desired vs actual config drift in Python and runs eval gate; **production** path uses Kyverno admission + ArgoCD/Flux reconcile (not executed in `19-gitops-drift.yml` CI steps).
 - **UC**: UC12.
 
 #### GitHub Pages
@@ -3779,7 +3781,7 @@ This section documents **everything used in the repo that was missing or only br
 | **Great Expectations suite** | Collection of `expect_*` assertions on a dataset | UC13 blocks bad data; UC5 validates feature columns | UC5, UC13 |
 | **WhyLogs profile** | Statistical summary (mean, std, counts, types) of a dataset batch | UC19 compares profiles for constraint violations | UC19 |
 | **DORA Four Keys** | Deploy frequency, lead time for changes, change failure rate, failed deployment recovery time | UC15 exports all four from GHA metadata | UC15 |
-| **RAG** | Retrieval-Augmented Generation — retrieve docs then condition LLM generation ([LangChain RAG](https://python.langchain.com/docs/tutorials/rag/)) | UC8 runbook Q&A; UC23 post-mortem context | UC8, UC23 |
+| **RAG** | Retrieval-Augmented Generation — retrieve docs then condition LLM generation | UC8: CI proves retrieval in `09-rag-runbook.yml`; LLM generation scaffolded | UC8, UC23 |
 | **Canary rollout** | Route small traffic % to new version; promote on metric/statistical gate | KServe traffic split + scipy p-value | UC22 |
 | **Content-addressed storage** | Data identified by hash — same bytes = same ID | DVC push to DagsHub remote | UC9, data pipeline |
 | **Ephemeral runner** | GHA ubuntu-latest job destroyed after workflow | Full stack validated per run with zero persistent CI infra | All |
@@ -3798,7 +3800,7 @@ This section documents **everything used in the repo that was missing or only br
 | **OPA + Kyverno + Falco + Trivy** | Security stack | §18 |
 | **Drift stack** | Evidently, NannyML, Alibi, WhyLogs | §18 |
 | **ML stack** | PyTorch, sklearn, Prophet, Optuna, SHAP, scipy | §18, §19 |
-| **LLM/RAG stack** | Qdrant, LangChain, Ollama, TinyLlama, sentence-transformers | §18 |
+| **LLM/RAG stack** | Qdrant, sentence-transformers (CI); Ollama, LangChain (scaffold) | §18, [implementation scope](#how-concepts-map-to-this-repo-read-this-first) |
 | **CI/dev tools** | Ruff, Black, pytest, pre-commit, actionlint | §19 |
 | **Platform code** | eval/, data/synthetic/, backstage catalog | §19 |
 | **System design** | 23 concepts with failure modes | §5 |
@@ -4561,7 +4563,7 @@ flowchart LR
 | Bad model in canary | Revert KServe traffic to 100% v1 | < 5 min | UC22 — traffic split YAML |
 | Bad deploy (CrashLoop) | `kubectl rollout undo` or UC6 restart | < 10 min | UC6 OPA-gated restart |
 | Feature skew after deploy | Roll back Feast materialization | < 30 min | UC5 — re-materialize from offline |
-| Config drift in cluster | GitOps reconcile to last good commit | < 15 min | UC12 — Kyverno deny + ArgoCD sync |
+| Config drift in cluster | GitOps reconcile to last good commit | < 15 min | UC12 — Kyverno deny + ArgoCD/Flux sync (production; CI simulates drift) |
 | Full region failure | Failover to secondary region | < 1 hr | Terraform multi-region (reference) |
 | Observability stack down | CI still validates via ephemeral Stack B | N/A (CI) | `01-observability` per-run |
 
@@ -4591,7 +4593,7 @@ For teams evaluating this open-source stack vs commercial alternatives:
 | Feature store | Feast | Tecton, Databricks FS | Real-time at billions of rows |
 | Policy | OPA + Kyverno | Styra DAS, Prisma Cloud | Enterprise Rego IDE + audit UI |
 | Incident automation | n8n + Alertmanager | PagerDuty AIOps, BigPanda | Global on-call at scale |
-| Vector/RAG | Qdrant + LangChain | OpenAI Assistants, Glean | Managed embeddings + enterprise search |
+| Vector/RAG | Qdrant + sentence-transformers (CI); LangChain/Ollama (scaffold) | OpenAI Assistants, Glean | Managed embeddings + enterprise search |
 | Model serving | KServe | SageMaker, Vertex AI | Fully managed inference SLA |
 
 **This repo's sweet spot**: Teams wanting **CNCF-aligned, auditable, git-native** MLOps/AIOps with **provable CI gates** before investing in commercial tooling.
