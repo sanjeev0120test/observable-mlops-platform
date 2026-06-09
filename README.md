@@ -350,7 +350,7 @@ These are **eval gates applied to GenAI** — same framework (`eval/scorer.py`),
 **Technical**:
 
 - **Tokens**: text split into subwords (~4 chars English avg). Models have a **context window** (max tokens per request).
-- **Parameters**: weights learned during pre-training (TinyLlama 1.1B in this repo — small on purpose for CI).
+- **Parameters**: weights learned during pre-training (TinyLlama 1.1B in this repo — small on purpose for local Compose).
 - **Inference**: prompt in → token stream out. Served via **Ollama** at `http://ollama:11434` in Stack A.
 - **Temperature**: sampling randomness (lower = more deterministic answers for runbooks).
 
@@ -636,7 +636,7 @@ flowchart LR
 | **Chaos / remediation MTTR** | Time to safe auto-fix | UC6 ≤ 300s |
 | **Feature monitoring** | Profile stats before drift | UC19 WhyLogs |
 | **Batch vs streaming** | Feast offline vs Redis online | UC5 |
-| **Ephemeral CI environments** | Prove in throwaway stacks | All workflows |
+| **Ephemeral CI environments** | Prove in throwaway GHA jobs | UC workflows (inline Python); Stack B only in `01-observability` |
 
 ---
 
@@ -2867,6 +2867,8 @@ sequenceDiagram
 | `90-e2e-integration.yml` | All UC eval aggregation |
 | `91-publish-portal.yml` | GitHub Pages portal |
 
+**Note**: There is no `12-`, `16-`, or `17-` workflow file — numbering gaps are intentional. Total = 26 files.
+
 ---
 
 ## Implementation Phases (Complete)
@@ -3015,9 +3017,9 @@ gh workflow run 90-e2e-integration.yml --ref main
 | Feature store | Feast (file + Redis) | Industry standard; offline/online skew testable | Custom feature cache (not portable) |
 | Observability | OTEL + Prom/Grafana/Loki/Tempo | CNCF standard; single collector fan-out | ELK-only (no native traces) |
 | Policy engine | OPA (Rego) | Portable; testable in CI without K8s | Hard-coded if/else (not auditable) |
-| K8s in CI | Kind ephemeral | Real KServe/Kyverno/KEDA behavior | Mock K8s API (unrealistic) |
-| Vector DB | Qdrant | Lightweight; runs in Compose; good for RAG | Pinecone (paid; external dep) |
-| LLM | TinyLlama via Ollama | Small; runs in CI; no API cost | GPT-4 API (cost + secret in CI) |
+| K8s local reference | Kind + `setup-kind.sh` | Production-like KServe/Kyverno/KEDA testing on laptop | Mock K8s API (unrealistic) |
+| Vector DB | Qdrant | Lightweight; in-memory in UC8 CI; Compose for local RAG | Pinecone (paid; external dep) |
+| LLM | TinyLlama via Ollama (Compose) | Small local model; no API cost; not called in UC8 CI today | GPT-4 API (cost + secret in CI) |
 | Workflow automation | n8n | Visual; webhook-native; self-hosted in Compose | Temporal (heavier infra for this scope) |
 | Eval gating | Custom `eval/scorer.py` | Unified thresholds across 23 UCs; blocks bad merges | Per-workflow ad-hoc asserts (inconsistent) |
 | Drift tools | Evidently + NannyML + Alibi | Complementary: statistical + performance + multivariate | Single tool (blind spots) |
@@ -3030,8 +3032,8 @@ gh workflow run 90-e2e-integration.yml --ref main
 ```
 .github/workflows/       26 workflow files (00–11, 13–15, 18–26, 90, 91 — no 12-, 16-, 17-)
 infra/
-  docker-compose/        Stack A (ML/data) + Stack B (observability)
-  kind/                  Kind cluster configs
+  docker-compose/        Stack A (ML) + Stack B (observability) + Stack C (microservices)
+  kind/                  Kind cluster configs (local via setup-kind.sh)
   helm/                  Helm values reference
   terraform/             Reference IaC (aws-eks, gcp-gke)
 services/                Per-UC microservices (FastAPI)
@@ -3039,7 +3041,7 @@ mlops/
   feature-store/         Feast definitions
   pipelines/             Airflow DAGs + Kubeflow pipelines
   experiments/           Training scripts
-  serving/               KServe + FastAPI manifests
+  serving/               KServe + FastAPI placeholders (.gitkeep; Helm in infra/helm/kserve/)
 aiops/
   n8n-workflows/         Exported workflow JSONs
   policies/              OPA Rego + Kyverno YAML
@@ -3164,9 +3166,9 @@ This section documents **every tool, library, and concept** used in the platform
 #### GitHub Actions
 - **Official definition**: Event-driven automation platform for CI/CD ([GitHub Docs — About GitHub Actions](https://docs.github.com/en/actions/learn-github-actions/understanding-github-actions)).
 - **Problem solved**: No local Windows/Mac runtime; reproducible builds; audit trail for every validation run.
-- **Why here**: Primary execution engine for all 26 workflows. Runners provide ephemeral Ubuntu + Docker for Compose/Kind.
+- **Why here**: Primary execution engine for all 26 workflow files. Typical UC job: checkout → pip install → inline Python → eval gate. Stack B Compose runs only in `01-observability`.
 - **Alternatives**: GitLab CI, Jenkins, CircleCI — rejected because user constraint was GitHub-only with zero local deps.
-- **Used in**: All workflows (`00`–`26`, `90`, `91`).
+- **Used in**: All 26 workflows (numbered 00–11, 13–15, 18–26, 90, 91).
 
 #### Docker Compose
 - **Official definition**: Tool for defining and running multi-container Docker applications ([Compose specification](https://docs.docker.com/compose/)).
@@ -3177,10 +3179,10 @@ This section documents **every tool, library, and concept** used in the platform
 
 #### Kind (Kubernetes in Docker)
 - **Official definition**: Runs local Kubernetes clusters using Docker containers as nodes ([kind.sigs.k8s.io](https://kind.sigs.k8s.io/docs/user/quick-start/)).
-- **Problem solved**: Real Kubernetes API behavior in CI without a cloud cluster cost.
-- **Why here**: KServe model serving (UC9/UC22), Kyverno admission (UC7/UC12), KEDA autoscaling (UC4/UC18) require actual K8s semantics.
+- **Problem solved**: Real Kubernetes API behavior for local/production rollout without a cloud cluster cost.
+- **Why here**: `scripts/setup-kind.sh` + `infra/kind/*.yml` + Helm values install KServe, Kyverno, KEDA for **manual/local** validation. **No GHA workflow runs `kind create` today** — UC metrics use inline Python or CLI tools instead.
 - **Alternatives**: minikube (heavier); mocked K8s client (unrealistic admission/scaling behavior).
-- **Used in**: `07-predictive-scaling`, `10-model-serving`, `13-security-policy`, `19-gitops-drift`, `24-rate-limiting`.
+- **Used in**: Reference path for UC4/UC7/UC9/UC12/UC18/UC22 production rollout; not executed in current CI workflows.
 
 ---
 
@@ -3693,7 +3695,7 @@ This section documents **everything used in the repo that was missing or only br
 
 - **Official definition**: Infrastructure-as-code tool by HashiCorp ([developer.hashicorp.com/terraform](https://developer.hashicorp.com/terraform/docs)).
 - **Problem solved**: Provision EKS/GKE clusters for production rollout of this platform.
-- **Real use case**: Placeholder modules `infra/terraform/aws-eks/`, `infra/terraform/gcp-gke/` — reference only; CI uses Kind instead.
+- **Real use case**: Placeholder modules `infra/terraform/aws-eks/`, `infra/terraform/gcp-gke/` — reference only; UC workflows use inline Python in GHA.
 - **UC**: Production path (all UCs on real cluster).
 
 ---
@@ -4116,7 +4118,7 @@ This section documents **real CI failures** encountered during implementation an
 
 ## Verification Evidence (All Workflows Green)
 
-**Last verified**: 2026-06-09 (all 26 workflow files — latest run on `main` = `success`).
+**Last verified**: 2026-06-09 — confirm latest run status on [GitHub Actions](https://github.com/sanjeev0120test/observable-mlops-platform/actions) after each push to `main`.
 
 ### Quick links
 
