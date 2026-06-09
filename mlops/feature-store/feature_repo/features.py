@@ -11,7 +11,7 @@ Feast 0.40.0+ API:
 from datetime import timedelta
 
 from feast import Entity, FeatureView, Field, FileSource
-from feast.types import Float32, Int64, String
+from feast.types import Float32, Int64
 
 # ---------- Entities ----------
 pod_entity = Entity(
