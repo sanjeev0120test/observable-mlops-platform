@@ -28,45 +28,51 @@ These are the **non-negotiable design invariants** — if you adopt only one ide
 
 ### Part I - Overview & System Model
 1. [Executive Summary](#executive-summary)
-2. [Platform Hierarchy & Reading Guide](#platform-hierarchy--reading-guide)
-3. [Enterprise Production Context](#enterprise-production-context)
-4. [System Thinking](#system-thinking)
+2. [Concepts Primer — ML, GenAI, MLOps & AIOps](#concepts-primer--ml-genai-mlops--aiops)
+   - [Core ML: training, inference, accuracy](#core-machine-learning-ml)
+   - [Eval gates vs LLM evaluation](#evaluation-eval--two-meanings-one-platform)
+   - [GenAI: LLM, RAG, embeddings, vector DB](#generative-ai-gen-ai--large-language-models-llms)
+   - [Feature store & MLOps lifecycle](#feature-store--mlops-lifecycle-concepts)
+   - [AIOps & GitHub Actions CI](#aiops-concepts--how-github-actions-validates-ml)
+3. [Platform Hierarchy & Reading Guide](#platform-hierarchy--reading-guide)
+4. [Enterprise Production Context](#enterprise-production-context)
+5. [System Thinking](#system-thinking)
    - [Cross-plane signal contract](#cross-plane-signal-contract)
    - [Systems dynamics — delays, stocks, and leverage points](#systems-dynamics--delays-stocks-and-leverage-points)
-5. [Critical System Design Concepts](#critical-system-design-concepts)
+6. [Critical System Design Concepts](#critical-system-design-concepts)
    - [Priority tiers](#priority-tiers--what-architects-should-internalize-first)
    - [Seven architectural invariants](#the-seven-architectural-invariants-expanded)
-6. [Architecture Diagrams & Flows](#architecture-diagrams--flows)
+7. [Architecture Diagrams & Flows](#architecture-diagrams--flows)
    - [Complete Visual Diagram Reference](#complete-visual-diagram-reference)
-7. [Sequence Diagrams (Production Flows)](#sequence-diagrams-production-flows)
+8. [Sequence Diagrams (Production Flows)](#sequence-diagrams-production-flows)
 
 ### Part II - Operations & Observability
-8. [Observability Strategy](#observability-strategy)
-9. [23 Use Cases — Business Value & Evidence](#23-use-cases--business-value--evidence)
+9. [Observability Strategy](#observability-strategy)
+10. [23 Use Cases — Business Value & Evidence](#23-use-cases--business-value--evidence)
    - [End-to-end scenarios (systems view)](#end-to-end-scenarios--systems-view)
    - [When to adopt which UC](#when-to-adopt-which-uc--decision-matrix)
 
 ### Part III - Build, Validate & Operate
-10. [Implementation Phases (Complete)](#implementation-phases-complete)
-11. [Validation — Run Everything at Once](#validation--run-everything-at-once)
-12. [Your Action Items](#your-action-items)
-13. [Architecture Decisions (Why We Chose This)](#architecture-decisions-why-we-chose-this)
-14. [Repository Structure](#repository-structure)
-15. [Eval Framework](#eval-framework)
-16. [Technology Stack](#technology-stack)
-17. [Troubleshooting](#troubleshooting)
+11. [Implementation Phases (Complete)](#implementation-phases-complete)
+12. [Validation — Run Everything at Once](#validation--run-everything-at-once)
+13. [Your Action Items](#your-action-items)
+14. [Architecture Decisions (Why We Chose This)](#architecture-decisions-why-we-chose-this)
+15. [Repository Structure](#repository-structure)
+16. [Eval Framework](#eval-framework)
+17. [Technology Stack](#technology-stack)
+18. [Troubleshooting](#troubleshooting)
 
 ### Part IV - Reference
-18. [Complete Tool & Library Reference](#complete-tool--library-reference)
-19. [Extended Coverage — Tools, Algorithms & Concepts](#extended-coverage--tools-algorithms--concepts)
-20. [Phases — Step-by-Step from Scratch](#phases--step-by-step-from-scratch)
-21. [Use Cases — Step-by-Step Walkthrough](#use-cases--step-by-step-walkthrough)
-22. [Challenges Encountered & How They Were Fixed](#challenges-encountered--how-they-were-fixed)
-23. [Verification Evidence (All Workflows Green)](#verification-evidence-all-workflows-green)
-24. [Official Documentation Index](#official-documentation-index)
+19. [Complete Tool & Library Reference](#complete-tool--library-reference)
+20. [Extended Coverage — Tools, Algorithms & Concepts](#extended-coverage--tools-algorithms--concepts)
+21. [Phases — Step-by-Step from Scratch](#phases--step-by-step-from-scratch)
+22. [Use Cases — Step-by-Step Walkthrough](#use-cases--step-by-step-walkthrough)
+23. [Challenges Encountered & How They Were Fixed](#challenges-encountered--how-they-were-fixed)
+24. [Verification Evidence (All Workflows Green)](#verification-evidence-all-workflows-green)
+25. [Official Documentation Index](#official-documentation-index)
 
 ### Part V - Expert Reference (SRE · MLOps · AIOps · DevOps)
-25. [Expert Reference — Platform Architecture](#expert-reference--platform-architecture)
+26. [Expert Reference — Platform Architecture](#expert-reference--platform-architecture)
 
 ---
 
@@ -103,6 +109,580 @@ Traditional MLOps repos document **tools** (MLflow, Feast, KServe). This repo do
 | **Stock & flow** | Accumulated state vs rate of change | Error budget (UC21) is a *stock*; burn rate is a *flow* |
 | **Boundary** | What is inside vs outside the system's responsibility | Eval gates prove CI behavior; you own prod SLO targets |
 | **Emergence** | Whole-platform value exceeds sum of UCs | E2E workflow `90-e2e` aggregates 23 scores — one failing UC blocks portal publish |
+
+---
+
+## Concepts Primer — ML, GenAI, MLOps & AIOps
+
+This section explains the **core ideas** behind this platform in plain language first, then with precise technical meaning. Every concept is tied to **where it lives in this repo** and **which use case proves it in CI**.
+
+> **Who should read this**: engineers new to MLOps/AIOps, PMs joining ML platform projects, or anyone who knows "we use RAG and a feature store" but wants to understand *why* and *how they connect*.
+
+### Concept map — how the big ideas relate
+
+```mermaid
+flowchart TB
+    subgraph ML["Traditional ML"]
+        TRAIN["Training<br/>learn weights from data"]
+        FEAT["Feature Store<br/>consistent inputs"]
+        INF["Inference<br/>predict on new data"]
+        ACC["Accuracy / drift<br/>does it still work?"]
+    end
+
+    subgraph MLOps["MLOps — ship ML safely"]
+        REG["Model Registry<br/>MLflow stages"]
+        EVAL["Eval gates<br/>eval/scorer.py"]
+        CAN["Canary A/B<br/>KServe"]
+        DQ["Data quality<br/>Great Expectations"]
+    end
+
+    subgraph GenAI["GenAI — language & retrieval"]
+        LLM["LLM<br/>Ollama TinyLlama"]
+        EMB["Embeddings<br/>text → vectors"]
+        VDB["Vector DB<br/>Qdrant"]
+        KB["Knowledge Base<br/>runbook markdown"]
+        RAG["RAG<br/>retrieve + generate"]
+        CTX["Context window<br/>prompt + chunks"]
+    end
+
+    subgraph AIOps["AIOps — smart operations"]
+        ANO["Anomaly detection<br/>LSTM logs"]
+        COR["Alert correlation<br/>DBSCAN"]
+        HEAL["Self-heal<br/>OPA-gated"]
+    end
+
+    TRAIN --> FEAT --> INF --> ACC
+    ACC --> EVAL
+    TRAIN --> REG --> CAN
+    FEAT --> DQ
+    KB --> EMB --> VDB --> RAG --> LLM
+    CTX --> RAG
+    ANO --> COR --> HEAL
+    RAG --> HEAL
+```
+
+---
+
+### Core Machine Learning (ML)
+
+#### What is Machine Learning?
+
+**Plain language**: instead of writing explicit rules (`if balance > 1000 then fraud`), you show the computer **many examples** and it learns patterns from data.
+
+**Technical**: ML is a family of algorithms that **optimize parameters (weights)** to minimize error on a training dataset, then generalize to unseen data. Common types in this repo:
+
+| Type | What it learns | Example in this repo |
+|---|---|---|
+| **Supervised** | Input → labeled output | Fraud classifier (UC1 retrain), error routing classifier (UC16) |
+| **Unsupervised** | Structure in unlabeled data | DBSCAN alert clusters (UC3), IsolationForest cost anomalies (UC10) |
+| **Deep learning** | Layers of neural networks | LSTM log autoencoder (UC2) |
+| **Time-series** | Patterns over time | Prophet load forecast (UC4) |
+
+**Key insight**: ML is **not magic** — it is statistics + compute. Models are only as good as the data and features you feed them (UC13, UC5).
+
+---
+
+#### ML Training
+
+**Plain language**: training is the **study phase** — the model reads historical data and adjusts its internal knobs until it gets answers right on examples it has seen (or a validation slice).
+
+**Technical**: training minimizes a **loss function** over a dataset:
+
+```
+Training loop (simplified):
+  for each batch of (features, labels):
+      prediction = model(features)
+      loss = loss_function(prediction, labels)
+      update weights via gradient descent
+```
+
+| Concept | Meaning | In this repo |
+|---|---|---|
+| **Training set** | Data used to update weights | `data/synthetic/*.parquet`, Airflow DAGs |
+| **Validation set** | Data used to tune without touching test | UC14 Optuna trials pick best hyperparams |
+| **Holdout / test set** | Unseen data for honest accuracy | UC9 checks holdout drift ≤ 0.10 |
+| **Epoch** | One full pass over training data | LSTM UC2 training in `mlops/experiments/log_anomaly/` |
+| **Hyperparameters** | Knobs *outside* the model (learning rate, layers) | UC14 Optuna ≥ 15 trials → MLflow |
+
+**Production pitfall**: training on data that **leaks future information** (e.g. using tomorrow's label for today's row). Feature stores exist partly to enforce **point-in-time correctness** (see Feature Store below).
+
+**Workflow**: UC1 triggers **retraining** via Airflow when drift is detected — training is not a one-time event.
+
+---
+
+#### Inference
+
+**Plain language**: inference is **using** the trained model — you give it new data and it returns a prediction or score.
+
+**Technical**: inference is forward-pass computation through a fixed model (weights frozen):
+
+| Mode | Latency | Throughput | Example |
+|---|---|---|---|
+| **Online / realtime** | Milliseconds | Per-request | KServe `InferenceService` (UC9, UC22) |
+| **Batch** | Minutes–hours | Millions of rows | Feast offline scoring, parquet pipelines |
+| **Streaming** | Seconds | Event windows | Drift monitor checking each batch (UC1) |
+
+```
+Request → feature lookup (Redis/Feast) → model forward pass → prediction + latency metric
+```
+
+**In this repo**: KServe on Kind serves models in CI; FastAPI services (`services/drift-monitor/`, etc.) expose `/drift/check`, `/heal`, `/api/v1/query` endpoints that GHA curls and scores.
+
+**Critical distinction**: **training** changes the model; **inference** does not. Mixing them (e.g. updating weights in the serving path) is a production anti-pattern.
+
+---
+
+#### Model Accuracy
+
+**Plain language**: accuracy answers **"how often is the model right?"** — but the right metric depends on the problem.
+
+**Technical**: accuracy is one metric among many:
+
+| Metric | When to use | UC example |
+|---|---|---|
+| **Accuracy** | Balanced classes | UC9: beats baseline by ≥ 2% |
+| **Precision / Recall** | Imbalanced data (fraud, anomalies) | UC2: precision@10 ≥ 0.70, recall@10 ≥ 0.60 |
+| **F1 score** | Balance precision & recall | UC10, UC16: F1 ≥ 0.70 |
+| **AUC-ROC** | Ranking quality | Common in drift/baseline comparisons |
+| **MAE / RMSE** | Regression (forecasting) | UC4: forecast MAE ≤ 15% of mean load |
+| **p-value (A/B)** | Is canary *statistically* better? | UC22: p ≤ 0.05 for promotion |
+
+**Why accuracy alone misleads**:
+
+- A fraud model predicting "not fraud" always gets 99% accuracy if fraud is 1% of rows — but catches zero fraud.
+- Production **data drift** (UC1) means yesterday's accuracy ≠ today's — you must monitor inputs (UC19) and outputs continuously.
+
+**NannyML** in UC1 estimates performance **without fresh labels** when labels arrive late — a production-realistic pattern.
+
+---
+
+### Evaluation (Eval) — two meanings, one platform
+
+"Eval" means different things in ML vs GenAI. This repo uses **both**.
+
+#### 1. Eval gates (MLOps/AIOps — this repo's primary meaning)
+
+**Plain language**: an eval gate is an **automatic quality exam** — if the score is too low, CI fails and the change cannot merge.
+
+**Technical**: each UC collects raw metrics → `eval/scorer.py` converts them to weighted 0–100 sub-scores → composite compared to `THRESHOLDS[UCx]` in `eval/metrics.py` → writes `eval-results/ucN.json` → workflow exits 1 if failed.
+
+```python
+# Simplified mental model
+result = compute_score("UC1", {"psi_score": 0.28, "retrain_triggered": True, ...})
+if not result.passed:   # score < 70 for UC1
+    sys.exit(1)         # GitHub Actions job goes red
+```
+
+| Property | Why it matters |
+|---|---|
+| **Weighted metrics** | High-weight failure (e.g. `retrain_triggered` weight 3.0) cannot be hidden by many trivial passes |
+| **Blocking** | Unlike a warning in logs, this stops the pipeline |
+| **Artifact** | JSON is downloadable from GHA — audit trail |
+| **Aggregated** | `90-e2e` combines all 23 before portal publish |
+
+**Analogy**: unit tests verify code; **eval gates verify capabilities** (drift detection actually fires retrain, dedup actually ≥ 70%, etc.).
+
+#### 2. LLM / RAG evaluation (GenAI meaning)
+
+**Plain language**: when an LLM answers a question, you measure **did it retrieve the right docs?** and **did it stick to those docs?**
+
+**Technical metrics in UC8**:
+
+| Metric | What it measures | Threshold |
+|---|---|---|
+| **Retrieval P@5** | Of top 5 chunks, how many are relevant? | ≥ 0.70 |
+| **Groundedness** | Is the answer supported by retrieved context, not hallucinated? | ≥ 0.60 |
+| **Collection size** | KB actually indexed | ≥ 40 chunks |
+
+These are **eval gates applied to GenAI** — same framework (`eval/scorer.py`), different metrics in `UC_METRICS["UC8"]`.
+
+---
+
+### Generative AI (Gen AI) & Large Language Models (LLMs)
+
+#### Generative AI
+
+**Plain language**: AI that **creates new content** — text, code, summaries — rather than only classifying or scoring.
+
+**Technical**: GenAI models learn a probability distribution over tokens (text pieces) and **sample** from it to generate outputs. This repo uses GenAI for **operational text** (runbook answers, post-mortem drafts), not for core fraud/scoring models.
+
+| GenAI use here | UC | Stack |
+|---|---|---|
+| Runbook Q&A during incidents | UC8 | Qdrant + Ollama (TinyLlama) |
+| Post-mortem draft from similar incidents | UC23 | Same RAG pipeline + n8n |
+
+**GenAI vs traditional ML in this platform**:
+
+| | Traditional ML (UC1, UC9) | GenAI (UC8, UC23) |
+|---|---|---|
+| Output | Score, class, forecast | Natural language |
+| Ground truth | Labels in parquet | Runbook markdown |
+| Failure mode | Wrong prediction | Hallucination |
+| Mitigation | Drift monitoring, canary | RAG + groundedness eval |
+
+---
+
+#### Large Language Models (LLMs)
+
+**Plain language**: an LLM is a very large neural network trained on huge text corpora that predicts **the next word (token)** — used for chat, summarization, and code.
+
+**Technical**:
+
+- **Tokens**: text split into subwords (~4 chars English avg). Models have a **context window** (max tokens per request).
+- **Parameters**: weights learned during pre-training (TinyLlama 1.1B in this repo — small on purpose for CI).
+- **Inference**: prompt in → token stream out. Served via **Ollama** at `http://ollama:11434` in Stack A.
+- **Temperature**: sampling randomness (lower = more deterministic answers for runbooks).
+
+**This repo does not fine-tune LLMs in CI** — it uses **RAG** to inject domain knowledge instead (cheaper, easier to update, auditable sources).
+
+---
+
+#### Embeddings
+
+**Plain language**: an embedding turns text (or any object) into a **list of numbers (vector)** so similar meanings sit close together in math space.
+
+**Technical**: an embedding model `f(text) → ℝⁿ` (e.g. n=384 or 768). Similar runbook paragraphs have **high cosine similarity**.
+
+```
+"Restart payments deployment"  →  [0.12, -0.45, 0.88, ...]
+"Rollout restart in payments"  →  [0.11, -0.43, 0.85, ...]  ← close in vector space
+"Update Grafana dashboard"     →  [-0.62, 0.33, 0.05, ...]  ← far away
+```
+
+| Step | Where | UC |
+|---|---|---|
+| Chunk runbook markdown | `services/runbook-agent/runbooks/*.md` | UC8 |
+| Embed each chunk | sentence-transformers (workflow `09-rag-runbook`) | UC8 |
+| Store vectors + metadata | Qdrant collection `runbook_chunks` | UC8, UC23 |
+| Embed user question at query time | same model | UC8 |
+| Nearest-neighbor search | Qdrant top-k | UC8 |
+
+**Also used for**: UC16 error log classification (embeddings + sklearn), UC2 stores similar incidents in Qdrant.
+
+---
+
+#### Vector Database
+
+**Plain language**: a database optimized for **"find the most similar vectors"** — not SQL `WHERE id = 5`.
+
+**Technical**: vector DBs implement **approximate nearest neighbor (ANN)** search (HNSW index in Qdrant). You store:
+
+```json
+{
+  "id": "chunk-42",
+  "vector": [0.12, -0.45, ...],
+  "payload": {"source": "payments-runbook.md", "text": "Step 1: kubectl rollout..."}
+}
+```
+
+| Component | This repo |
+|---|---|
+| Engine | **Qdrant** (`qdrant:6333`) in Stack A |
+| Collections | `runbook_chunks`, incident embeddings (UC2) |
+| Query | `POST /api/v1/query` on `runbook-agent` |
+| Eval proof | P@5, collection size ≥ 40 chunks |
+
+**Vector DB vs traditional DB**: PostgreSQL can store vectors (pgvector) but Qdrant is purpose-built for million-scale ANN at low latency — right for RAG retrieval.
+
+---
+
+#### Knowledge Base (KB)
+
+**Plain language**: a **curated library** of trusted documents your AI can cite — runbooks, post-mortems, architecture notes.
+
+**Technical**: in this platform the KB is **not** the LLM's weights — it is **external markdown files** ingested at index time:
+
+| KB source | Path | Used by |
+|---|---|---|
+| Runbooks | `services/runbook-agent/runbooks/*.md` | UC8 |
+| Past incidents | Embedded after UC2 anomaly pipeline | UC23 similar-incident retrieval |
+| Service catalog | `backstage/catalog-info.yaml` | UC20 (ownership context for humans; can enrich RAG) |
+
+**KB hygiene rules** (production best practice):
+
+- One topic per file; clear headings for chunking
+- Version in git — KB updates go through PR review
+- Stale runbooks → wrong RAG answers → measure groundedness (UC8 eval)
+
+---
+
+#### RAG — Retrieval Augmented Generation
+
+**Plain language**: don't ask the LLM to **memorize** your runbooks. **Search** the relevant paragraphs first, paste them into the prompt, then ask the LLM to answer **using only that text**.
+
+**Technical** — RAG pipeline stages:
+
+```mermaid
+flowchart LR
+    Q["User question"]
+    E1["Embed question"]
+    R["Retrieve top-k chunks<br/>from Qdrant"]
+    C["Build context prompt<br/>question + chunks"]
+    LLM["LLM generates answer"]
+    A["Answer + citations"]
+
+    Q --> E1 --> R --> C --> LLM --> A
+```
+
+| Stage | Failure if skipped |
+|---|---|
+| **Chunking** | Context too big or sentences split mid-thought |
+| **Retrieval** | LLM hallucinates steps not in runbooks |
+| **Grounding prompt** | Model ignores retrieved text |
+| **Eval** | Team trusts bad answers during incidents |
+
+**UC8** implements full RAG; **UC23** reuses retrieval to draft post-mortems via n8n webhook → GitHub Issue.
+
+**RAG vs fine-tuning**:
+
+| Approach | Pros | Cons | This repo |
+|---|---|---|---|
+| **RAG** | Updatable KB, cite sources, no GPU retrain | Retrieval quality matters | ✅ UC8, UC23 |
+| **Fine-tuning** | Style/domain baked in | Expensive, stale, hard to audit | Not in CI scope |
+| **Prompt only** | Zero infra | Hallucinates ops steps | Insufficient for incidents |
+
+---
+
+#### Context & context window
+
+**Plain language**: **context** is everything the LLM sees in one request — system instructions, retrieved runbook chunks, and your question. The **context window** is the maximum token limit.
+
+**Technical**:
+
+```
+[system prompt] + [retrieved chunk 1] + [chunk 2] + ... + [user question] → LLM
+|<--------------------- context window (e.g. 2048 tokens) -------------------->|
+```
+
+| Concept | Meaning | UC8 implication |
+|---|---|---|
+| **Context** | Retrieved evidence + instructions | Top-k=5 chunks from Qdrant |
+| **Context window** | Hard token cap | TinyLlama 2048 — chunk size must fit |
+| **Context overflow** | Too much text truncated | Lose critical runbook steps → bad answers |
+| **Lost-in-the-middle** | Models ignore middle of long prompts | Keep k small; rank best chunks first |
+
+**Groundedness** (UC8 metric): measures whether the answer's claims appear in the provided context — detects **hallucination** when the LLM invents kubectl commands not in the runbook.
+
+---
+
+#### RAG support in this platform
+
+End-to-end RAG support stack:
+
+| Layer | Technology | Purpose |
+|---|---|---|
+| **Ingestion** | `POST /api/v1/index-runbooks` | Chunk + embed + upsert |
+| **Storage** | Qdrant | ANN search |
+| **Embedding model** | sentence-transformers | Text → vectors |
+| **Generation** | Ollama + TinyLlama | Local LLM (no external API key required in CI) |
+| **Orchestration** | n8n webhooks | Alert → query → post-mortem (UC23) |
+| **Quality gate** | `eval/scorer.py` UC8 metrics | P@5, groundedness, chunk count |
+| **Observability** | Prometheus on `runbook-agent` | `runbook_agent_queries_total`, latency histogram |
+
+**Security note**: runbooks may contain internal hostnames — treat KB as **repo-scoped content**; never commit secrets (`.env*` is gitignored). CI uses synthetic/public-safe runbook text.
+
+---
+
+### Feature Store & MLOps lifecycle concepts
+
+#### Feature Store
+
+**Plain language**: a **single menu of model inputs** (features) shared by training and live serving — same definitions, same names, same logic.
+
+**Technical** ([Feast](https://docs.feast.dev/)):
+
+| Concept | Definition |
+|---|---|
+| **Feature** | One measurable input column (e.g. `customer_balance_7d_avg`) |
+| **FeatureView** | Named group of features + source + schema |
+| **Entity** | Thing being predicted (user_id, account_id) |
+| **Offline store** | Historical parquet for training (batch) |
+| **Online store** | Redis for low-latency serving (realtime) |
+| **Materialization** | Copy offline → online on schedule |
+
+```mermaid
+flowchart LR
+    BATCH["Batch pipeline<br/>writes parquet"]
+    OFF["Offline store<br/>FileSource parquet"]
+    MAT["Materialize job"]
+    ON["Online store<br/>Redis"]
+    TRAIN["Training job<br/>UC1, UC9"]
+    SERVE["KServe inference<br/>UC22"]
+
+    BATCH --> OFF --> MAT --> ON
+    OFF --> TRAIN
+    ON --> SERVE
+```
+
+**Train/serve skew** — the #1 silent ML bug: training computes `balance_avg` with SQL window A; serving computes it differently in API code → model looks fine in lab, fails in prod.
+
+**UC5 proof**: offline/online PSI ≤ 0.10, Great Expectations pass ≥ 99%, freshness ≤ 3600s.
+
+**Point-in-time correctness**: when training on historical data, features must use **only information available at that timestamp** — Feast enforces this via entity timestamps.
+
+---
+
+#### Model Registry & lineage
+
+**Plain language**: a **versioned filing cabinet** for models — who trained v3, what data, is it in prod?
+
+**Technical**: MLflow Model Registry stages: `None → Staging → Production → Archived`. Each version links to:
+
+- Training run ID, metrics, parameters
+- Artifact URI (model weights)
+- SHAP explainability artifact (UC17 — required for promotion)
+
+**UC9** logs to DagsHub MLflow; **OPA** `model_promotion.rego` blocks illegal stage jumps.
+
+---
+
+#### Drift (data drift & model drift)
+
+| Type | What changed | Detection | UC |
+|---|---|---|---|
+| **Data drift** | Input feature distributions shifted | PSI, KS, LSDD | UC1, UC19 |
+| **Concept drift** | Relationship X→Y changed | Performance drop, NannyML | UC1 |
+| **Prediction drift** | Output distribution shifted | Monitoring dashboards | UC19, UC21 |
+
+**PSI rule of thumb**: PSI ≥ 0.25 → significant shift (UC1 threshold).
+
+---
+
+#### Hyperparameter Optimization (HPO)
+
+**Plain language**: automatically try hundreds of learning-rate / depth combinations instead of manual grid search.
+
+**UC14**: Optuna ≥ 15 trials; best trial logged to MLflow; must beat default config.
+
+---
+
+#### Explainability (XAI)
+
+**Plain language**: show **which features drove** a prediction — required for regulated industries.
+
+**UC17**: SHAP values computed → logged to MLflow → OPA denies promotion if missing.
+
+---
+
+#### Data Quality Gates
+
+**Plain language**: block bad rows **before** they poison training.
+
+**UC13**: Great Expectations suite — null checks, range checks, schema validation. Bad batch must fail sensor.
+
+---
+
+#### Canary deployment & A/B testing (ML serving)
+
+**Plain language**: send 10% of traffic to the new model; if metrics are worse, roll back before everyone is affected.
+
+**UC22**: KServe traffic split + scipy statistical test (p ≤ 0.05) before full promotion.
+
+---
+
+### AIOps concepts & how GitHub Actions validates ML
+
+#### AIOps (AI for IT Operations)
+
+**Plain language**: use ML to help humans run large systems — find anomalies in logs, deduplicate alerts, suggest runbooks.
+
+| Capability | Algorithm / tool | UC |
+|---|---|---|
+| Log anomaly | LSTM autoencoder | UC2 |
+| Alert correlation | DBSCAN clustering | UC3 |
+| Self-healing | OPA-gated K8s actions | UC6 |
+| RAG runbooks | Qdrant + LLM | UC8 |
+| Distributed tracing RCA | OTEL + Tempo | UC11 |
+| Post-mortem automation | RAG + n8n | UC23 |
+
+**AIOps ≠ full autonomy**: UC6 **denies** dangerous actions (fail-closed). Human writes policy once; machine executes within guardrails.
+
+---
+
+#### Additional MLOps/AIOps concepts covered in this repo
+
+| Concept | One-line definition | UC |
+|---|---|---|
+| **Observability (3 pillars)** | Metrics, logs, traces | UC11, Stack B |
+| **SLO / error budget** | Allowed unreliability before release freeze | UC21 |
+| **GitOps** | Git = desired cluster state | UC12 |
+| **Policy-as-code** | Machine-readable allow/deny rules | UC6, UC7, UC9, OPA/Kyverno |
+| **FinOps** | Detect cloud waste | UC10 |
+| **DORA metrics** | Engineering delivery health | UC15 |
+| **Rate limiting** | Protect APIs under load | UC18 |
+| **Service catalog** | Who owns what | UC20 |
+| **Synthetic monitoring** | Proactive health checks | `01-observability` |
+| **Supply chain security** | Scan images for CVEs | UC7 Trivy |
+| **Chaos / remediation MTTR** | Time to safe auto-fix | UC6 ≤ 300s |
+| **Feature monitoring** | Profile stats before drift | UC19 WhyLogs |
+| **Batch vs streaming** | Feast offline vs Redis online | UC5 |
+| **Ephemeral CI environments** | Prove in throwaway stacks | All workflows |
+
+---
+
+#### GitHub Actions as MLOps CI orchestrator
+
+**Plain language**: GitHub Actions is the **robot operator** that starts Docker, runs Python, scores results, and publishes reports — no laptop required.
+
+**Technical flow**:
+
+```mermaid
+flowchart TD
+    TRIG["push / workflow_dispatch"]
+    CHECKOUT["actions/checkout"]
+    SETUP["setup-python · install requirements.txt"]
+    COMPOSE["docker compose up Stack A + B"]
+    KIND["kind create cluster + kubectl apply"]
+    RUN["Run UC scripts + curl services"]
+    EVAL["python -m eval.scorer run_eval_gate"]
+    ART["upload-artifact eval-results/"]
+    E2E["90-e2e aggregate"]
+    PAGE["91-publish-portal → gh-pages"]
+
+    TRIG --> CHECKOUT --> SETUP --> COMPOSE --> KIND --> RUN --> EVAL --> ART --> E2E --> PAGE
+```
+
+| GHA pattern | MLOps purpose |
+|---|---|
+| `workflow_dispatch` | Manual full-platform validation |
+| `services:` health waits | MLflow/Feast ready before tests |
+| `continue-on-error` + secrets | DagsHub optional — no secret in logs |
+| Job artifacts | Download `eval-results/` for audit |
+| Concurrency groups | Prevent overlapping Kind clusters |
+| Matrix (if used) | Parallel UC isolation |
+
+**Secrets hygiene** (this repo):
+
+- `DAGSHUB_TOKEN`, `HF_TOKEN` — GitHub **encrypted secrets** only
+- `.env`, `.env.*` — **gitignored** — never commit
+- Workflows reference `${{ secrets.NAME }}` — not literal tokens
+
+See [Your Action Items](#your-action-items) for required secrets setup.
+
+---
+
+### Concepts quick reference — term → UC → file
+
+| Term | Plain meaning | Proved by | Key file |
+|---|---|---|---|
+| **ML training** | Learn from historical data | UC1, UC14 | Airflow DAGs, `mlops/experiments/` |
+| **Inference** | Predict on new data | UC9, UC22 | KServe manifests |
+| **Accuracy** | How often correct | UC9, UC2 | `eval/metrics.py` |
+| **Eval gate** | CI quality exam | All UCs | `eval/scorer.py` |
+| **LLM** | Text-generating model | UC8 | Ollama in Stack A |
+| **Embedding** | Text → vector | UC8, UC16 | sentence-transformers |
+| **Vector DB** | Similarity search | UC8, UC2 | Qdrant |
+| **Knowledge base** | Trusted doc library | UC8 | `runbooks/*.md` |
+| **RAG** | Retrieve then generate | UC8, UC23 | `runbook-agent` |
+| **Context** | Prompt + retrieved chunks | UC8 | Query builder in workflow |
+| **Feature store** | Shared train/serve features | UC5 | `mlops/feast/` |
+| **Drift** | Data changed over time | UC1, UC19 | `drift-monitor` |
+| **Registry** | Versioned models | UC9 | MLflow on DagsHub |
+| **Canary** | Partial traffic test | UC22 | KServe rollout |
+| **SHAP** | Feature attribution | UC17 | explainability workflow |
+| **AIOps** | ML for operations | UC2–UC8, UC23 | `services/*` |
+| **HPO** | Auto hyperparam search | UC14 | Optuna |
+| **Data quality** | Block bad rows | UC13 | Great Expectations |
 
 ---
 
@@ -144,9 +724,10 @@ flowchart TB
 
 | If you are… | Start here | Then read |
 |---|---|---|
-| **Executive / PM** | [Executive Summary](#executive-summary) → [23 Use Cases](#23-use-cases--business-value--evidence) | [Enterprise Production Context](#enterprise-production-context) |
-| **Platform / SRE lead** | [System Design Concepts §5](#critical-system-design-concepts) → [Architecture Diagrams](#architecture-diagrams--flows) | [Expert Reference §25](#expert-reference--platform-architecture) |
-| **ML engineer** | [UC Walkthroughs §21](#use-cases--step-by-step-walkthrough) → [Extended Coverage §19](#extended-coverage--tools-algorithms--concepts) | [Tool Reference §18](#complete-tool--library-reference) |
+| **Executive / PM** | [Executive Summary](#executive-summary) → [Concepts Primer](#concepts-primer--ml-genai-mlops--aiops) → [23 Use Cases](#23-use-cases--business-value--evidence) | [Enterprise Production Context](#enterprise-production-context) |
+| **Platform / SRE lead** | [Concepts Primer — AIOps](#aiops-concepts--how-github-actions-validates-ml) → [System Design Concepts §6](#critical-system-design-concepts) | [Expert Reference §26](#expert-reference--platform-architecture) |
+| **ML engineer** | [Concepts Primer — ML & Feature Store](#core-machine-learning-ml) → [UC Walkthroughs §22](#use-cases--step-by-step-walkthrough) | [Tool Reference §19](#complete-tool--library-reference) |
+| **GenAI / LLM engineer** | [Concepts Primer — RAG & embeddings](#rag--retrieval-augmented-generation) → UC8, UC23 | [Extended Coverage §20](#extended-coverage--tools-algorithms--concepts) |
 | **Security / compliance** | UC7, UC12, UC17 in [Use Cases](#23-use-cases--business-value--evidence) | [OPA/Kyverno/Trivy in Tool Reference](#complete-tool--library-reference) |
 | **Operator validating CI** | [Validation §11](#validation--run-everything-at-once) | [Verification Evidence §23](#verification-evidence-all-workflows-green) |
 
@@ -263,19 +844,34 @@ These are **representative incident classes** seen at large SaaS orgs (aggregate
 
 ### Definitions — enterprise MLOps / AIOps vocabulary
 
+> **Deep dives**: see [Concepts Primer §2](#concepts-primer--ml-genai-mlops--aiops) for ML, GenAI, RAG, embeddings, feature store, eval gates, and more — explained step by step with repo examples.
+
 | Term | Definition | Critical in production because… | Official reference |
 |---|---|---|---|
 | **MLOps** | Discipline of deploying and maintaining ML systems in production reliably | Models decay; data changes; unlike traditional software | [Google ML Engineering](https://developers.google.com/machine-learning/guides/rules-of-ml) |
 | **AIOps** | AI/ML applied to IT operations (anomaly, correlation, automation) | Human on-call doesn't scale past ~500 microservices | [Gartner AIOps definition](https://www.gartner.com/en/information-technology/glossary/aiops-artificial-intelligence-operations) |
+| **Generative AI (GenAI)** | Models that produce new text/code/media from learned distributions | Used for runbooks/post-mortems here — must measure hallucination | [Concepts Primer — GenAI](#generative-ai-gen-ai--large-language-models-llms) |
+| **LLM** | Large language model — predicts next token; powers RAG answers | Wrong ops advice during incidents is dangerous — use RAG + groundedness eval | [Concepts Primer — LLM](#large-language-models-llms) |
+| **RAG** | Retrieve relevant docs from vector DB, then generate answer with LLM | Updates KB without retraining; cite sources | [Concepts Primer — RAG](#rag--retrieval-augmented-generation) |
+| **Embeddings** | Dense vectors representing semantic meaning of text/objects | Enables similarity search in Qdrant | [Concepts Primer — Embeddings](#embeddings) |
+| **Vector DB** | Database optimized for nearest-neighbor search on embeddings | Fast runbook retrieval at incident time | [Qdrant docs](https://qdrant.tech/documentation/) |
+| **Knowledge base (KB)** | Curated trusted documents (runbooks, post-mortems) indexed for retrieval | Stale/wrong KB → wrong RAG answers | `services/runbook-agent/runbooks/` |
+| **Context window** | Max tokens an LLM can see in one request | Overflow truncates critical runbook steps | [Concepts Primer — Context](#context--context-window) |
 | **Observability** | Ability to infer internal state from external outputs (metrics, logs, traces) | Debug distributed systems without SSH | [CNCF Observability](https://opentelemetry.io/docs/concepts/observability-primer/) |
 | **Feature store** | Central registry of features for training and serving with point-in-time correctness | #1 cause of silent ML bugs is train/serve mismatch | [Feast docs](https://docs.feast.dev/getting-started/concepts/overview) |
 | **Model registry** | Versioned store of models with stage transitions (Staging → Production) | Audit trail for who promoted what when | [MLflow Model Registry](https://mlflow.org/docs/latest/model-registry.html) |
+| **Inference** | Running a trained model to produce predictions on new data | Serving path must match training features | [Concepts Primer — Inference](#inference) |
+| **Model accuracy** | Fraction of correct predictions (or task-specific metric) | Drift makes yesterday's accuracy irrelevant | [Concepts Primer — Accuracy](#model-accuracy) |
+| **Drift** | Change in data or model behavior over time | Silent degradation until business KPIs move | UC1, UC19 |
 | **Policy-as-code** | Machine-readable rules (Rego, Kyverno YAML) enforced in CI/CD and admission | Manual review doesn't scale; compliance needs proof | [OPA policy language](https://www.openpolicyagent.org/docs/latest/policy-language/) |
 | **GitOps** | Git as source of truth; controllers reconcile cluster to declared state | Config drift causes "works in staging" prod failures | [CNCF GitOps WG](https://opengitops.dev/) |
 | **SLO / SLI / SLA** | SLI = measured metric; SLO = internal target; SLA = customer contract | Error budget ties reliability to release velocity | [Google SRE — SLI/SLO/SLA](https://sre.google/sre-book/service-level-objectives/) |
 | **Canary deployment** | Route small % traffic to new version; compare metrics before full rollout | Limits blast radius of bad model/API version | [KServe rollout](https://kserve.github.io/website/latest/modelserving/v1beta1/rollout-strategy/) |
 | **PSI (Population Stability Index)** | Quantifies distribution shift between reference and current populations | Standard drift signal in finance/risk ML | [Evidently — PSI](https://docs.evidentlyai.com/metrics/customize_metric) |
-| **Eval gate** | Automated quality bar (composite score) that blocks promotion/merge | Prevents "it ran" from meaning "it works" | This repo: `eval/scorer.py` |
+| **Eval gate** | Automated quality bar (composite score) that blocks promotion/merge | Prevents "it ran" from meaning "it works" | `eval/scorer.py` — [Concepts Primer — Eval](#evaluation-eval--two-meanings-one-platform) |
+| **Groundedness** | Answer claims supported by retrieved context (anti-hallucination) | LLMs invent plausible but wrong kubectl steps | UC8 metric in `eval/metrics.py` |
+| **SHAP** | Explain which features drove a prediction | Regulated ML requires audit trail | UC17 |
+| **HPO** | Automated hyperparameter search | Manual tuning doesn't scale | UC14 Optuna |
 
 ---
 
