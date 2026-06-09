@@ -10,7 +10,7 @@ Enterprise-grade **AIOps + MLOps** reference platform for SaaS teams. **23 use c
 
 ## Table of Contents
 
-### Part I — Overview & System Model
+### Part I - Overview & System Model
 1. [Executive Summary](#executive-summary)
 2. [Platform Hierarchy & Reading Guide](#platform-hierarchy--reading-guide)
 3. [Enterprise Production Context](#enterprise-production-context)
@@ -19,11 +19,11 @@ Enterprise-grade **AIOps + MLOps** reference platform for SaaS teams. **23 use c
 6. [Architecture Diagrams & Flows](#architecture-diagrams--flows)
 7. [Sequence Diagrams (Production Flows)](#sequence-diagrams-production-flows)
 
-### Part II — Operations & Observability
+### Part II - Operations & Observability
 8. [Observability Strategy](#observability-strategy)
 9. [23 Use Cases — Business Value & Evidence](#23-use-cases--business-value--evidence)
 
-### Part III — Build, Validate & Operate
+### Part III - Build, Validate & Operate
 10. [Implementation Phases (Complete)](#implementation-phases-complete)
 11. [Validation — Run Everything at Once](#validation--run-everything-at-once)
 12. [Your Action Items](#your-action-items)
@@ -33,7 +33,7 @@ Enterprise-grade **AIOps + MLOps** reference platform for SaaS teams. **23 use c
 16. [Technology Stack](#technology-stack)
 17. [Troubleshooting](#troubleshooting)
 
-### Part IV — Deep Reference
+### Part IV - Reference
 18. [Complete Tool & Library Reference](#complete-tool--library-reference)
 19. [Extended Coverage — Tools, Algorithms & Concepts](#extended-coverage--tools-algorithms--concepts)
 20. [Phases — Step-by-Step from Scratch](#phases--step-by-step-from-scratch)
@@ -42,7 +42,7 @@ Enterprise-grade **AIOps + MLOps** reference platform for SaaS teams. **23 use c
 23. [Verification Evidence (All Workflows Green)](#verification-evidence-all-workflows-green)
 24. [Official Documentation Index](#official-documentation-index)
 
-### Part V — Expert Reference (SRE · MLOps · AIOps · DevOps)
+### Part V - Expert Reference (SRE · MLOps · AIOps · DevOps)
 25. [Expert Reference — Platform Architecture](#expert-reference--platform-architecture)
 
 ---
