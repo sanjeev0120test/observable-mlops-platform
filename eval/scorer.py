@@ -80,8 +80,11 @@ def compute_score(uc: str, metric_values: dict[str, Any]) -> EvalResult:
         if raw_value is None:
             metric_score = 0.0
             details[spec.name] = {
-                "value": None, "score": 0.0, "weight": spec.weight,
-                "threshold": spec.pass_threshold, "status": "MISSING",
+                "value": None,
+                "score": 0.0,
+                "weight": spec.weight,
+                "threshold": spec.pass_threshold,
+                "status": "MISSING",
             }
         else:
             metric_score = _score_metric(spec, raw_value)

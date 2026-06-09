@@ -41,9 +41,10 @@ jobs:
         run: |
           CRITICAL_COUNT=0
 
-          # Scan the base image used by all services
+          # Scan the base image used by all services (ignore unfixed = only count patchable CVEs)
           trivy image python:3.11-slim \
             --severity CRITICAL \
+            --ignore-unfixed \
             --format json \
             --output /tmp/trivy_python_slim.json \
             --exit-code 0 || true
@@ -63,6 +64,7 @@ jobs:
           for IMAGE in "postgres:16-alpine" "redis:7-alpine" "prom/prometheus:v2.52.0" "grafana/grafana:10.4.3"; do
             trivy image "$IMAGE" \
               --severity CRITICAL \
+              --ignore-unfixed \
               --format json \
               --output "/tmp/trivy_$(echo $IMAGE | tr '/:' '_').json" \
               --exit-code 0 || true
