@@ -26,12 +26,12 @@ namespace_entity = Entity(
 
 # ---------- Data sources ----------
 pod_metrics_source = FileSource(
-    path="data/synthetic/pod_metrics.parquet",
+    path="../../../data/synthetic/pod_metrics.parquet",
     timestamp_field="timestamp",
 )
 
 cost_source = FileSource(
-    path="data/synthetic/cost_data.parquet",
+    path="../../../data/synthetic/cost_data.parquet",
     timestamp_field="hour",
 )
 
