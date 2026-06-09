@@ -40,6 +40,9 @@ Enterprise-grade **AIOps + MLOps** reference platform for SaaS teams. **23 use c
 21. [Verification Evidence (All Workflows Green)](#verification-evidence-all-workflows-green)
 22. [Official Documentation Index](#official-documentation-index)
 
+### Part V — Expert Reference (SRE · MLOps · AIOps · DevOps)
+23. [Expert Reference — Platform Architecture](#expert-reference--platform-architecture)
+
 ---
 
 ## Executive Summary
@@ -104,7 +107,7 @@ flowchart TB
 | If you are… | Start here | Then read |
 |---|---|---|
 | **Executive / PM** | [Executive Summary](#executive-summary) → [23 Use Cases ROI](#23-use-cases--business-value--roi) | [Enterprise Production Context](#enterprise-production-context) |
-| **Platform / SRE lead** | [Architecture Diagrams](#architecture-diagrams--flows) → [Observability Strategy](#observability-strategy) | [Sequence Diagrams](#sequence-diagrams-production-flows) |
+| **Platform / SRE lead** | [Architecture Diagrams](#architecture-diagrams--flows) → [Observability Strategy](#observability-strategy) | [Expert Reference §23](#expert-reference--platform-architecture) |
 | **ML engineer** | [UC Walkthroughs](#use-cases--step-by-step-walkthrough) → [Eval Framework](#eval-framework) | [Tool Reference §17](#complete-tool--library-reference) |
 | **Security / compliance** | UC7, UC12, UC17 in [Use Cases table](#23-use-cases--business-value--roi) | [OPA/Kyverno/Trivy in Tool Reference](#complete-tool--library-reference) |
 | **Operator validating CI** | [Validation — Run Everything](#validation--run-everything-at-once) | [Verification Evidence §21](#verification-evidence-all-workflows-green) |
@@ -1836,6 +1839,345 @@ Primary references used for tool selection and implementation accuracy. **Bold e
 | Google SRE (SLOs) | https://sre.google/sre-book/service-level-objectives/ |
 | Redis | https://redis.io/docs/ |
 | FastAPI | https://fastapi.tiangolo.com/ |
+
+---
+
+## Expert Reference — Platform Architecture
+
+Reference for **SRE, MLOps, AIOps, DevOps, and platform architects** adopting or extending this platform. Patterns align with [Google SRE](https://sre.google/sre-book/table-of-contents/), [CNCF observability](https://opentelemetry.io/docs/concepts/observability-primer/), and [ML engineering best practices](https://developers.google.com/machine-learning/guides/rules-of-ml).
+
+### Golden Signals, RED & USE (mapped to this platform)
+
+Google's **four golden signals** ([Monitoring Distributed Systems](https://sre.google/sre-book/monitoring-distributed-systems/)):
+
+| Golden signal | Definition | Platform metric / UC | Where instrumented |
+|---|---|---|---|
+| **Latency** | Time to serve a request | Trace span duration, p99 in Grafana | UC11 — OTEL → Tempo |
+| **Traffic** | Demand on the system | `http_requests_total`, request rate | UC18, UC21 — Prometheus |
+| **Errors** | Rate of failed requests | `http_requests_total{status=~"5.."}`, error budget | UC21 — `SLOFastBurnRate` |
+| **Saturation** | How "full" the service is | CPU, queue depth, memory | UC4 — `HighCPUPreScale` → KEDA |
+
+**RED method** (services — [Weaveworks](https://www.weave.works/blog/the-red-method-better-capture-method/)):
+
+| RED | PromQL / signal | UC |
+|---|---|---|
+| **Rate** | `rate(http_requests_total[5m])` | UC21 |
+| **Errors** | `job:http_error_rate:ratio5m` | UC21 |
+| **Duration** | histogram / trace span ms | UC11 |
+
+**USE method** (resources — Brendan Gregg):
+
+| USE | Metric | UC |
+|---|---|---|
+| **Utilization** | `container_cpu_usage_seconds_total` | UC4 |
+| **Saturation** | queue lag, pending pods | UC4, UC18 |
+| **Errors** | OOM kills, restarts | UC2 — `PodCrashLoopBackOff` |
+
+```mermaid
+flowchart LR
+    subgraph Golden["Golden Signals"]
+        L["Latency"]
+        T["Traffic"]
+        E["Errors"]
+        S["Saturation"]
+    end
+
+    subgraph Stack["Platform Stack"]
+        OTEL["OTEL"]
+        PROM["Prometheus"]
+        TEMPO["Tempo"]
+        AM["Alertmanager"]
+    end
+
+    L --> OTEL --> TEMPO
+    T --> PROM
+    E --> PROM --> AM
+    S --> PROM --> AM
+```
+
+### SLI / SLO / SLA catalog (production-ready examples)
+
+Definitions per [Google SRE — SLI/SLO/SLA](https://sre.google/sre-book/service-level-objectives/):
+
+| Service | SLI (what we measure) | SLO (internal target) | SLA (customer contract) | Error budget (30d) | Alert rule | UC |
+|---|---|---|---|---|---|---|
+| **Inference API** | % successful predictions (non-5xx) | 99.9% availability | 99.5% (contractual) | 43.2 min downtime | `SLOFastBurnRate` | UC21 |
+| **Inference API** | p99 latency < 200ms | 99% of requests | — | — | Grafana panel | UC11 |
+| **Feature pipeline** | % batches passing GE | 99.5% | — | — | GE suite fail | UC13 |
+| **Model quality** | PSI < 0.25 on prod features | 95% of daily checks | — | — | `MLModelDriftDetected` | UC1 |
+| **Alert pipeline** | Dedup rate on correlated alerts | > 70% duplicates removed | — | — | UC3 eval gate | UC3 |
+| **Cost efficiency** | Waste ratio < 50% | 90% of namespaces compliant | — | — | `IdleResourceWaste` | UC10 |
+
+**Error budget policy** (standard enterprise practice):
+
+```mermaid
+flowchart TD
+    BURN["Error budget burning"] --> FAST{"Fast burn?<br/>2m window > 14.4x"}
+    FAST -->|yes| STOP["Freeze releases<br/>page on-call"]
+    FAST -->|no| SLOW{"Slow burn?<br/>15m window"}
+    SLOW -->|yes| WARN["Warn team<br/>investigate"]
+    SLOW -->|no| OK["Continue normal<br/>deployments"]
+    STOP --> FIX["Fix + verify SLO"]
+    FIX --> OK
+```
+
+Implemented in `observability/alerts/rules/platform.yml` — recording rule `job:http_error_rate:ratio5m` feeds both burn alerts.
+
+### RACI — who owns what in production
+
+| Capability | Responsible | Accountable | Consulted | Informed | UC |
+|---|---|---|---|---|---|
+| SLO definition & burn alerts | SRE | VP Engineering | Product | All eng | UC21 |
+| On-call & incident response | SRE rotation | SRE lead | Service owners | Leadership | UC2, UC3, UC8 |
+| Self-healing automation | Platform Eng | SRE lead | Security | On-call | UC6 |
+| Model drift monitoring | ML Platform | ML lead | Data Science | SRE | UC1, UC19 |
+| Feature store / skew | ML Platform | ML lead | Backend | QA | UC5 |
+| Model promotion & canary | ML Platform + SRE | ML lead | Security, Legal | Product | UC9, UC22 |
+| Explainability / audit | ML + Compliance | Legal/GRC | Security | Regulators | UC17 |
+| Container security | Security Eng | CISO | Platform | All eng | UC7 |
+| GitOps / policy | Platform Eng | Platform lead | SRE, Security | All eng | UC12 |
+| Cost optimization | FinOps + SRE | CFO delegate | Eng leads | Finance | UC10 |
+| Service catalog | Platform Eng | Eng director | All teams | New hires | UC20 |
+| DORA metrics | Platform Eng | Eng director | SRE | Leadership | UC15 |
+
+### Model lifecycle state machine
+
+Production ML models follow a **gated promotion path** enforced by MLflow stages + OPA + eval gates:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Experiment: DS trains model
+    Experiment --> Staging: UC13 data OK<br/>UC5 skew OK<br/>UC17 SHAP logged
+    Staging --> Canary: UC9 OPA allow<br/>UC22 10% traffic
+    Canary --> Production: A/B p-value OK<br/>UC1 drift baseline set
+    Production --> Retired: UC1 drift breach<br/>or manual rollback
+    Canary --> Staging: A/B fails
+    Production --> Staging: Rollback (UC22)
+    Staging --> Experiment: Reject
+    Retired --> [*]
+```
+
+| Transition | Gate | Tool | Fail action |
+|---|---|---|---|
+| Experiment → Staging | Data quality ≥ 80% | GE (UC13) | Block in Airflow |
+| Staging → Canary | OPA policy pass | `model_promotion.rego` | Deny in CI |
+| Canary → Production | Statistical significance | scipy A/B (UC22) | Revert traffic split |
+| Production → Retired | PSI > 0.25 sustained | Evidently (UC1) | Trigger retrain DAG |
+
+### Multi-environment promotion pipeline
+
+How enterprise orgs map this reference repo to **dev → staging → prod**:
+
+```mermaid
+flowchart LR
+    subgraph Dev["Development"]
+        PR["PR → 00-pr-validate"]
+        UC_DEV["UC workflows on branch"]
+    end
+
+    subgraph Staging["Staging (pre-prod)"]
+        MAIN["Merge to main"]
+        E2E["90-e2e aggregation"]
+        KIND["Kind: KServe + Kyverno"]
+    end
+
+    subgraph Prod["Production"]
+        TF["Terraform EKS/GKE<br/>infra/terraform/"]
+        GITOPS["ArgoCD / Flux sync"]
+        MON["OTEL agents on nodes"]
+    end
+
+    PR --> UC_DEV --> MAIN --> E2E --> KIND
+    E2E -->|eval pass| TF --> GITOPS --> MON
+```
+
+| Environment | Validation | Data | Secrets |
+|---|---|---|---|
+| **CI (this repo)** | 26 GHA workflows + eval gates | Synthetic (`data/synthetic/`) | `DAGSHUB_TOKEN`, optional HF/WhyLabs |
+| **Staging** | Same workflows + smoke against real cluster | Anonymized prod sample | Vault / AWS SM |
+| **Production** | SLO monitors, canary, policy admission | Live traffic | Vault + rotated tokens |
+
+Reference IaC placeholders: `infra/terraform/aws-eks/`, `infra/terraform/gcp-gke/`.
+
+### Defense in depth (security layers)
+
+```mermaid
+flowchart TB
+    L1["Layer 1 — Supply chain<br/>Trivy image scan (UC7)"]
+    L2["Layer 2 — Admission<br/>Kyverno + OPA (UC7, UC12)"]
+    L3["Layer 3 — Runtime<br/>Falco syscall rules (UC7)"]
+    L4["Layer 4 — App policy<br/>OPA promotion gate (UC9, UC17)"]
+    L5["Layer 5 — Audit<br/>MLflow lineage + SHAP (UC17)"]
+    L6["Layer 6 — Observability<br/>Alert on policy violations (UC6)"]
+
+    L1 --> L2 --> L3 --> L4 --> L5 --> L6
+```
+
+| Layer | Blocks | Example production failure prevented |
+|---|---|---|
+| Trivy | CVE-laden base images | Log4Shell-class vuln in prod container |
+| Kyverno | `latest` tag, missing labels | Untraceable deployments |
+| Falco | Unexpected shell in container | Crypto-miner post-exploit |
+| OPA | Model without explainability | Regulator audit failure |
+| MLflow | Orphan model versions | "Which model was live on date X?" |
+
+### Incident severity matrix & escalation
+
+Standard enterprise incident classification mapped to platform automation:
+
+| Severity | Definition | Response time | Platform automation | Human action |
+|---|---|---|---|---|
+| **SEV1** | Customer-facing outage; SLO budget exhausted | 5 min page | UC21 fast-burn → Alertmanager → PagerDuty | Incident commander |
+| **SEV2** | Degraded service; partial SLO burn | 15 min | UC3 dedup; UC8 RAG runbook | On-call engineer |
+| **SEV3** | Latent issue; no user impact yet | 1 hour | UC1 drift warning; UC10 cost alert | Team backlog |
+| **SEV4** | Informational | Next business day | UC15 DORA trend | No page |
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Alert as Alert fires
+    participant AM as Alertmanager
+    participant UC3 as UC3 Correlator
+    participant UC8 as UC8 RAG
+    participant UC6 as UC6 Self-heal
+    participant Human as On-call
+
+    Alert->>AM: Route by severity + uc label
+    AM->>UC3: Dedup duplicate alerts
+    UC3->>Human: Single correlated page (SEV1/2)
+    Human->>UC8: Query runbook
+    UC8-->>Human: Remediation steps
+    alt OPA allows auto-action
+        Human->>UC6: POST /heal
+        UC6-->>Human: Automated fix applied
+    else Policy denies
+        Human->>Human: Manual escalation
+    end
+    Note over Human: Post-incident → UC23 post-mortem
+```
+
+### Failure modes & mitigations (FMEA)
+
+| Component | Failure mode | Impact | Detection | Mitigation | UC |
+|---|---|---|---|---|---|
+| OTEL Collector | Exporter down | Blind to traces/metrics | `01-observability` health check | Restart collector; dual exporters | UC11 |
+| Prometheus | TSDB full | Alert evaluation stops | Prom self-metrics | Retention tuning; remote write | UC21 |
+| Feast online store | Redis unavailable | Stale features served | UC5 skew PSI spike | Fallback to offline; cache TTL | UC5 |
+| MLflow registry | DagsHub unreachable | Can't promote model | CI `continue-on-error` + alert | Local artifact cache; retry | UC9 |
+| OPA | Policy syntax error | All actions denied (fail-open risk) | UC6 eval gate (85 threshold) | `opa test` in CI before deploy | UC6 |
+| KServe canary | Bad model gets traffic | Prediction quality drop | UC22 A/B + UC1 drift | Auto-rollback traffic split | UC22 |
+| Qdrant | Collection empty | RAG returns nothing | UC8 eval (`collection_size >= 40`) | Re-index runbooks on deploy | UC8 |
+| Airflow retrain | DAG stuck | Drift uncorrected | UC1 `retrain_triggered` bool | SLA on DAG duration; pager | UC1 |
+
+### On-call runbook integration
+
+Runbooks in `services/runbook-agent/runbooks/` are indexed by UC8 into Qdrant. Production mapping:
+
+| Alert | Runbook file | First action | Escalation |
+|---|---|---|---|
+| `PodCrashLoopBackOff` | `pod-crashloop.md` | Check logs in Loki; recent deploy | Platform lead if > 15 min |
+| `HighCPUPreScale` | `high-cpu-scaling.md` | Verify KEDA ScaledObject; check Prophet forecast | Capacity team if sustained |
+| `MLModelDriftDetected` | (auto) Airflow retrain DAG | Confirm PSI; hold promotion if SEV1 | ML lead |
+| `SLOFastBurnRate` | Error budget policy | Freeze deploys; identify error spike via UC11 traces | Incident commander |
+| `IdleResourceWaste` | FinOps playbook | Scale down or delete idle namespace | Cost owner approval |
+
+### Production readiness checklist
+
+Before promoting from this reference CI to a **live cluster**, verify:
+
+| # | Check | Owner | Platform proof |
+|---|---|---|---|
+| 1 | All 26 workflows green on `main` | Platform | [Verification Evidence §21](#verification-evidence-all-workflows-green) |
+| 2 | `DAGSHUB_TOKEN` + GitHub Pages configured | Platform | [Your Action Items](#your-action-items) |
+| 3 | SLOs defined per critical service | SRE | UC21 rules in `platform.yml` |
+| 4 | Alert routes tested (PagerDuty/Slack) | SRE | Alertmanager config |
+| 5 | OPA policies reviewed by Security | Security | UC6/UC9 eval ≥ threshold |
+| 6 | Runbooks indexed in Qdrant | SRE | UC8 collection ≥ 40 chunks |
+| 7 | Feature store offline/online validated | ML Platform | UC5 eval pass |
+| 8 | Model promotion requires SHAP | Compliance | UC17 + OPA |
+| 9 | Image scan gate in CI/CD | Security | UC7 Trivy threshold |
+| 10 | Backstage catalog current | Platform | UC20 — 27 entities |
+| 11 | Error budget policy documented | SRE | Google SRE workbook pattern |
+| 12 | Rollback procedure tested | SRE + ML | UC22 canary revert |
+| 13 | Terraform/state backend configured | Platform | `infra/terraform/` |
+| 14 | Secrets in Vault/SM, not git | Security | `.env*` gitignored |
+
+### Platform maturity model
+
+Where this repo sits and typical enterprise progression:
+
+```mermaid
+flowchart LR
+    L1["Level 1<br/>Manual ops<br/>Ad-hoc monitoring"]
+    L2["Level 2<br/>CI gates + metrics<br/>← THIS REPO"]
+    L3["Level 3<br/>Auto remediation<br/>SLO-driven releases"]
+    L4["Level 4<br/>Full AIOps loop<br/>Predictive + self-heal"]
+    L5["Level 5<br/>Autonomous platform<br/>Policy-as-code everywhere"]
+
+    L1 --> L2 --> L3 --> L4 --> L5
+```
+
+| Level | Characteristics | UCs enabled |
+|---|---|---|
+| **1 — Manual** | SSH debugging; no drift detection | — |
+| **2 — Validated** | CI eval gates; observability stack; catalog | All 23 UCs in this repo |
+| **3 — Automated** | Self-heal + auto-retrain + canary in prod | UC1, UC6, UC22 live |
+| **4 — Intelligent** | RAG runbooks; predictive scale; cost ML | UC4, UC8, UC10, UC23 |
+| **5 — Autonomous** | Error budget blocks releases; full GitOps | UC12, UC21 policy integration |
+
+### Rollback & disaster recovery
+
+| Scenario | Rollback action | RTO target | Platform mechanism |
+|---|---|---|---|
+| Bad model in canary | Revert KServe traffic to 100% v1 | < 5 min | UC22 — traffic split YAML |
+| Bad deploy (CrashLoop) | `kubectl rollout undo` or UC6 restart | < 10 min | UC6 OPA-gated restart |
+| Feature skew after deploy | Roll back Feast materialization | < 30 min | UC5 — re-materialize from offline |
+| Config drift in cluster | GitOps reconcile to last good commit | < 15 min | UC12 — Kyverno deny + ArgoCD sync |
+| Full region failure | Failover to secondary region | < 1 hr | Terraform multi-region (reference) |
+| Observability stack down | CI still validates via ephemeral Stack B | N/A (CI) | `01-observability` per-run |
+
+### Anti-patterns (avoid in production)
+
+| Anti-pattern | Why it fails | Do instead (this platform) |
+|---|---|---|
+| **Monitoring without SLOs** | Alert fatigue; no release policy | UC21 error budgets + UC3 dedup |
+| **Manual model promotion** | No audit trail; wrong model in prod | UC9 MLflow + OPA gate |
+| **Training features ≠ serving features** | Silent accuracy drop | UC5 Feast skew detection |
+| **Self-heal without policy** | Automated damage (restart kube-system) | UC6 OPA namespace allowlist |
+| **Drift detection without retrain path** | Alert with no action | UC1 → Airflow DAG |
+| **Logs-only debugging** | Can't trace cross-service failures | UC11 OTEL + Tempo |
+| **Big-bang model deploy** | Full blast radius | UC22 KServe canary + A/B |
+| **Secrets in git** | Credential leak | GitHub Secrets + Vault |
+| **Per-team eval thresholds** | Inconsistent quality bar | Unified `eval/scorer.py` |
+| **Skipping data quality gates** | Garbage in → garbage out | UC13 GE before training |
+
+### Build vs buy — architect decision matrix
+
+For teams evaluating this open-source stack vs commercial alternatives:
+
+| Capability | This platform (OSS) | Commercial alternative | When to buy |
+|---|---|---|---|
+| Observability | OTEL + Prom + Grafana + Loki + Tempo | Datadog, New Relic, Dynatrace | > 500 hosts; need single vendor SLA |
+| ML tracking | MLflow + DagsHub | W&B, Neptune, SageMaker | Need managed compute + AutoML |
+| Feature store | Feast | Tecton, Databricks FS | Real-time at billions of rows |
+| Policy | OPA + Kyverno | Styra DAS, Prisma Cloud | Enterprise Rego IDE + audit UI |
+| Incident automation | n8n + Alertmanager | PagerDuty AIOps, BigPanda | Global on-call at scale |
+| Vector/RAG | Qdrant + LangChain | OpenAI Assistants, Glean | Managed embeddings + enterprise search |
+| Model serving | KServe | SageMaker, Vertex AI | Fully managed inference SLA |
+
+**This repo's sweet spot**: Teams wanting **CNCF-aligned, auditable, git-native** MLOps/AIOps with **provable CI gates** before investing in commercial tooling.
+
+### Capacity planning dimensions
+
+| Dimension | Signal | Scale trigger | UC |
+|---|---|---|---|
+| **Inference QPS** | `http_requests_total` rate | KEDA / HPA on RPS | UC4, UC18 |
+| **Feature freshness** | Feast materialization lag | Increase materialize frequency | UC5 |
+| **Log volume** | Loki ingestion rate | Label cardinality limits; retention | UC2 |
+| **Trace sampling** | Tempo span count | Head-based sampling in OTEL | UC11 |
+| **Alert volume** | Active alerts count | UC3 correlation threshold tuning | UC3 |
+| **ML experiment count** | MLflow artifact storage | DagsHub quota; DVC gc | UC9 |
+| **Vector index size** | Qdrant collection points | Shard replicas; HNSW params | UC8 |
 
 ---
 
