@@ -5,7 +5,6 @@ UC5: Training-serving feature skew detection uses offline vs online store compar
 
 from datetime import timedelta
 
-import pandas as pd
 from feast import Entity, Feature, FeatureView, FileSource, ValueType
 
 # ---------- Entities ----------

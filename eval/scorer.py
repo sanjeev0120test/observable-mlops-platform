@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from eval.metrics import UC_METRICS, THRESHOLDS, MetricSpec, EvalResult
+from eval.metrics import EvalResult, MetricSpec, THRESHOLDS, UC_METRICS
 
 
 def _score_metric(spec: MetricSpec, value: Any) -> float:

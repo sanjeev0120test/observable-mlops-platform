@@ -7,11 +7,9 @@ Used by both UC4 (predictive scaling) and UC9 (experiment tracking + serving).
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 import mlflow
 import mlflow.sklearn
-import numpy as np
 import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.metrics import f1_score, roc_auc_score

@@ -8,7 +8,6 @@ Output: NDJSON file where each line is a log entry.
 
 import argparse
 import json
-import random
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 

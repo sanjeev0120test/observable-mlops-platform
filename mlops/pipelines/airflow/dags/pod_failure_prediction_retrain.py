@@ -13,7 +13,6 @@ Full retraining pipeline:
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -72,8 +71,8 @@ def pull_training_data(**context) -> str:
 
 def run_ge_validation(**context) -> bool:
     """Great Expectations data quality gate before training."""
-    import pandas as pd
     import great_expectations as ge
+    import pandas as pd
 
     data_path = context["ti"].xcom_pull(task_ids="pull_training_data")
     df = pd.read_parquet(data_path)
