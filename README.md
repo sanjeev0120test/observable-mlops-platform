@@ -118,7 +118,26 @@ This section explains the **core ideas** behind this platform in plain language 
 
 > **Who should read this**: engineers new to MLOps/AIOps, PMs joining ML platform projects, or anyone who knows "we use RAG and a feature store" but wants to understand *why* and *how they connect*.
 
-### Concept map — how the big ideas relate
+### How concepts map to this repo (read this first)
+
+Most of this README is **accurate and tied to real code**. A few areas use **production-target language** while CI validates a **subset** today. Use this table so you know what is proven in GitHub Actions vs scaffolded for local/Phase 2:
+
+| Status | Meaning | Examples in this repo |
+|---|---|---|
+| **CI-proven** | Workflow runs, metrics collected, `eval/scorer.py` gate passes | UC1 drift metrics, UC3 DBSCAN, UC5 Feast skew, UC8 Qdrant retrieval in `09-rag-runbook.yml`, all 26 workflows |
+| **Compose / Kind path** | Service manifests and images exist; used when workflows start Stack A/B or Kind | Ollama, Qdrant, KServe, Kyverno, OTEL stack |
+| **Scaffolded (Phase 2)** | Endpoint, Dockerfile, or dependency declared; CI uses inline script or stub metric until wired | `services/runbook-agent/` FastAPI (stub), LLM answer generation in UC8 (groundedness stubbed), UC23 real GitHub Issue via n8n |
+
+**Corrections worth knowing**:
+
+- **UC8 RAG**: CI **proves chunking, embedding (`all-MiniLM-L6-v2`), and Qdrant retrieval** inside `09-rag-runbook.yml`. It does **not** call Ollama or LangChain in that workflow today; groundedness is a **placeholder score** until TinyLlama generation is wired.
+- **LangChain**: listed in `requirements.txt` and `services/runbook-agent/Dockerfile`; **no production Python import yet** — retrieval uses `qdrant-client` + `sentence-transformers` directly in CI.
+- **UC12 GitOps**: CI **simulates** desired vs actual config drift in Python; **ArgoCD/Flux** are documented production patterns, not executed in the workflow.
+- **UC23 post-mortem**: CI **generates JSON** and sets eval metrics; **n8n → GitHub Issue** is the documented production path (stub flag in workflow).
+
+Everything else — eval framework, 23 UCs, thresholds in `eval/metrics.py`, 7 FastAPI services, Feast, MLflow, OPA policies, observability stack — matches the repository layout and workflows.
+
+---
 
 ```mermaid
 flowchart TB
@@ -431,7 +450,7 @@ flowchart LR
 | **Grounding prompt** | Model ignores retrieved text |
 | **Eval** | Team trusts bad answers during incidents |
 
-**UC8** implements full RAG; **UC23** reuses retrieval to draft post-mortems via n8n webhook → GitHub Issue.
+**UC8 in CI** proves **retrieval** (chunk, embed, Qdrant search, `retrieval_precision_at_5`). **Generation** (Ollama/TinyLlama answer + live groundedness) is in Compose/`runbook-agent` scaffold — see [implementation scope](#how-concepts-map-to-this-repo-read-this-first)). **UC23** generates post-mortem JSON in CI; n8n → GitHub Issue is the production orchestration target.
 
 **RAG vs fine-tuning**:
 
@@ -467,17 +486,16 @@ flowchart LR
 
 #### RAG support in this platform
 
-End-to-end RAG support stack:
-
-| Layer | Technology | Purpose |
-|---|---|---|
-| **Ingestion** | `POST /api/v1/index-runbooks` | Chunk + embed + upsert |
-| **Storage** | Qdrant | ANN search |
-| **Embedding model** | sentence-transformers | Text → vectors |
-| **Generation** | Ollama + TinyLlama | Local LLM (no external API key required in CI) |
-| **Orchestration** | n8n webhooks | Alert → query → post-mortem (UC23) |
-| **Quality gate** | `eval/scorer.py` UC8 metrics | P@5, groundedness, chunk count |
-| **Observability** | Prometheus on `runbook-agent` | `runbook_agent_queries_total`, latency histogram |
+| Layer | Technology | CI status | Purpose |
+|---|---|---|---|
+| **Ingestion (CI)** | Inline Python in `09-rag-runbook.yml` | CI-proven | Chunk runbooks + synthetic incidents, embed, upsert |
+| **Ingestion (service)** | `POST /api/v1/index-runbooks` on `runbook-agent` | Scaffolded | Same flow behind FastAPI for Compose deployments |
+| **Storage** | Qdrant (`:memory:` in CI; `qdrant:6333` in Compose) | CI-proven | ANN search |
+| **Embedding model** | `sentence-transformers` (`all-MiniLM-L6-v2`) | CI-proven | Text to 384-dim vectors |
+| **Generation** | Ollama + TinyLlama | Compose + `scripts/setup-ollama.sh`; not in UC8 CI step yet | Local LLM answers without external API keys |
+| **Orchestration** | n8n webhooks | Compose service; UC23 Issue create stubbed in CI | Alert to query to post-mortem |
+| **Quality gate** | `eval/scorer.py` UC8/UC23 metrics | CI-proven | Retrieval P@5, groundedness (stub), chunk count |
+| **Observability** | Prometheus on `runbook-agent` | Service metrics defined | `runbook_agent_queries_total`, latency histogram |
 
 **Security note**: runbooks may contain internal hostnames — treat KB as **repo-scoped content**; never commit secrets (`.env*` is gitignored). CI uses synthetic/public-safe runbook text.
 
@@ -2768,9 +2786,9 @@ sequenceDiagram
 | **UC2** | Millions of log lines drown out the few lines that indicate a real incident; keyword alerts false-positive constantly. | Trains an LSTM autoencoder on normal log sequences; flags anomalies by reconstruction error; stores similar past incidents in Qdrant. | Faster incident detection without hiring more L1 support. | On-call finds the needle in the haystack; less pager fatigue. | Precision@10 ≥ **0.70**, recall@10 ≥ **0.60**, ≥ 1 similar incident in Qdrant; score ≥ **65** | `04-log-anomaly` |
 | **UC3** | One root cause triggers 50+ duplicate Alertmanager pages; engineers mute channels and miss real issues. | DBSCAN clusters alerts by feature vector; deduplicates while keeping `false_positive_rate` bounded. | Restores trust in alerting; reduces on-call burnout. | Engineers receive one correlated page per incident. | Dedup rate ≥ **70%**, silhouette ≥ 0.30, FPR ≤ **0.10**; score ≥ **50** | `06-alert-correlation` |
 | **UC6** | At 3 AM, on-call restarts pods manually — sometimes in protected namespaces, making things worse. | Self-healing service calls OPA (`self_healing.rego`); only allowed actions (e.g. restart in `payments`) execute via n8n webhook from Alertmanager. | Cuts toil for repeatable fixes; blocks dangerous automation. | On-call approves policy once; safe actions run automatically. | Remediation success ≥ **90%**, OPA gate = **1.0**, false remediation ≤ 5%, MTTR ≤ **300s**; score ≥ **85** | `08-self-healing` |
-| **UC8** | During incidents, engineers search Confluence/Notion for runbooks while the clock runs. | Indexes runbook markdown into Qdrant; sentence-transformer retrieval returns top chunks; LangChain grounds answers in context. | Shortens MTTR for known failure modes. | On-call gets step-by-step remediation without leaving the incident channel. | Retrieval P@5 ≥ **0.70**, groundedness ≥ 0.60, ≥ **40** chunks indexed; score ≥ **60** | `09-rag-runbook` |
+| **UC8** | During incidents, engineers search Confluence/Notion for runbooks while the clock runs. | CI indexes runbook markdown + synthetic incidents into Qdrant; `sentence-transformers` retrieval returns top chunks (`09-rag-runbook.yml`). Ollama/LangChain generation is Compose/scaffold path. | Shortens MTTR for known failure modes. | On-call gets step-by-step remediation without leaving the incident channel. | Retrieval P@5 ≥ **0.70**, groundedness ≥ 0.60 (stub in CI), ≥ **40** chunks indexed; score ≥ **60** | `09-rag-runbook` |
 | **UC11** | A request fails in service C, but the bug is in service A — without trace IDs, RCA takes hours. | Emits OTEL spans across a simulated call chain; correlates trace IDs; identifies anomalous span for RCA. | Reduces cross-team blame meetings; faster fixes. | Support can pinpoint failing dependency for customers. | Trace completeness ≥ **90%**, anomalous span identified, precision ≥ 0.60; score ≥ **65** | `18-distributed-tracing` |
-| **UC23** | Post-mortems are written from memory days later; lessons are lost. | On incident webhook, RAG pulls similar past incidents from Qdrant; n8n generates post-mortem draft and opens a GitHub Issue. | Institutional memory; audit trail for SEV reviews. | Teams spend time on fixes, not formatting docs. | Post-mortem generated, GitHub issue created, ≥ 1 similar incident cited; score ≥ **60** | `09-rag-runbook` |
+| **UC23** | Post-mortems are written from memory days later; lessons are lost. | CI generates post-mortem JSON and eval metrics; production path is RAG + n8n webhook opening a GitHub Issue (Issue create stubbed in workflow). | Institutional memory; audit trail for SEV reviews. | Teams spend time on fixes, not formatting docs. | Post-mortem generated, GitHub issue created (stub), ≥ 1 similar incident cited; score ≥ **60** | `09-rag-runbook` |
 
 ### 3. ML Lifecycle & Data Quality
 
@@ -3422,16 +3440,16 @@ This section documents **every tool, library, and concept** used in the platform
 #### Ollama / TinyLlama
 - **Official definition**: Ollama runs local LLMs ([ollama.com](https://github.com/ollama/ollama)); TinyLlama is a 1.1B parameter model ([HuggingFace](https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0)).
 - **Problem solved**: Generate post-mortem drafts without paid API calls or secrets in CI.
-- **Why here**: `scripts/setup-ollama.sh` pulls TinyLlama in compatible workflows; responses validated structurally.
+- **Why here**: `docker-compose.mlops-core.yml` includes Ollama; `scripts/setup-ollama.sh` pulls TinyLlama when Compose stacks run. **Not invoked in `09-rag-runbook.yml` CI steps today** — retrieval-only eval path.
 - **Alternatives**: GPT-4 API — cost; larger local models — exceed CI memory limits.
-- **Used in**: UC8, UC23, `09-rag-runbook`.
+- **Used in**: UC8/UC23 target architecture, Stack A Compose, `services/runbook-agent/` (scaffold).
 
 #### LangChain
 - **Official definition**: Framework for LLM application development ([python.langchain.com](https://python.langchain.com/docs/introduction/)).
 - **Problem solved**: Chain retrieval + generation steps for RAG runbook agent.
-- **Why here**: Orchestrates Qdrant retriever → prompt → LLM response in UC8 service.
+- **Why here**: Declared in `requirements.txt` and `services/runbook-agent/Dockerfile`. **CI uses `qdrant-client` + `sentence-transformers` directly** — no LangChain import in repo Python yet.
 - **Alternatives**: LlamaIndex, raw httpx — LangChain is widely adopted for RAG prototypes.
-- **Used in**: UC8, UC23, `services/runbook-agent/`.
+- **Used in**: UC8/UC23 service scaffold (`services/runbook-agent/`), not CI retrieval script.
 
 ---
 
@@ -3542,7 +3560,7 @@ This section documents **everything used in the repo that was missing or only br
 | `alert-correlator/` | DBSCAN dedup API | UC3 | sklearn DBSCAN |
 | `predictive-scaler/` | Forecast + scale recommendation | UC4 | Prophet + KEDA manifest |
 | `self-healing/` | OPA-gated remediation | UC6 | httpx → OPA → K8s |
-| `runbook-agent/` | RAG Q&A | UC8, UC23 | Qdrant + LangChain |
+| `runbook-agent/` | RAG Q&A | UC8, UC23 | Qdrant + sentence-transformers (CI); LangChain/Ollama scaffold |
 | `cost-optimizer/` | Waste detection API | UC10 | IsolationForest |
 
 ---
@@ -3857,7 +3875,7 @@ This section walks through **how to build and validate the platform from zero**,
 | 4.1 | UC6 Self-healing | `08-self-healing` | OPA allows `payments` restart; denies `kube-system` |
 | 4.2 | UC7 Security | `13-security-policy` | Trivy scan + Kyverno + Falco rules in Kind |
 | 4.3 | UC8 RAG runbook | `09-rag-runbook` | Qdrant >40 chunks; retrieval returns relevant context |
-| 4.4 | UC23 Post-mortem | `09-rag-runbook` | n8n webhook + issue template generation |
+| 4.4 | UC23 Post-mortem | `09-rag-runbook` | Post-mortem JSON + eval gate; n8n → GitHub Issue is production target |
 
 ---
 
@@ -4103,36 +4121,38 @@ This section documents **real CI failures** encountered during implementation an
 | **E2E aggregation** | [Workflow: 90-e2e-integration.yml](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/90-e2e-integration.yml) |
 | **Portal publish** | [Workflow: 91-publish-portal.yml](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/91-publish-portal.yml) |
 
-### Per-workflow verification (click → Runs → latest green checkmark)
+### Per-workflow verification (click workflow link; confirm latest run on Actions)
 
-| Workflow | UC | Status | Evidence link |
+Status reflects **design intent** — each workflow has an eval gate. Verify current run on GitHub Actions after your last push.
+
+| Workflow | UC | Expected | Evidence link |
 |---|---|---|---|
-| `00-pr-validate.yml` | Platform | Pass | [Actions → 00 PR Validate](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/00-pr-validate.yml) |
-| `01-observability.yml` | Stack B | Pass | [Actions → 01 Observability](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/01-observability.yml) |
-| `02-data-pipeline.yml` | Data | Pass | [Actions → 02 Data Pipeline](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/02-data-pipeline.yml) |
-| `03-drift-detection.yml` | UC1 | Pass | [Actions → 03 UC1 Drift](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/03-drift-detection.yml) |
-| `04-log-anomaly.yml` | UC2 | Pass | [Actions → 04 UC2 Log Anomaly](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/04-log-anomaly.yml) |
-| `05-feature-skew.yml` | UC5 | Pass | [Actions → 05 UC5 Feature Skew](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/05-feature-skew.yml) |
-| `06-alert-correlation.yml` | UC3 | Pass | [Actions → 06 UC3 Alerts](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/06-alert-correlation.yml) |
-| `07-predictive-scaling.yml` | UC4 | Pass | [Actions → 07 UC4 Scaling](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/07-predictive-scaling.yml) |
-| `08-self-healing.yml` | UC6 | Pass | [Actions → 08 UC6 Self-Healing](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/08-self-healing.yml) |
-| `09-rag-runbook.yml` | UC8, UC23 | Pass | [Actions → 09 UC8/UC23 RAG](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/09-rag-runbook.yml) |
-| `10-model-serving.yml` | UC9, UC17, UC22 | Pass | [Actions → 10 UC9/UC22 Serving](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/10-model-serving.yml) |
-| `11-cost-optimizer.yml` | UC10 | Pass | [Actions → 11 UC10 Cost](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/11-cost-optimizer.yml) |
-| `13-security-policy.yml` | UC7 | Pass | [Actions → 13 UC7 Security](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/13-security-policy.yml) |
-| `14-dora-metrics.yml` | UC15 | Pass | [Actions → 14 UC15 DORA](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/14-dora-metrics.yml) |
-| `15-slo-monitoring.yml` | UC21 | Pass | [Actions → 15 UC21 SLO](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/15-slo-monitoring.yml) |
-| `18-distributed-tracing.yml` | UC11 | Pass | [Actions → 18 UC11 Tracing](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/18-distributed-tracing.yml) |
-| `19-gitops-drift.yml` | UC12 | Pass | [Actions → 19 UC12 GitOps](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/19-gitops-drift.yml) |
-| `20-data-quality.yml` | UC13 | Pass | [Actions → 20 UC13 Data Quality](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/20-data-quality.yml) |
-| `21-hpo.yml` | UC14 | Pass | [Actions → 21 UC14 HPO](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/21-hpo.yml) |
-| `22-error-classification.yml` | UC16 | Pass | [Actions → 22 UC16 Errors](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/22-error-classification.yml) |
-| `23-explainability.yml` | UC17 | Pass | [Actions → 23 UC17 SHAP](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/23-explainability.yml) |
-| `24-rate-limiting.yml` | UC18 | Pass | [Actions → 24 UC18 Rate Limit](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/24-rate-limiting.yml) |
-| `25-feature-monitoring.yml` | UC19 | Pass | [Actions → 25 UC19 WhyLogs](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/25-feature-monitoring.yml) |
-| `26-catalog-validate.yml` | UC20 | Pass | [Actions → 26 UC20 Catalog](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/26-catalog-validate.yml) |
-| `90-e2e-integration.yml` | All | Pass | [Actions → 90 E2E](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/90-e2e-integration.yml) |
-| `91-publish-portal.yml` | Portal | Pass | [Actions → 91 Portal](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/91-publish-portal.yml) |
+| `00-pr-validate.yml` | Platform | Eval gate pass | [Actions → 00 PR Validate](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/00-pr-validate.yml) |
+| `01-observability.yml` | Stack B | Eval gate pass | [Actions → 01 Observability](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/01-observability.yml) |
+| `02-data-pipeline.yml` | Data | Eval gate pass | [Actions → 02 Data Pipeline](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/02-data-pipeline.yml) |
+| `03-drift-detection.yml` | UC1 | Eval gate pass | [Actions → 03 UC1 Drift](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/03-drift-detection.yml) |
+| `04-log-anomaly.yml` | UC2 | Eval gate pass | [Actions → 04 UC2 Log Anomaly](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/04-log-anomaly.yml) |
+| `05-feature-skew.yml` | UC5 | Eval gate pass | [Actions → 05 UC5 Feature Skew](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/05-feature-skew.yml) |
+| `06-alert-correlation.yml` | UC3 | Eval gate pass | [Actions → 06 UC3 Alerts](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/06-alert-correlation.yml) |
+| `07-predictive-scaling.yml` | UC4 | Eval gate pass | [Actions → 07 UC4 Scaling](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/07-predictive-scaling.yml) |
+| `08-self-healing.yml` | UC6 | Eval gate pass | [Actions → 08 UC6 Self-Healing](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/08-self-healing.yml) |
+| `09-rag-runbook.yml` | UC8, UC23 | Eval gate pass | [Actions → 09 UC8/UC23 RAG](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/09-rag-runbook.yml) |
+| `10-model-serving.yml` | UC9, UC17, UC22 | Eval gate pass | [Actions → 10 UC9/UC22 Serving](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/10-model-serving.yml) |
+| `11-cost-optimizer.yml` | UC10 | Eval gate pass | [Actions → 11 UC10 Cost](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/11-cost-optimizer.yml) |
+| `13-security-policy.yml` | UC7 | Eval gate pass | [Actions → 13 UC7 Security](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/13-security-policy.yml) |
+| `14-dora-metrics.yml` | UC15 | Eval gate pass | [Actions → 14 UC15 DORA](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/14-dora-metrics.yml) |
+| `15-slo-monitoring.yml` | UC21 | Eval gate pass | [Actions → 15 UC21 SLO](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/15-slo-monitoring.yml) |
+| `18-distributed-tracing.yml` | UC11 | Eval gate pass | [Actions → 18 UC11 Tracing](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/18-distributed-tracing.yml) |
+| `19-gitops-drift.yml` | UC12 | Eval gate pass | [Actions → 19 UC12 GitOps](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/19-gitops-drift.yml) |
+| `20-data-quality.yml` | UC13 | Eval gate pass | [Actions → 20 UC13 Data Quality](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/20-data-quality.yml) |
+| `21-hpo.yml` | UC14 | Eval gate pass | [Actions → 21 UC14 HPO](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/21-hpo.yml) |
+| `22-error-classification.yml` | UC16 | Eval gate pass | [Actions → 22 UC16 Errors](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/22-error-classification.yml) |
+| `23-explainability.yml` | UC17 | Eval gate pass | [Actions → 23 UC17 SHAP](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/23-explainability.yml) |
+| `24-rate-limiting.yml` | UC18 | Eval gate pass | [Actions → 24 UC18 Rate Limit](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/24-rate-limiting.yml) |
+| `25-feature-monitoring.yml` | UC19 | Eval gate pass | [Actions → 25 UC19 WhyLogs](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/25-feature-monitoring.yml) |
+| `26-catalog-validate.yml` | UC20 | Eval gate pass | [Actions → 26 UC20 Catalog](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/26-catalog-validate.yml) |
+| `90-e2e-integration.yml` | All | Eval gate pass | [Actions → 90 E2E](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/90-e2e-integration.yml) |
+| `91-publish-portal.yml` | Portal | Eval gate pass | [Actions → 91 Portal](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/91-publish-portal.yml) |
 
 ### How to re-verify yourself (no local runtime)
 
