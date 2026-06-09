@@ -651,25 +651,24 @@ flowchart TD
     TRIG["push / workflow_dispatch"]
     CHECKOUT["actions/checkout"]
     SETUP["setup-python · install requirements.txt"]
-    COMPOSE["docker compose up Stack B (01-observability only)"]
-    KIND["kind create cluster + kubectl apply"]
-    RUN["Run UC scripts + curl services"]
-    EVAL["python -m eval.scorer run_eval_gate"]
+    RUN["Inline Python / module imports · eval metrics"]
+    EVAL["eval/scorer.py run_eval_gate"]
     ART["upload-artifact eval-results/"]
     E2E["90-e2e aggregate"]
     PAGE["91-publish-portal → gh-pages"]
+    OBS["01-observability only: Stack B compose + curl health"]
 
-    TRIG --> CHECKOUT --> SETUP --> COMPOSE --> KIND --> RUN --> EVAL --> ART --> E2E --> PAGE
+    TRIG --> CHECKOUT --> SETUP --> RUN --> EVAL --> ART --> E2E --> PAGE
+    TRIG -.-> OBS
 ```
 
 | GHA pattern | MLOps purpose |
 |---|---|
 | `workflow_dispatch` | Manual full-platform validation |
-| `services:` health waits | MLflow/Feast ready before tests |
+| Inline Python | Most UC jobs — no compose/Kind required |
+| `01-observability` only | Stack B compose + curl health checks |
 | `continue-on-error` + secrets | DagsHub optional — no secret in logs |
 | Job artifacts | Download `eval-results/` for audit |
-| Concurrency groups | Prevent overlapping Kind clusters |
-| Matrix (if used) | Parallel UC isolation |
 
 **Secrets hygiene** (this repo):
 
@@ -1482,12 +1481,13 @@ run_eval_gate("UC1", {"psi_score": 1.2, "retrain_triggered": True, ...}, Path("e
 
 | Environment | Lifetime | Technology |
 |---|---|---|
-| GHA runner + Compose Stack A/B | Single workflow run (~10–30 min) | Docker Compose |
-| Kind cluster | Single job needing K8s | Kind in GHA |
+| GHA UC job | Single workflow run (~5–25 min) | Inline Python + eval gate |
+| GHA Stack B | `01-observability` run only | Docker Compose |
+| Local Kind / Compose A+C | Manual / Phase 2 | `setup-kind.sh`, compose files |
 | eval-results artifacts | Uploaded, consumed by 90-e2e | GHA artifacts |
 | Persistent state | MLflow/DVC on DagsHub, portal on gh-pages | Remote services only |
 
-**Why it matters**: Reproducible validation without maintaining staging clusters. Every merge gets a **fresh** full stack proof.
+**Why it matters**: Reproducible validation without maintaining staging clusters. Every UC workflow produces **fresh eval artifacts** per run.
 
 **Tradeoff**: Cold-start time in CI vs fidelity. We accept startup cost for isolation.
 
@@ -2801,18 +2801,18 @@ sequenceDiagram
 | UC | Problem | What the platform does | Business value | User value | Hard evidence (CI gate) | Workflow |
 |---|---|---|---|---|---|---|
 | **UC5** | Training pipeline computes features differently than the online serving path — model looks fine in lab, fails in prod. | Feast registers offline (parquet) and online (Redis) feature views; compares PSI/KS; Great Expectations validates columns. | Prevents silent prediction errors ([Feast train/serve consistency](https://docs.feast.dev/getting-started/concepts/overview)). | ML engineers trust one feature definition; backend devs serve what was trained. | Offline/online PSI ≤ **0.10**, GE pass ≥ **99%**, freshness ≤ 3600s; score ≥ **75** | `05-feature-skew` |
-| **UC9** | Models are promoted via email or Slack with no lineage, no policy check, and no canary. | Logs experiments to MLflow on DagsHub; OPA `model_promotion.rego` gates staging; KServe InferenceService in Kind with error-rate check. | Audit-ready promotion; regulator-friendly lineage. | DS teams promote with confidence; compliance sees MLflow trail. | Accuracy beats baseline ≥ **2%**, holdout drift ≤ 0.10, OPA pass, canary error ≤ **1%**; score ≥ **75** | `10-model-serving` |
+| **UC9** | Models are promoted via email or Slack with no lineage, no policy check, and no canary. | Trains and logs to MLflow on DagsHub; OPA `model_promotion.rego` tested via `opa eval`; canary metrics simulated in CI (KServe/Kind is production reference). | Audit-ready promotion; regulator-friendly lineage. | DS teams promote with confidence; compliance sees MLflow trail. | Accuracy beats baseline ≥ **2%**, holdout drift ≤ 0.10, OPA pass, canary error ≤ **1%**; score ≥ **75** | `10-model-serving` |
 | **UC13** | Bad rows (nulls, out-of-range values) enter training data and corrupt the model for weeks. | Great Expectations suite on pipeline output; injected bad batch must be blocked by sensor. | Stops garbage-in-garbage-out at the pipeline boundary ([GE docs](https://docs.greatexpectations.io/docs/)). | Analysts trust data quality reports before training runs. | GE pass ≥ **95%** on good data, bad data blocked, schema valid; score ≥ **80** | `20-data-quality` |
 | **UC14** | Data scientists manually grid-search hyperparameters for days. | Optuna study with ≥ 15 trials; best trial logged to MLflow on DagsHub. | Faster iteration to production-quality models. | DS focuses on features, not tuning loops. | Best trial beats default, ≥ **15** trials, study in MLflow; score ≥ **65** | `21-hpo` |
 | **UC17** | Regulated use cases (credit, health) require explainability — teams can't answer "why this prediction?" | SHAP values computed, logged to MLflow; OPA denies promotion if SHAP not present. | Passes model governance and audit reviews ([SHAP docs](https://shap.readthedocs.io/en/latest/)). | Customers/advocates get human-readable feature contributions. | SHAP generated, top features logged, explanation coverage ≥ **90%**; score ≥ **65** | `23-explainability` |
 | **UC19** | Feature distributions shift gradually — before model accuracy drops, data already changed. | WhyLogs profiles feature batches; detects injected constraint violations via profile statistics. | Early warning layer before UC1 drift fires. | ML ops catches data pipeline bugs upstream. | Profiles written, ≥ 1 violation detected, drift flagged; score ≥ **65** | `25-feature-monitoring` |
-| **UC22** | New model version replaces old one in a single deploy — if it's worse, 100% of users are affected. | KServe canary traffic split; scipy A/B test on outcomes; winner promoted only if p < 0.05. | Limits blast radius of bad models ([KServe rollout](https://kserve.github.io/website/latest/modelserving/v1beta1/rollout-strategy/)). | End users on canary slice validate quality before full rollout. | A/B p ≤ **0.05**, winner promoted, traffic split within **2%** of target; score ≥ **70** | `10-model-serving` |
+| **UC22** | New model version replaces old one in a single deploy — if it's worse, 100% of users are affected. | Simulated canary A/B via scipy in `10-model-serving.yml`; KServe traffic split is production reference (`infra/helm/kserve/`). | Limits blast radius of bad models ([KServe rollout](https://kserve.github.io/website/latest/modelserving/v1beta1/rollout-strategy/)). | End users on canary slice validate quality before full rollout. | A/B p ≤ **0.05**, winner promoted, traffic split within **2%** of target; score ≥ **70** | `10-model-serving` |
 
 ### 4. Security, Policy & Governance
 
 | UC | Problem | What the platform does | Business value | User value | Hard evidence (CI gate) | Workflow |
 |---|---|---|---|---|---|---|
-| **UC7** | Vulnerable container images and runtime exploits reach production; compliance audits fail. | Trivy scans images; Kyverno denies bad manifests in Kind; Falco rules validated; OPA admission tests. | Defense-in-depth per [CNCF security cloud native trail map](https://github.com/cncf/tag-security). | Security team gets automated gates; devs get fast CI feedback. | Critical CVEs ≤ **25** (baseline-aware), Kyverno blocks ≥ 1 violation, Falco fires ≥ 1 rule; score ≥ **60** | `13-security-policy` |
+| **UC7** | Vulnerable container images and runtime exploits reach production; compliance audits fail. | Trivy scans images; **kyverno CLI** validates policy YAML; Falco rules validated; OPA admission tests (no Kind cluster in CI). | Defense-in-depth per [CNCF security cloud native trail map](https://github.com/cncf/tag-security). | Security team gets automated gates; devs get fast CI feedback. | Critical CVEs ≤ **25** (baseline-aware), Kyverno blocks ≥ 1 violation, Falco fires ≥ 1 rule; score ≥ **60** | `13-security-policy` |
 | **UC12** | Someone `kubectl apply`s a manifest that diverges from git — cluster state drifts silently. | CI **simulates** desired vs actual config drift in Python (`19-gitops-drift.yml`); production uses Kyverno + ArgoCD/Flux reconcile. | GitOps integrity ([CNCF GitOps](https://opengitops.dev/)). | Platform team trusts declared state matches reality. | Drift detected, reconcile success (simulated), ≥ 1 policy violation caught; score ≥ **70** | `19-gitops-drift` |
 | **UC20** | Nobody knows who owns a service during an incident; onboarding takes weeks of Slack archaeology. | Lints `backstage/catalog-info.yaml` — **27 entities** (23 Components + 3 ML-model Resources + 1 System) with required fields. | Clear ownership ([Backstage catalog](https://backstage.io/docs/features/software-catalog/)). | New engineers find owners and APIs in one place. | All entities valid, exactly **27** entities, schema lint pass; score ≥ **90** | `26-catalog-validate` |
 
@@ -3355,7 +3355,7 @@ This section documents **every tool, library, and concept** used in the platform
 #### Kyverno
 - **Official definition**: Kubernetes-native policy management ([kyverno.io/docs](https://kyverno.io/docs/introduction/)).
 - **Problem solved**: Validate/mutate/generate K8s resources at admission without custom webhook code.
-- **Why here**: UC7 and UC12 apply Kyverno policies in Kind cluster during CI.
+- **Why here**: UC7 runs **kyverno CLI** against sample manifests in `13-security-policy.yml` (no Kind). UC12 references GitOps patterns; cluster admission is production path.
 - **Concrete policies in this repo** (`aiops/policies/kyverno/`):
   - `require-labels.yml` — `ClusterPolicy` with `validationFailureAction: Enforce`; rejects Deployments/StatefulSets/DaemonSets in business namespaces missing `app.kubernetes.io/team` (cost attribution → UC10) and ML-serving workloads missing `app.kubernetes.io/uc` (DORA/lineage → UC15).
   - `disallow-privileged.yml` — blocks privileged containers (defense in depth).
@@ -3658,7 +3658,7 @@ This section documents **everything used in the repo that was missing or only br
 
 - **Official definition**: Kubernetes-based platform for serverless workloads — scale-to-zero, revision management ([knative.dev/docs/serving](https://knative.dev/docs/serving/)).
 - **Problem solved**: KServe `InferenceService` CRDs are built on Knative Serving for traffic splitting and autoscaling.
-- **Real use case**: UC9/UC22 apply `InferenceService` manifests in Kind; canary traffic split validated before 100% promotion.
+- **Real use case**: `infra/helm/kserve/values.yml` + Kind configs for production rollout; UC9/UC22 CI validates MLflow + simulated A/B stats inline.
 - **UC**: UC9, UC22.
 
 #### Argo CD (GitOps reference)
@@ -3745,7 +3745,7 @@ This section documents **everything used in the repo that was missing or only br
 
 - **Official definition**: Modern, fast Python web framework for building APIs with automatic OpenAPI docs ([fastapi.tiangolo.com](https://fastapi.tiangolo.com/)).
 - **Problem solved**: Lightweight HTTP APIs for each UC microservice with typed request/response models.
-- **Real use case**: Every `services/*/src/main.py` exposes health + domain endpoints (e.g. `/heal`, `/correlate`, `/drift/check`); called from GHA curl steps and integration tests.
+- **Real use case**: Every `services/*/src/main.py` exposes health + domain endpoints (e.g. `/heal`, `/correlate`, `/drift/check`); used when Stack C compose runs locally. UC workflows import modules or run inline Python — they do not curl these containers in GHA by default.
 - **UC**: UC1–UC10 services.
 
 #### Uvicorn
@@ -3870,7 +3870,7 @@ This section walks through **how to build and validate the platform from zero**,
 | 3.1 | UC1 Drift | `03-drift-detection` | PSI/KS high = drift detected; Airflow retrain triggered |
 | 3.2 | UC2 Log anomaly | `04-log-anomaly` | LSTM reconstruction error on synthetic logs |
 | 3.3 | UC3 Alert correlation | `06-alert-correlation` | DBSCAN dedup; false_positive_rate ≤ 1.0 |
-| 3.4 | UC4 Predictive scaling | `07-predictive-scaling` | Prophet forecast + KEDA manifest in Kind |
+| 3.4 | UC4 Predictive scaling | `07-predictive-scaling` | Prophet forecast + KEDA ScaledObject YAML validated |
 | 3.5 | UC5 Feature skew | `05-feature-skew` | Feast apply + offline/online PSI |
 
 ---
@@ -3880,7 +3880,7 @@ This section walks through **how to build and validate the platform from zero**,
 | Step | UC | Workflow | Key proof |
 |---|---|---|---|
 | 4.1 | UC6 Self-healing | `08-self-healing` | OPA allows `payments` restart; denies `kube-system` |
-| 4.2 | UC7 Security | `13-security-policy` | Trivy scan + Kyverno + Falco rules in Kind |
+| 4.2 | UC7 Security | `13-security-policy` | Trivy + kyverno CLI + Falco rules (no Kind) |
 | 4.3 | UC8 RAG runbook | `09-rag-runbook` | Qdrant >40 chunks; retrieval returns relevant context |
 | 4.4 | UC23 Post-mortem | `09-rag-runbook` | Post-mortem JSON + eval gate; n8n → GitHub Issue is production target |
 
@@ -3890,10 +3890,10 @@ This section walks through **how to build and validate the platform from zero**,
 
 | Step | UC | Workflow | Key proof |
 |---|---|---|---|
-| 5.1 | UC9/UC22 Serving | `10-model-serving` | MLflow registry + KServe + A/B p-value |
+| 5.1 | UC9/UC22 Serving | `10-model-serving` | MLflow + OPA eval + simulated A/B p-value |
 | 5.2 | UC10 Cost | `11-cost-optimizer` | IsolationForest flags waste namespaces |
 | 5.3 | UC11 Tracing | `18-distributed-tracing` | OTEL span correlation + RCA score |
-| 5.4 | UC12 GitOps | `19-gitops-drift` | Kyverno denies non-compliant manifests |
+| 5.4 | UC12 GitOps | `19-gitops-drift` | Python drift simulation + eval gate (ArgoCD/Kyverno in prod) |
 
 ---
 
@@ -3957,8 +3957,8 @@ Each UC workflow follows the same pattern: **generate/load data → run pipeline
 ### UC4 — Predictive Autoscaling
 1. Generate time-series CPU/request metrics.
 2. Fit Prophet model; forecast next intervals.
-3. Create Kind cluster; apply KEDA ScaledObject referencing Prometheus trigger.
-4. Validate scale recommendation aligns with forecast.
+3. Validate KEDA `ScaledObject` manifest YAML (no Kind cluster in CI).
+4. Gate on forecast MAE and pre-scale lead time metrics.
 5. **Workflow**: [`07-predictive-scaling.yml`](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/07-predictive-scaling.yml)
 
 ### UC5 — Feature Store + Training-Serving Skew
@@ -3979,7 +3979,7 @@ Each UC workflow follows the same pattern: **generate/load data → run pipeline
 
 ### UC7 — Security Policy Enforcement
 1. Trivy scan base image; count critical fixable CVEs.
-2. Start Kind; apply Kyverno + test policies.
+2. Run **kyverno CLI** against sample Deployment/Pod YAML.
 3. Validate Falco rule syntax.
 4. OPA policy tests for admission decisions.
 5. **Workflow**: [`13-security-policy.yml`](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/13-security-policy.yml)
@@ -3992,8 +3992,8 @@ Each UC workflow follows the same pattern: **generate/load data → run pipeline
 
 ### UC9 — Experiment Tracking + Registry + Canary
 1. Train/log model to MLflow on DagsHub.
-2. Register model version; evaluate OPA promotion policy.
-3. Apply KServe InferenceService in Kind.
+2. Register model version; evaluate OPA promotion policy via `opa eval`.
+3. Simulate canary A/B stats inline (KServe/Kind is production reference).
 4. Gate on accuracy, drift score, SHAP logging flags.
 5. **Workflow**: [`10-model-serving.yml`](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/10-model-serving.yml)
 
