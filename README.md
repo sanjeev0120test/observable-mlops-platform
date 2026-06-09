@@ -732,8 +732,8 @@ flowchart TB
     subgraph L3["Level 3 — Execution"]
         CI["GitHub Actions (26 workflows)"]
         EV["Eval Gates (eval/scorer.py)"]
-        OB["Observability Stack B"]
-        ML["ML Stack A + Kind K8s"]
+        OB["Observability Stack B (CI in 01)"]
+        ML["Stack A / C / Kind (local)"]
     end
 
     L0 --> L1
@@ -1113,7 +1113,7 @@ These invariants appear repeatedly across all 23 UCs. Recognizing them once lets
 2. **Every critical path has a Prom alert** → `platform.yml` tagged `uc: UCx` — observability is not optional.
 3. **Policy lives outside application code** → `aiops/policies/opa/*.rego` — change rules without redeploying inference.
 4. **Synthetic data enables deterministic CI** → `data/synthetic/` — same inputs, same eval outcome every run.
-5. **Kind validates K8s paths; Compose validates data paths** — right fidelity for each layer.
+5. **Kind (local) validates K8s paths; Compose validates data paths** — Stack B in CI (`01-observability`); Stacks A/C + Kind via `setup-kind.sh` for local fidelity.
 6. **Remote persistence is optional but wired** → DagsHub token; workflows degrade gracefully with `continue-on-error`.
 7. **Portal aggregates truth** → `90-e2e` → `91-portal` — one scorecard for all stakeholders.
 
@@ -1305,7 +1305,7 @@ This platform uses **three overlapping planes** (Business · ML · Ops) — see 
 | **Canary deployment** | KServe traffic split 10/90 → 100% winner | UC22 |
 | **Namespace isolation** | OPA allowlist (`payments` yes, `kube-system` no) | UC6 |
 | **Eval isolation** | Each UC workflow independent; one failure ≠ all fail | All |
-| **Ephemeral CI stacks** | Compose/Kind torn down after job — no cross-run pollution | GHA |
+| **Ephemeral CI stacks** | Stack B Compose torn down after `01-observability` job — no cross-run pollution | GHA |
 | **Statistical gate** | A/B p-value before full promotion | UC22 |
 | **Error budget freeze** | SLO fast-burn stops risky releases | UC21 |
 
@@ -1649,7 +1649,7 @@ Normal → Alert firing → Correlated → Remediation → Resolved → Post-mor
 | CQRS / train-serve split | UC5 | Feast offline + Redis online |
 | Observability-first | UC11, UC21 | OTEL, `platform.yml` |
 | Quality gates | All | `eval/metrics.py`, `eval/scorer.py` |
-| Ephemeral envs | All CI | Docker Compose, Kind |
+| Ephemeral envs | UC GHA jobs | Stack B Compose in `01-observability`; Stacks A/C + Kind local only |
 | Correlation / traces | UC3, UC11 | DBSCAN, Tempo |
 | Backpressure | UC4, UC18 | KEDA, Redis rate limits |
 | Defense in depth | UC7 | Trivy + Kyverno + Falco + OPA |
@@ -1846,7 +1846,7 @@ flowchart TB
     subgraph Platform["Observable MLOps Platform (this repo)"]
         UC["23 Use Case workflows"]
         EV["Eval framework<br/>eval/scorer.py"]
-        ST["Ephemeral stacks<br/>Compose A/B + Kind"]
+        ST["Stack B in CI (01)<br/>A/C/Kind local"]
         OB["Observability<br/>OTEL → Prom/Loki/Tempo"]
     end
 
