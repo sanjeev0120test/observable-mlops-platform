@@ -1,6 +1,6 @@
 # Observable MLOps Platform
 
-Enterprise-grade **AIOps + MLOps** reference platform for SaaS teams. **23 use cases**, each with a blocking CI eval gate. **Zero local runtime required** — everything validates in GitHub Actions using ephemeral Docker Compose and Kind clusters.
+Enterprise-grade **AIOps + MLOps** reference platform for SaaS teams. **23 use cases**, each with a blocking CI eval gate. **Zero local runtime required** — UC workflows validate in GitHub Actions via inline Python + eval gates; **Stack B Compose** runs in `01-observability`; Stack A / Stack C / Kind are **compose and infra scaffolds** for local and production rollout.
 
 **Live repo**: [github.com/sanjeev0120test/observable-mlops-platform](https://github.com/sanjeev0120test/observable-mlops-platform)  
 **MLflow/DVC remote**: [dagshub.com/sanjeev0120test/observable-mlops-platform](https://dagshub.com/sanjeev0120test/observable-mlops-platform)  
@@ -18,7 +18,7 @@ These are the **non-negotiable design invariants** — if you adopt only one ide
 | **4** | **Control plane ≠ data plane** | Decisions (policy, scale, promote) separate from work (inference, logs) | Policy embedded in app code — unauditable, untestable | UC6 OPA gate, UC9 MLflow stage + KServe traffic split |
 | **5** | **Blast radius containment** | Limit how far a bad change propagates through the system | 100% traffic to broken model; one namespace restart kills cluster | UC22 canary + A/B, UC6 namespace allowlist, UC21 error budget |
 | **6** | **Single source of truth (Git + registry)** | One declared state; controllers reconcile reality to it | `kubectl apply` drift; "works in staging" prod failures | UC12 GitOps, UC20 Backstage catalog, MLflow on DagsHub |
-| **7** | **Ephemeral validation environments** | CI proves behavior in throwaway stacks — cattle, not pets | "Works on my laptop"; unreproducible prod incidents | Docker Compose Stack A/B + Kind in every workflow |
+| **7** | **Ephemeral validation environments** | CI proves behavior in throwaway jobs — cattle, not pets | "Works on my laptop"; unreproducible prod incidents | Stack B Compose in `01-observability`; Stack A/C + Kind via `infra/docker-compose/` and `scripts/setup-kind.sh` (local/reference) |
 
 > **Systems insight**: This platform is a **system of systems** — Business, ML, and Ops planes that traditionally silo. The eval gate is the *integrator*: it forces each plane to emit verifiable signals before the whole is considered healthy.
 
@@ -124,16 +124,18 @@ Most of this README is **accurate and tied to real code**. A few areas use **pro
 
 | Status | Meaning | Examples in this repo |
 |---|---|---|
-| **CI-proven** | Workflow runs, metrics collected, `eval/scorer.py` gate passes | UC1 drift metrics, UC3 DBSCAN, UC5 Feast skew, UC8 Qdrant retrieval in `09-rag-runbook.yml`, all 26 workflows |
-| **Compose / Kind path** | Service manifests and images exist; used when workflows start Stack A/B or Kind | Ollama, Qdrant, KServe, Kyverno, OTEL stack |
-| **Scaffolded (Phase 2)** | Endpoint, Dockerfile, or dependency declared; CI uses inline script or stub metric until wired | `services/runbook-agent/` FastAPI (stub), LLM answer generation in UC8 (groundedness stubbed), UC23 real GitHub Issue via n8n |
+| **CI-proven** | Workflow runs inline Python (or Stack B Compose in `01-observability`), metrics collected, `eval/scorer.py` gate passes | UC1 drift, UC3 DBSCAN, UC5 Feast skew, UC8 Qdrant retrieval in `09-rag-runbook.yml`, all 26 workflows |
+| **Compose / Kind path** | Defined in `infra/docker-compose/` or `infra/kind/`; for local/manual or Phase 2 — **not started in UC workflows today** | Stack A (MLflow, Qdrant, Ollama), Stack C (7 FastAPI services), Kind + KServe Helm values |
+| **Scaffolded (Phase 2)** | Endpoint, Dockerfile, or dependency declared; CI uses inline script or stub metric until wired | `services/runbook-agent/` FastAPI (stub), LLM generation in UC8, UC9/UC22 KServe/Kind paths, UC23 GitHub Issue via n8n |
 
 **Corrections worth knowing**:
 
-- **UC8 RAG**: CI **proves chunking, embedding (`all-MiniLM-L6-v2`), and Qdrant retrieval** inside `09-rag-runbook.yml`. It does **not** call Ollama or LangChain in that workflow today; groundedness is a **placeholder score** until TinyLlama generation is wired.
-- **LangChain**: listed in `requirements.txt` and `services/runbook-agent/Dockerfile`; **no production Python import yet** — retrieval uses `qdrant-client` + `sentence-transformers` directly in CI.
+- **UC8 RAG**: CI **proves chunking, embedding (`all-MiniLM-L6-v2`), and Qdrant retrieval** inside `09-rag-runbook.yml`. It does **not** call Ollama or LangChain in that workflow; groundedness is a **placeholder score** until TinyLlama generation is wired.
+- **LangChain**: listed in `requirements.txt` and `services/runbook-agent/Dockerfile`; **no Python import in repo yet** — retrieval uses `qdrant-client` + `sentence-transformers` directly in CI.
 - **UC12 GitOps**: CI **simulates** desired vs actual config drift in Python; **ArgoCD/Flux** are documented production patterns, not executed in the workflow.
-- **UC23 post-mortem**: CI **generates JSON** and sets eval metrics; **n8n → GitHub Issue** is the documented production path (stub flag in workflow).
+- **UC9/UC22 serving**: CI trains/logs to MLflow and **simulates** canary A/B stats in `10-model-serving.yml` — no Kind/KServe cluster in GHA today.
+- **UC23 post-mortem**: CI **generates JSON** and sets eval metrics; **n8n → GitHub Issue** is the production target (`github_issue_created` stubbed in workflow).
+- **Docker Compose in GHA**: only `01-observability.yml` runs `docker compose` (Stack B). Other stacks are **not** brought up in UC workflows.
 
 Everything else — eval framework, 23 UCs, thresholds in `eval/metrics.py`, 7 FastAPI services, Feast, MLflow, OPA policies, observability stack — matches the repository layout and workflows.
 
@@ -245,7 +247,7 @@ Training loop (simplified):
 Request → feature lookup (Redis/Feast) → model forward pass → prediction + latency metric
 ```
 
-**In this repo**: KServe on Kind serves models in CI; FastAPI services (`services/drift-monitor/`, etc.) expose `/drift/check`, `/heal`, `/api/v1/query` endpoints that GHA curls and scores.
+**In this repo**: UC workflows import service **logic as Python modules** or run inline scripts — they do **not** curl live FastAPI containers in GHA. Stack C (`docker-compose.services.yml`) exposes the seven services for local/Compose use. UC9/UC22 use MLflow + simulated A/B stats in `10-model-serving.yml` (no Kind/KServe in CI).
 
 **Critical distinction**: **training** changes the model; **inference** does not. Mixing them (e.g. updating weights in the serving path) is a production anti-pattern.
 
@@ -327,8 +329,8 @@ These are **eval gates applied to GenAI** — same framework (`eval/scorer.py`),
 
 | GenAI use here | UC | Stack |
 |---|---|---|
-| Runbook Q&A during incidents | UC8 | Qdrant + Ollama (TinyLlama) |
-| Post-mortem draft from similar incidents | UC23 | Same RAG pipeline + n8n |
+| Runbook Q&A during incidents | UC8 | Qdrant + sentence-transformers (CI); Ollama (Compose/scaffold) |
+| Post-mortem draft from similar incidents | UC23 | Same retrieval in CI; n8n Issue create stubbed |
 
 **GenAI vs traditional ML in this platform**:
 
@@ -649,7 +651,7 @@ flowchart TD
     TRIG["push / workflow_dispatch"]
     CHECKOUT["actions/checkout"]
     SETUP["setup-python · install requirements.txt"]
-    COMPOSE["docker compose up Stack A + B"]
+    COMPOSE["docker compose up Stack B (01-observability only)"]
     KIND["kind create cluster + kubectl apply"]
     RUN["Run UC scripts + curl services"]
     EVAL["python -m eval.scorer run_eval_gate"]
@@ -1081,9 +1083,10 @@ flowchart TB
 | Layer | Technology | Why |
 |---|---|---|
 | CI orchestrator | GitHub Actions | Free for public repos; auditable; no laptop dependency |
-| Ephemeral ML stack | Docker Compose Stack A | MLflow, Feast, Airflow, Redis, Qdrant, n8n |
-| Ephemeral observability | Docker Compose Stack B | Prometheus, Grafana, Loki, Tempo, OTEL Collector |
-| Ephemeral K8s | Kind (in-job) | KServe, Kyverno, KEDA, OPA admission |
+| UC validation | Inline Python + `eval/scorer.py` | Default path for UC workflows 03–11, 13–15, 18–26 — no compose required |
+| Observability in CI | Docker Compose Stack B | Only in `01-observability.yml` |
+| Local ML / services | Compose Stack A + Stack C | MLflow, Postgres, Redis, Airflow, Qdrant, n8n, Ollama + 7 FastAPI services |
+| Local K8s reference | Kind + Helm (`setup-kind.sh`) | KServe, Kyverno, KEDA — not started in UC GHA today |
 | Persistence | DagsHub | MLflow tracking + DVC remote (one token) |
 | Reports | GitHub Pages | Drift reports, eval scorecards, portal |
 
@@ -1172,7 +1175,7 @@ mindmap
 | Plane | In this repo | Examples |
 |---|---|---|
 | **Control** | GitHub Actions, OPA, Kyverno, Airflow DAG scheduler, KEDA, Alertmanager routing, eval gates | `eval/scorer.py`, `aiops/policies/opa/`, `.github/workflows/` |
-| **Data** | FastAPI microservices, KServe inference, Redis feature reads, Qdrant retrieval, Prometheus TSDB | `services/*/src/`, `mlops/serving/`, Stack A/B compose |
+| **Data** | FastAPI microservices, KServe inference, Redis feature reads, Qdrant retrieval, Prometheus TSDB | `services/*/src/`, `infra/helm/kserve/`, Compose stacks A/B/C |
 
 **Why it matters**: Mixing control logic into data-path code creates tight coupling — you can't change policy without redeploying inference. Production platforms (Kubernetes itself, Istio, KServe) separate these deliberately.
 
@@ -1268,7 +1271,7 @@ This platform uses **three overlapping planes** (Business · ML · Ops) — see 
 
 **Why it matters**: Declarative configs are **diffable, reviewable in PRs, and replayable** — essential for compliance and GitOps.
 
-**Key files**: `infra/docker-compose/`, `aiops/policies/`, `mlops/feature-store/feature_repo/`, `mlops/serving/`
+**Key files**: `infra/docker-compose/`, `aiops/policies/`, `mlops/feature-store/feature_repo/`, `infra/helm/kserve/`
 
 **UCs**: UC5, UC6, UC7, UC12, UC4
 
@@ -1666,20 +1669,26 @@ flowchart TB
     subgraph CI["GitHub Actions (Orchestrator)"]
         W00["00-pr-validate"]
         W01["01-observability"]
-        W03["03–26 UC workflows"]
+        W03["03–11, 13–15, 18–26 UC workflows"]
         W90["90-e2e"]
         W91["91-portal"]
     end
 
-    subgraph StackA["Stack A — ML / Data (Docker Compose)"]
+    subgraph StackA["Stack A — local compose (mlops-core.yml)"]
         MLF["MLflow"]
-        FST["Feast + Redis"]
+        PG["Postgres"]
+        RD["Redis"]
         AF["Airflow"]
         QD["Qdrant"]
         N8["n8n"]
+        OL["Ollama"]
     end
 
-    subgraph StackB["Stack B — Observability (Docker Compose)"]
+    subgraph StackC["Stack C — local compose (services.yml)"]
+        SVC["7 FastAPI services + OPA"]
+    end
+
+    subgraph StackB["Stack B — CI in 01-observability"]
         OTEL["OTEL Collector"]
         PROM["Prometheus"]
         GRAF["Grafana"]
@@ -1688,11 +1697,10 @@ flowchart TB
         AM["Alertmanager"]
     end
 
-    subgraph K8s["Kind Cluster (Ephemeral)"]
+    subgraph K8s["Kind — reference (setup-kind.sh)"]
         KS["KServe"]
         KYV["Kyverno"]
         KEDA["KEDA"]
-        OPA["OPA"]
     end
 
     subgraph Remote["Persistent Remote"]
@@ -1782,7 +1790,7 @@ flowchart TD
     P0["Phase 0: 00-pr-validate"]
     P1["Phase 1: 01-observability"]
     P2["Phase 2: 02-data-pipeline"]
-    UC["Phase 3–6: UC workflows 03–26"]
+    UC["Phase 3–6: UC workflows 03–11, 13–15, 18–26"]
     E2E["90-e2e-integration<br/>aggregate eval-results"]
     PORTAL["91-publish-portal<br/>GitHub Pages"]
 
@@ -1917,7 +1925,7 @@ Logical software components inside the platform — each maps to a directory or 
 flowchart TB
     subgraph Workflows[".github/workflows/"]
         W0["00-pr-validate"]
-        WUC["03–26 UC workflows"]
+        WUC["03–11, 13–15, 18–26 UC workflows"]
         W90["90-e2e"]
     end
 
@@ -1955,7 +1963,7 @@ flowchart TB
 
     subgraph Infra["infra/"]
         DC["docker-compose/"]
-        K8["kubernetes/kind/"]
+        K8["infra/kind/"]
         HELM["helm/"]
     end
 
@@ -1974,8 +1982,8 @@ flowchart TB
 | `eval/scorer.py` | Weighted composite score; CI pass/fail | `run_eval_gate()` |
 | `services/drift-monitor/` | PSI/KS/LSDD drift checks | `POST /drift/check` |
 | `services/self-healing/` | OPA-gated remediation | `POST /heal` |
-| `mlops/serving/` | KServe manifests + canary | `InferenceService` YAML |
-| `observability/alerts/` | PromQL rules tagged `uc: UCx` | `platform.yml` |
+| `infra/helm/kserve/values.yml` | KServe/canary reference | Helm values + Kind setup script |
+| `observability/alerts/rules/platform.yml` | PromQL rules tagged `uc: UCx` | Alert rules |
 
 ---
 
@@ -2054,39 +2062,29 @@ flowchart TB
 
 ### Deployment Diagram
 
-Where each artifact runs during CI validation on a GitHub Actions runner (~7 GB RAM budget).
+**Typical UC workflow**: checkout → pip install → inline Python → `eval/scorer.py`. **Only `01-observability.yml`** starts Stack B Compose. Stack A, Stack C, and Kind are local/reference paths.
 
 ```mermaid
 flowchart TB
     subgraph Runner["GitHub Actions ubuntu-latest runner"]
-        subgraph ComposeA["Docker Compose — Stack A (~5.5 GB)"]
-            PG["postgres:16"]
-            RD["redis:7"]
-            MLF["mlflow:5000"]
-            AF["airflow:8080"]
-            QD["qdrant:6333"]
-            N8["n8n:5678"]
-        end
-
-        subgraph ComposeB["Docker Compose — Stack B (~1.8 GB)"]
+        subgraph ComposeB["Stack B in 01-observability only (~1.8 GB)"]
             PR["prometheus:9090"]
             GF["grafana:3000"]
             LO["loki:3100"]
             TE["tempo:3200"]
-            OC["otel-collector:4317"]
+            OC["otel-collector:4319"]
             AL["alertmanager:9093"]
+            FB["fluentbit"]
         end
 
-        subgraph Kind["Kind cluster (in-job, ephemeral)"]
-            KS["KServe InferenceService"]
-            OP["OPA :8181"]
-            KY["Kyverno admission"]
-            KE["KEDA operator"]
-        end
-
-        subgraph SvcHost["Host-process / job steps"]
-            PY["Python 3.11<br/>services + mlops scripts"]
+        subgraph UcJob["Typical UC workflow job"]
+            PY["Python 3.11 inline scripts"]
             EV["eval/scorer.py"]
+        end
+
+        subgraph LocalOnly["Local / manual — not started in UC GHA today"]
+            CA["Stack A + C compose"]
+            KD["Kind via setup-kind.sh"]
         end
     end
 
@@ -2095,12 +2093,13 @@ flowchart TB
         GH["GitHub Pages — portal"]
     end
 
-    PY --> ComposeA & ComposeB & Kind
+    UcJob --> EV
+    UcJob -.->|"optional DAGSHUB_TOKEN"| DH
+    LocalOnly -.-> UcJob
     EV --> GH
-    ComposeA -.->|"DAGSHUB_TOKEN"| DH
 ```
 
-Files: `infra/docker-compose/docker-compose.mlops-core.yml`, `docker-compose.observability.yml`, `docker-compose.services.yml`, `infra/kubernetes/kind/kind-config.yaml`
+Files: `infra/docker-compose/docker-compose.{mlops-core,observability,services}.yml`, `infra/kind/{serving,policy,pipelines}-cluster.yml`, `scripts/setup-kind.sh`
 
 ---
 
@@ -2198,56 +2197,61 @@ erDiagram
     }
 ```
 
-Source files: `eval/metrics.py` (entities), `backstage/catalog-info.yaml` (27 service entities), MLflow on DagsHub (runs/versions).
+Source files: `eval/metrics.py` (entities), `backstage/catalog-info.yaml` (27 entities: 1 System + 23 Components + 3 Resources), MLflow on DagsHub (runs/versions).
 
 ---
 
 ### Network Topology Diagram
 
-Docker Compose default bridge network inside CI — service DNS names match `container_name` / service keys.
+When all three compose files run locally, services share **`platform-net`** (external network). Host port maps below match `infra/docker-compose/`. **CI today** only starts Stack B (`01-observability.yml`).
 
 ```mermaid
 flowchart TB
-    subgraph Host["GHA Runner host"]
-        subgraph NetA["network: mlops-core (Stack A)"]
-            PG["postgresql :5432"]
-            RD["redis :6379"]
-            MLF["mlflow :5000"]
-            AF["airflow :8080"]
-            QD["qdrant :6333"]
-            N8["n8n :5678"]
-        end
+    subgraph Host["GHA runner or local host"]
+        subgraph Net["platform-net — Stacks A + B + C when compose up"]
+            subgraph StackA["Stack A — mlops-core.yml"]
+                PG["postgresql :5432"]
+                RD["redis :6379"]
+                MLF["mlflow :5000"]
+                AF["airflow :8080"]
+                QD["qdrant :6333"]
+                N8["n8n :5678"]
+                OL["ollama :11434"]
+            end
 
-        subgraph NetB["network: observability (Stack B)"]
-            PR["prometheus :9090"]
-            GF["grafana :3000"]
-            LO["loki :3100"]
-            TE["tempo :3200"]
-            OC["otel-collector :4317/4318"]
-            AL["alertmanager :9093"]
-        end
+            subgraph StackB["Stack B — observability.yml"]
+                PR["prometheus :9090"]
+                GF["grafana :3000"]
+                LO["loki :3100"]
+                TE["tempo :3200/4317"]
+                OC["otel-collector :4319→4317"]
+                AL["alertmanager :9093"]
+                FB["fluentbit"]
+            end
 
-        subgraph NetS["network: services"]
-            DM["drift-monitor :8001"]
-            SH["self-healing :8002"]
-            RA["runbook-agent :8003"]
-        end
-
-        subgraph KindNet["Kind cluster network"]
-            KS["KServe :8080"]
-            OP["OPA :8181"]
+            subgraph StackC["Stack C — services.yml"]
+                AD["anomaly-detector :8001"]
+                DM["drift-monitor :8002"]
+                AC["alert-correlator :8003"]
+                PS["predictive-scaler :8004"]
+                SH["self-healing :8005"]
+                RA["runbook-agent :8006"]
+                CO["cost-optimizer :8007"]
+                OP["opa :8181"]
+            end
         end
     end
 
-    DM & SH & RA -->|"OTLP"| OC
+    AD & DM & SH & RA -->|"OTLP"| OC
     OC --> PR & LO & TE
     PR --> AL
     PR & LO & TE --> GF
     SH -->|"POST /v1/data"| OP
     DM --> MLF
-    RA --> QD
+    RA --> QD & OL
     AL -->|"webhook"| N8
     N8 --> SH
+    FB --> LO
 ```
 
 ---
@@ -2262,7 +2266,7 @@ flowchart TD
     P0["00-pr-validate<br/>lint · eval framework test"]
     P1["01-observability<br/>Stack B health · alert rules"]
     P2["02-data-pipeline<br/>DVC · GE foundation"]
-    PAR{"Parallel UC dispatch<br/>03–26 workflows"}
+    PAR{"Parallel UC dispatch<br/>03–11, 13–15, 18–26"}
     UC1["03-drift-detection …"]
     UCN["… 26-catalog-validate"]
     COLLECT["Upload eval-results artifacts"]
@@ -2611,7 +2615,7 @@ sequenceDiagram
     participant Portal as 91-portal → gh-pages
 
     Dev->>GHA: Push to main / workflow_dispatch
-    GHA->>UC: Run 03–26 (parallel jobs)
+    GHA->>UC: Run 03–11, 13–15, 18–26 (parallel jobs)
     UC->>Eval: Upload ucN.json artifacts
     UC-->>GHA: pass if score >= threshold
     GHA->>E2E: Download all uc*.json
@@ -2698,7 +2702,7 @@ Dashboard: `observability/dashboards/grafana/overview.json`
 
 ## 23 Use Cases — Business Value & Evidence
 
-Every use case below is **implemented, CI-gated, and measured**. “Hard evidence” refers to metrics in `eval/metrics.py` that must pass for the workflow to succeed (threshold in `THRESHOLDS`). No dollar figures — value is expressed as **observable outcomes** you can verify in GitHub Actions artifacts.
+Every use case below has a **CI eval gate** and workflow. Metrics are collected inline in GitHub Actions; some paths use **simulated or stubbed** values where noted (UC8 LLM, UC9/UC22 KServe, UC12 GitOps, UC23 Issue). See [implementation scope](#how-concepts-map-to-this-repo-read-this-first).
 
 ### End-to-end scenarios — systems view
 
@@ -2757,7 +2761,7 @@ sequenceDiagram
 | "Who approved this model version?" | UC9 MLflow registry | DagsHub experiment + stage transition log |
 | "Why did the model predict X for customer Y?" | UC17 SHAP | SHAP values in MLflow artifact |
 | "Was the container scanned for CVEs?" | UC7 Trivy + Kyverno | CI log: CVE count ≤ 25; admission deny test |
-| "Does declared config match cluster?" | UC12 GitOps | Drift injected → reconcile validated |
+| "Does declared config match cluster?" | UC12 GitOps | Python drift simulation in CI; ArgoCD reconcile is production target |
 | "Who owns this service?" | UC20 Backstage | 27 entities linted; owner field required |
 
 **Critical point**: UC17 SHAP is not optional decoration — OPA `model_promotion.rego` **denies promotion** if explainability artifact is missing. This is fail-closed governance, not a dashboard checkbox.
@@ -2788,7 +2792,7 @@ sequenceDiagram
 | **UC2** | Millions of log lines drown out the few lines that indicate a real incident; keyword alerts false-positive constantly. | Trains an LSTM autoencoder on normal log sequences; flags anomalies by reconstruction error; stores similar past incidents in Qdrant. | Faster incident detection without hiring more L1 support. | On-call finds the needle in the haystack; less pager fatigue. | Precision@10 ≥ **0.70**, recall@10 ≥ **0.60**, ≥ 1 similar incident in Qdrant; score ≥ **65** | `04-log-anomaly` |
 | **UC3** | One root cause triggers 50+ duplicate Alertmanager pages; engineers mute channels and miss real issues. | DBSCAN clusters alerts by feature vector; deduplicates while keeping `false_positive_rate` bounded. | Restores trust in alerting; reduces on-call burnout. | Engineers receive one correlated page per incident. | Dedup rate ≥ **70%**, silhouette ≥ 0.30, FPR ≤ **0.10**; score ≥ **50** | `06-alert-correlation` |
 | **UC6** | At 3 AM, on-call restarts pods manually — sometimes in protected namespaces, making things worse. | Self-healing service calls OPA (`self_healing.rego`); only allowed actions (e.g. restart in `payments`) execute via n8n webhook from Alertmanager. | Cuts toil for repeatable fixes; blocks dangerous automation. | On-call approves policy once; safe actions run automatically. | Remediation success ≥ **90%**, OPA gate = **1.0**, false remediation ≤ 5%, MTTR ≤ **300s**; score ≥ **85** | `08-self-healing` |
-| **UC8** | During incidents, engineers search Confluence/Notion for runbooks while the clock runs. | CI indexes runbook markdown + synthetic incidents into Qdrant; `sentence-transformers` retrieval returns top chunks (`09-rag-runbook.yml`). Ollama/LangChain generation is Compose/scaffold path. | Shortens MTTR for known failure modes. | On-call gets step-by-step remediation without leaving the incident channel. | Retrieval P@5 ≥ **0.70**, groundedness ≥ 0.60 (stub in CI), ≥ **40** chunks indexed; score ≥ **60** | `09-rag-runbook` |
+| **UC8** | During incidents, engineers search Confluence/Notion for runbooks while the clock runs. | CI indexes runbook markdown + synthetic incidents into Qdrant; `sentence-transformers` retrieval in `09-rag-runbook.yml`. Ollama/LangChain answers are Compose/scaffold. | Shortens MTTR for known failure modes. | On-call gets **retrieved chunks** in CI; full LLM answers need Compose/runbook-agent (Phase 2). | Retrieval P@5 ≥ **0.70**, groundedness ≥ 0.60 (stub in CI), ≥ **40** chunks indexed; score ≥ **60** | `09-rag-runbook` |
 | **UC11** | A request fails in service C, but the bug is in service A — without trace IDs, RCA takes hours. | Emits OTEL spans across a simulated call chain; correlates trace IDs; identifies anomalous span for RCA. | Reduces cross-team blame meetings; faster fixes. | Support can pinpoint failing dependency for customers. | Trace completeness ≥ **90%**, anomalous span identified, precision ≥ 0.60; score ≥ **65** | `18-distributed-tracing` |
 | **UC23** | Post-mortems are written from memory days later; lessons are lost. | CI generates post-mortem JSON and eval metrics; production path is RAG + n8n webhook opening a GitHub Issue (Issue create stubbed in workflow). | Institutional memory; audit trail for SEV reviews. | Teams spend time on fixes, not formatting docs. | Post-mortem generated, GitHub issue created (stub), ≥ 1 similar incident cited; score ≥ **60** | `09-rag-runbook` |
 
@@ -2809,8 +2813,8 @@ sequenceDiagram
 | UC | Problem | What the platform does | Business value | User value | Hard evidence (CI gate) | Workflow |
 |---|---|---|---|---|---|---|
 | **UC7** | Vulnerable container images and runtime exploits reach production; compliance audits fail. | Trivy scans images; Kyverno denies bad manifests in Kind; Falco rules validated; OPA admission tests. | Defense-in-depth per [CNCF security cloud native trail map](https://github.com/cncf/tag-security). | Security team gets automated gates; devs get fast CI feedback. | Critical CVEs ≤ **25** (baseline-aware), Kyverno blocks ≥ 1 violation, Falco fires ≥ 1 rule; score ≥ **60** | `13-security-policy` |
-| **UC12** | Someone `kubectl apply`s a manifest that diverges from git — cluster state drifts silently. | Applies baseline to Kind; injects drift; Kyverno/OPA catch violations; reconcile validated. | GitOps integrity ([CNCF GitOps](https://opengitops.dev/)). | Platform team trusts declared state matches reality. | Drift detected, reconcile success, ≥ 1 policy violation caught; score ≥ **70** | `19-gitops-drift` |
-| **UC20** | Nobody knows who owns a service during an incident; onboarding takes weeks of Slack archaeology. | Lints `backstage/catalog-info.yaml` — **27 entities** (23 services + 3 ML models + 1 system) with required fields. | Clear ownership ([Backstage catalog](https://backstage.io/docs/features/software-catalog/)). | New engineers find owners and APIs in one place. | All entities valid, exactly **27** entities, schema lint pass; score ≥ **90** | `26-catalog-validate` |
+| **UC12** | Someone `kubectl apply`s a manifest that diverges from git — cluster state drifts silently. | CI **simulates** desired vs actual config drift in Python (`19-gitops-drift.yml`); production uses Kyverno + ArgoCD/Flux reconcile. | GitOps integrity ([CNCF GitOps](https://opengitops.dev/)). | Platform team trusts declared state matches reality. | Drift detected, reconcile success (simulated), ≥ 1 policy violation caught; score ≥ **70** | `19-gitops-drift` |
+| **UC20** | Nobody knows who owns a service during an incident; onboarding takes weeks of Slack archaeology. | Lints `backstage/catalog-info.yaml` — **27 entities** (23 Components + 3 ML-model Resources + 1 System) with required fields. | Clear ownership ([Backstage catalog](https://backstage.io/docs/features/software-catalog/)). | New engineers find owners and APIs in one place. | All entities valid, exactly **27** entities, schema lint pass; score ≥ **90** | `26-catalog-validate` |
 
 ### 5. Platform Engineering & Cost
 
@@ -3024,7 +3028,7 @@ gh workflow run 90-e2e-integration.yml --ref main
 ## Repository Structure
 
 ```
-.github/workflows/       26 workflow files (00-26 + 90-91)
+.github/workflows/       26 workflow files (00–11, 13–15, 18–26, 90, 91 — no 12-, 16-, 17-)
 infra/
   docker-compose/        Stack A (ML/data) + Stack B (observability)
   kind/                  Kind cluster configs
@@ -3124,13 +3128,13 @@ This summary feeds the published portal (workflow 91).
 
 ## Technology Stack
 
-**MLOps**: MLflow · Feast · DVC · Airflow · Kubeflow Pipelines (Kind) · KServe · Optuna · SHAP · SciPy  
+**MLOps**: MLflow · Feast (pip library) · DVC · Airflow (compose) · Kubeflow Pipelines (reference) · KServe (Helm ref) · Optuna · SHAP · SciPy  
 **AIOps**: n8n · Qdrant · sentence-transformers (CI) · Ollama/TinyLlama + LangChain (Compose/scaffold) · Falco · OPA · Rego  
-**Observability**: OpenTelemetry · OTLP · Prometheus · PromQL · Grafana · Loki · LogQL · Tempo · FluentBit · Alertmanager  
+**Observability**: OpenTelemetry · OTLP · Prometheus · PromQL · Grafana · Loki · LogQL · Tempo · Fluent Bit · Alertmanager  
 **Drift/Monitoring**: Evidently · NannyML · Alibi Detect · WhyLogs · Great Expectations  
 **ML**: PyTorch · scikit-learn (DBSCAN, IsolationForest) · NumPy · Pandas · PyArrow · Prophet · sentence-transformers  
 **Security**: Trivy · Falco · Kyverno · OPA  
-**Infra**: Docker Compose · Kind · Knative (via KServe) · Helm · Terraform (ref) · PostgreSQL · Redis  
+**Infra**: Docker Compose (Stack B in CI; A/C local) · Kind (reference — `scripts/setup-kind.sh`) · Knative via KServe · Helm · Terraform (ref) · PostgreSQL · Redis  
 **CI/Dev**: GitHub Actions · Ruff · Black · pytest · actionlint · pre-commit  
 **Platform**: `eval/scorer.py` · `data/synthetic/` · Backstage catalog · GitHub Pages · HuggingFace Hub (optional)
 
@@ -3167,9 +3171,9 @@ This section documents **every tool, library, and concept** used in the platform
 #### Docker Compose
 - **Official definition**: Tool for defining and running multi-container Docker applications ([Compose specification](https://docs.docker.com/compose/)).
 - **Problem solved**: Ephemeral ML + observability stacks on CI runners without permanent infrastructure.
-- **Why here**: Stack A (MLflow, Feast, Redis, Airflow, n8n, Qdrant) and Stack B (Prometheus, Grafana, Loki, Tempo, OTEL) start in-job and tear down after validation.
+- **Why here**: Stack B starts in **`01-observability.yml`** only. Stack A (MLflow, Postgres, Redis, Airflow, n8n, Qdrant, Ollama) and Stack C (7 FastAPI + OPA) are **compose-defined for local use** — Feast is a **pip library**, not a container.
 - **Alternatives**: Kubernetes-only (heavier cold-start on CI); Podman Compose — Compose is industry default for local/ephemeral stacks.
-- **Used in**: `01-observability`, `02-data-pipeline`, `03-drift-detection`, `04-log-anomaly`, `09-rag-runbook`, and others.
+- **Used in**: `01-observability` (Stack B Compose only in GHA).
 
 #### Kind (Kubernetes in Docker)
 - **Official definition**: Runs local Kubernetes clusters using Docker containers as nodes ([kind.sigs.k8s.io](https://kind.sigs.k8s.io/docs/user/quick-start/)).
@@ -3273,16 +3277,16 @@ This section documents **every tool, library, and concept** used in the platform
 #### Kubeflow Pipelines
 - **Official definition**: Platform for building and deploying portable, scalable ML workflows on K8s ([kubeflow.org/docs](https://www.kubeflow.org/docs/components/pipelines/)).
 - **Problem solved**: Composable ML DAGs on Kubernetes for training/HPO pipelines.
-- **Why here**: Kind Job B validates pipeline manifests; UC14 HPO references Kubeflow-style orchestration.
+- **Why here**: `mlops/pipelines/kubeflow/` is a scaffold; `scripts/setup-kind.sh` can install pipelines locally — **no GHA workflow calls it**. UC14 uses **Optuna inline** in `21-hpo.yml`.
 - **Alternatives**: Argo Workflows alone — Kubeflow adds ML-specific components.
-- **Used in**: UC9, UC14, `21-hpo.yml`.
+- **Used in**: Reference only; UC14 HPO via Optuna.
 
 #### KServe
 - **Official definition**: Kubernetes-native model serving on Knative ([kserve.github.io](https://kserve.github.io/website/latest/)).
 - **Problem solved**: Canary deployments, InferenceService CRDs, scale-to-zero inference.
-- **Why here**: UC9/UC22 validate InferenceService manifests and A/B statistical tests in Kind.
+- **Why here**: `infra/helm/kserve/values.yml` + Kind configs are **reference**; UC9/UC22 CI uses **inline Python** (MLflow + simulated A/B) in `10-model-serving.yml` — no Kind cluster in GHA.
 - **Alternatives**: Seldon Core, BentoML on K8s — KServe is CNCF incubating standard for K8s model serving.
-- **Used in**: UC9, UC22, `10-model-serving.yml`.
+- **Used in**: UC9, UC22 (metrics simulated in CI; KServe for production rollout).
 
 #### Optuna
 - **Official definition**: Hyperparameter optimization framework ([optuna.readthedocs.io](https://optuna.readthedocs.io/en/stable/)).
@@ -3484,7 +3488,7 @@ This section documents **every tool, library, and concept** used in the platform
 #### Backstage (catalog-info.yaml)
 - **Official definition**: Developer portal framework ([backstage.io/docs](https://backstage.io/docs/overview/what-is-backstage)).
 - **Problem solved**: Service ownership, API discovery, onboarding clarity.
-- **Why here**: UC20 lints `backstage/catalog-info.yaml` — 27 entities (23 services + 3 ML models + 1 system).
+- **Why here**: UC20 lints `backstage/catalog-info.yaml` — 27 entities (23 Components + 3 ML-model Resources + 1 System).
 - **Alternatives**: Port, Cortex — Backstage is CNCF, YAML-native catalog fits gitops.
 - **Used in**: UC20, `26-catalog-validate`.
 
@@ -3794,7 +3798,8 @@ This section documents **everything used in the repo that was missing or only br
 |---|---|---|
 | **26 GHA workflows** | All listed with UC mapping | §9, §20, §23 |
 | **23 UCs** | Business value + evidence + walkthrough | §9, §21 |
-| **Stack A services** | MLflow, Feast, Redis, Postgres, Airflow, n8n, Qdrant, Ollama | §18, §19 |
+| **Stack A services** | MLflow, Postgres, Redis, Airflow, n8n, Qdrant, Ollama (compose-defined; local/manual) | §18, §19 |
+| **Stack C services** | 7 FastAPI microservices + OPA on `platform-net` | §19, `docker-compose.services.yml` |
 | **Stack B services** | Prometheus, Grafana, Loki, Tempo, OTEL, Fluent Bit, Alertmanager | §18, §8 |
 | **7 microservices** | All under `services/` | §19 |
 | **OPA + Kyverno + Falco + Trivy** | Security stack | §18 |
