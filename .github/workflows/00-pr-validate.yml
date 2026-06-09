@@ -151,26 +151,27 @@ jobs:
               assert 0 <= t <= 100, f'{uc} threshold {t} out of range'
           print('All thresholds in valid range: OK')
 
-          # Smoke-test scorer with perfect values for UC1
+          # UC1 evaluates drift DETECTION (high PSI/KS = drift detected = good)
+          # Smoke-test: drift clearly detected + retrain triggered = should PASS
           result = compute_score('UC1', {
-              'ks_statistic': 0.05,
-              'psi_score': 0.01,
-              'nannyml_performance_estimate': 0.95,
-              'alibi_lsdd_p_value': 0.8,
+              'psi_score': 1.2,
+              'ks_statistic': 0.45,
+              'alibi_lsdd_p_value': 0.001,
               'retrain_triggered': True,
+              'nannyml_performance_estimate': 0.1,
           })
-          assert result.passed, f'UC1 perfect metrics should pass, got score={result.score}'
+          assert result.passed, f'UC1 drift-detected metrics should pass, got score={result.score}'
           print(f'UC1 smoke test PASS (score={result.score}): OK')
 
-          # Smoke-test scorer with failing values for UC1
+          # Smoke-test: no drift detected + retrain not triggered = should FAIL
           result_fail = compute_score('UC1', {
-              'ks_statistic': 0.99,
-              'psi_score': 0.99,
-              'nannyml_performance_estimate': 0.01,
-              'alibi_lsdd_p_value': 0.001,
+              'psi_score': 0.01,
+              'ks_statistic': 0.02,
+              'alibi_lsdd_p_value': 0.9,
               'retrain_triggered': False,
+              'nannyml_performance_estimate': 0.0,
           })
-          assert not result_fail.passed, f'UC1 bad metrics should fail, got score={result_fail.score}'
+          assert not result_fail.passed, f'UC1 no-drift metrics should fail, got score={result_fail.score}'
           print(f'UC1 fail test PASS (score={result_fail.score}): OK')
 
           # EvalResult serialisation

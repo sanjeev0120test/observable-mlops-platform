@@ -245,7 +245,7 @@ jobs:
           expected_split = 0.50
           split_accuracy = 1.0 - abs(actual_split - expected_split) * 10  # 99% accuracy
 
-          winning_version_promoted = p_value < 0.05 and p2 > p1
+          winning_version_promoted = bool(p_value < 0.05 and p2 > p1)
 
           metrics = {
               "ab_test_p_value": round(float(p_value), 4),

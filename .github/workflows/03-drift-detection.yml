@@ -215,7 +215,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: drift-reports-uc1
-          path: eval-results/
+          path: .
 
       - name: Check if retrain needed
         id: check
