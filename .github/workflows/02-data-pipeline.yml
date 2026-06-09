@@ -167,12 +167,15 @@ jobs:
           EOF
 
       - name: DVC push (if DagsHub token available)
-        if: ${{ secrets.DAGSHUB_TOKEN != '' }}
         env:
           DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
         run: |
-          dvc add data/synthetic/*.parquet data/synthetic/*.ndjson || true
-          dvc push || echo "[DVC] Push skipped (no remote or token)"
+          if [ -n "${DAGSHUB_TOKEN}" ] && command -v dvc &>/dev/null; then
+            dvc add data/synthetic/*.parquet data/synthetic/*.ndjson || true
+            dvc push || echo "[DVC] Push skipped (no remote or token)"
+          else
+            echo "[DVC] Skipping push: token or dvc not available"
+          fi
 
       - name: Upload data artifacts
         uses: actions/upload-artifact@v4

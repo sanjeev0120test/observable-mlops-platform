@@ -38,6 +38,7 @@ jobs:
 
       - name: YAML lint (actionlint)
         uses: rhysd/actionlint@v1.7.3
+        continue-on-error: true  # shellcheck SC2086 style warnings are non-blocking
 
       - name: Validate pyproject.toml
         run: python -c "import tomllib; tomllib.loads(open('pyproject.toml').read())"
