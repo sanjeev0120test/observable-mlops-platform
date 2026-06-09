@@ -2,54 +2,76 @@ package platform.self_healing
 
 import future.keywords.contains
 import future.keywords.if
-import future.keywords.in
 
 # OPA policy: Gate every autonomous remediation action.
-# Called by the self-healing service (UC6) before executing any kubectl/API action.
+# Uses explicit != comparisons — no negation helpers, no set-literal membership.
+# Protected namespaces are NEVER touched by automation.
 
 default allow := false
 
-# Helper: check if target namespace is protected (system/operator namespaces)
-is_protected_ns if { input.target.namespace == "kube-system" }
-is_protected_ns if { input.target.namespace == "cert-manager" }
-is_protected_ns if { input.target.namespace == "kyverno" }
-is_protected_ns if { input.target.namespace == "keda" }
-
-# Base allow: no deny reasons AND not a protected namespace
-allow if {
-    not is_protected_ns
-    count(deny_reasons) == 0
-}
-
-# Override allow: CrashLoopBackOff restart in non-protected namespace
+# Allow restart_pod for CrashLoopBackOff only in non-protected namespaces
 allow if {
     input.action == "restart_pod"
     input.trigger.alert_name == "PodCrashLoopBackOff"
-    not is_protected_ns
+    input.target.namespace != "kube-system"
+    input.target.namespace != "cert-manager"
+    input.target.namespace != "kyverno"
+    input.target.namespace != "keda"
 }
 
-# Override allow: KEDA-triggered scaling in non-protected namespace
+# Allow scale_deployment for HighCPUPreScale in non-protected namespaces
 allow if {
     input.action == "scale_deployment"
-    input.trigger.alert_name in {"HighCPUPreScale", "KafkaLag"}
-    not is_protected_ns
+    input.trigger.alert_name == "HighCPUPreScale"
+    input.target.namespace != "kube-system"
+    input.target.namespace != "cert-manager"
+    input.target.namespace != "kyverno"
+    input.target.namespace != "keda"
 }
 
-# Override allow: dry-run mode (testing only) in non-protected namespace
+# Allow scale_deployment for KafkaLag in non-protected namespaces
+allow if {
+    input.action == "scale_deployment"
+    input.trigger.alert_name == "KafkaLag"
+    input.target.namespace != "kube-system"
+    input.target.namespace != "cert-manager"
+    input.target.namespace != "kyverno"
+    input.target.namespace != "keda"
+}
+
+# Allow dry-run testing in non-protected namespaces only
 allow if {
     input.dry_run == true
-    not is_protected_ns
+    input.target.namespace != "kube-system"
+    input.target.namespace != "cert-manager"
+    input.target.namespace != "kyverno"
+    input.target.namespace != "keda"
 }
 
-# Deny: destructive actions require critical severity
-deny_reasons contains reason if {
-    input.action in {"drain_node", "rollback_deployment"}
+# ---- deny_reasons (audit / reporting only) ----
+
+deny_reasons contains "action 'drain_node' requires critical severity" if {
+    input.action == "drain_node"
     input.trigger.severity != "critical"
-    reason := sprintf("action '%s' requires critical severity, got '%s'", [input.action, input.trigger.severity])
 }
 
-# Deny: protected namespace — manual intervention required
-deny_reasons contains reason if {
-    is_protected_ns
-    reason := sprintf("namespace '%s' is protected — manual intervention required", [input.target.namespace])
+deny_reasons contains "action 'rollback_deployment' requires critical severity" if {
+    input.action == "rollback_deployment"
+    input.trigger.severity != "critical"
+}
+
+deny_reasons contains "namespace 'kube-system' is protected" if {
+    input.target.namespace == "kube-system"
+}
+
+deny_reasons contains "namespace 'cert-manager' is protected" if {
+    input.target.namespace == "cert-manager"
+}
+
+deny_reasons contains "namespace 'kyverno' is protected" if {
+    input.target.namespace == "kyverno"
+}
+
+deny_reasons contains "namespace 'keda' is protected" if {
+    input.target.namespace == "keda"
 }
