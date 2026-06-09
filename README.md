@@ -10,24 +10,35 @@ Enterprise-grade **AIOps + MLOps** reference platform for SaaS teams. **23 use c
 
 ## Table of Contents
 
+### Part I — Overview & System Model
 1. [Executive Summary](#executive-summary)
-2. [System Thinking](#system-thinking)
-3. [Observability Strategy](#observability-strategy)
-4. [23 Use Cases — Business Value & ROI](#23-use-cases--business-value--roi)
-5. [Implementation Phases (Complete)](#implementation-phases-complete)
-6. [Validation — Run Everything at Once](#validation--run-everything-at-once)
-7. [Your Action Items](#your-action-items)
-8. [Architecture Decisions (Why We Chose This)](#architecture-decisions-why-we-chose-this)
-9. [Repository Structure](#repository-structure)
-10. [Eval Framework](#eval-framework)
-11. [Technology Stack](#technology-stack)
-12. [Troubleshooting](#troubleshooting)
-13. [Complete Tool & Library Reference](#complete-tool--library-reference)
-14. [Phases — Step-by-Step from Scratch](#phases--step-by-step-from-scratch)
-15. [Use Cases — Step-by-Step Walkthrough](#use-cases--step-by-step-walkthrough)
-16. [Challenges Encountered & How They Were Fixed](#challenges-encountered--how-they-were-fixed)
-17. [Verification Evidence (All Workflows Green)](#verification-evidence-all-workflows-green)
-18. [Official Documentation Index](#official-documentation-index)
+2. [Platform Hierarchy & Reading Guide](#platform-hierarchy--reading-guide)
+3. [Enterprise Production Context](#enterprise-production-context)
+4. [System Thinking](#system-thinking)
+5. [Architecture Diagrams & Flows](#architecture-diagrams--flows)
+6. [Sequence Diagrams (Production Flows)](#sequence-diagrams-production-flows)
+
+### Part II — Operations & Observability
+7. [Observability Strategy](#observability-strategy)
+8. [23 Use Cases — Business Value & ROI](#23-use-cases--business-value--roi)
+
+### Part III — Build, Validate & Operate
+9. [Implementation Phases (Complete)](#implementation-phases-complete)
+10. [Validation — Run Everything at Once](#validation--run-everything-at-once)
+11. [Your Action Items](#your-action-items)
+12. [Architecture Decisions (Why We Chose This)](#architecture-decisions-why-we-chose-this)
+13. [Repository Structure](#repository-structure)
+14. [Eval Framework](#eval-framework)
+15. [Technology Stack](#technology-stack)
+16. [Troubleshooting](#troubleshooting)
+
+### Part IV — Deep Reference
+17. [Complete Tool & Library Reference](#complete-tool--library-reference)
+18. [Phases — Step-by-Step from Scratch](#phases--step-by-step-from-scratch)
+19. [Use Cases — Step-by-Step Walkthrough](#use-cases--step-by-step-walkthrough)
+20. [Challenges Encountered & How They Were Fixed](#challenges-encountered--how-they-were-fixed)
+21. [Verification Evidence (All Workflows Green)](#verification-evidence-all-workflows-green)
+22. [Official Documentation Index](#official-documentation-index)
 
 ---
 
@@ -54,25 +65,239 @@ This platform solves **23 distinct enterprise pain points** spanning ML lifecycl
 
 ---
 
+## Platform Hierarchy & Reading Guide
+
+This README is organized **top-down** — from executive intent to implementation detail. Use this map to navigate by role.
+
+```mermaid
+flowchart TB
+    subgraph L0["Level 0 — Business Outcomes"]
+        ROI["ROI: MTTR ↓ · Drift caught early · Cost waste ↓ · Compliance ✓"]
+    end
+
+    subgraph L1["Level 1 — Platform Planes"]
+        BP["Business Plane<br/>SLO · DORA · Catalog · Cost"]
+        MP["ML Plane<br/>Features · Drift · Serving · Explain"]
+        OP["Ops Plane<br/>Logs · Metrics · Traces · Alerts · Self-heal"]
+    end
+
+    subgraph L2["Level 2 — Domains (23 UCs)"]
+        D1["Reliability<br/>UC1–UC4, UC21"]
+        D2["Intelligence<br/>UC2, UC3, UC6, UC8, UC11, UC23"]
+        D3["ML Lifecycle<br/>UC5, UC9, UC13–UC14, UC17, UC19, UC22"]
+        D4["Security & Governance<br/>UC7, UC12, UC17, UC20"]
+        D5["Platform Engineering<br/>UC10, UC15, UC16, UC18"]
+    end
+
+    subgraph L3["Level 3 — Execution"]
+        CI["GitHub Actions (26 workflows)"]
+        EV["Eval Gates (eval/scorer.py)"]
+        OB["Observability Stack B"]
+        ML["ML Stack A + Kind K8s"]
+    end
+
+    L0 --> L1
+    L1 --> L2
+    L2 --> L3
+```
+
+| If you are… | Start here | Then read |
+|---|---|---|
+| **Executive / PM** | [Executive Summary](#executive-summary) → [23 Use Cases ROI](#23-use-cases--business-value--roi) | [Enterprise Production Context](#enterprise-production-context) |
+| **Platform / SRE lead** | [Architecture Diagrams](#architecture-diagrams--flows) → [Observability Strategy](#observability-strategy) | [Sequence Diagrams](#sequence-diagrams-production-flows) |
+| **ML engineer** | [UC Walkthroughs](#use-cases--step-by-step-walkthrough) → [Eval Framework](#eval-framework) | [Tool Reference §17](#complete-tool--library-reference) |
+| **Security / compliance** | UC7, UC12, UC17 in [Use Cases table](#23-use-cases--business-value--roi) | [OPA/Kyverno/Trivy in Tool Reference](#complete-tool--library-reference) |
+| **Operator validating CI** | [Validation — Run Everything](#validation--run-everything-at-once) | [Verification Evidence §21](#verification-evidence-all-workflows-green) |
+
+### Domain → UC hierarchy
+
+```
+Observable MLOps Platform
+├── 1. Reliability & SLOs
+│   ├── UC1  ML drift detection + auto-retrain
+│   ├── UC4  Predictive autoscaling (Prophet + KEDA)
+│   └── UC21 SLO / error-budget monitoring
+├── 2. Observability & Incident Response
+│   ├── UC2  Log anomaly detection (LSTM)
+│   ├── UC3  Alert correlation (DBSCAN)
+│   ├── UC6  OPA-gated self-healing
+│   ├── UC8  RAG runbook Q&A
+│   ├── UC11 Distributed tracing + RCA
+│   └── UC23 Automated post-mortem
+├── 3. ML Lifecycle & Data Quality
+│   ├── UC5  Feast feature store + skew detection
+│   ├── UC9  MLflow registry + promotion gate
+│   ├── UC13 Great Expectations pipeline gates
+│   ├── UC14 Optuna HPO
+│   ├── UC17 SHAP explainability + audit
+│   ├── UC19 WhyLogs feature monitoring
+│   └── UC22 KServe canary + A/B stats
+├── 4. Security, Policy & Governance
+│   ├── UC7  Trivy + Falco + Kyverno + OPA
+│   ├── UC12 GitOps compliance drift
+│   └── UC20 Backstage service catalog
+└── 5. Platform Engineering & Cost
+    ├── UC10 Cloud cost anomaly detection
+    ├── UC15 DORA four keys
+    ├── UC16 Error classification / routing
+    └── UC18 Predictive rate limiting
+```
+
+---
+
+## Enterprise Production Context
+
+How **production SaaS organizations** (1,000+ engineers, multi-region K8s, regulated ML) typically structure the same capabilities this platform implements. Patterns below are drawn from **public engineering blogs, CNCF case studies, and official product docs** — not speculation.
+
+### Typical enterprise org hierarchy
+
+```mermaid
+flowchart LR
+    subgraph Exec["Executive / Product"]
+        CPO["CPO / VP Product"]
+        CTO["CTO / VP Engineering"]
+    end
+
+    subgraph Platform["Platform Engineering"]
+        PE["Platform Eng<br/>(Backstage, CI, K8s)"]
+        SRE["SRE / Observability<br/>(SLO, on-call, incidents)"]
+        Sec["Security / GRC<br/>(policy, audit)"]
+    end
+
+    subgraph ML["ML Platform"]
+        MLE["ML Platform Team<br/>(registry, features, serving)"]
+        DS["Data Science Squads<br/>(per product domain)"]
+    end
+
+    subgraph Product["Product Engineering"]
+        BE["Backend / API teams"]
+        FE["Frontend teams"]
+    end
+
+    CTO --> PE
+    CTO --> SRE
+    CTO --> Sec
+    CTO --> MLE
+    MLE --> DS
+    PE --> BE
+    PE --> FE
+    SRE -.->|"pages, runbooks"| BE
+    MLE -.->|"model deploy"| BE
+```
+
+**How this maps to our platform**: Platform Eng owns `00-pr-validate`, Backstage catalog (UC20), GitOps (UC12). SRE owns observability (`01-observability`), SLOs (UC21), alert correlation (UC3). ML Platform owns UC1, UC5, UC9, UC14, UC22. Security owns UC7, UC17. AIOps/incident automation spans UC6, UC8, UC23.
+
+### Production patterns at scale (public references)
+
+| Enterprise pattern | What they publish | Problem solved | Our UC(s) | Official / public reference |
+|---|---|---|---|---|
+| **Google SRE — SLO + error budget** | Multi-window burn alerts; error budget policy stops risky releases | SLO breaches discovered too late; release during outage window | UC21 | [Google SRE Book — SLOs](https://sre.google/sre-book/service-level-objectives/), [Alerting on SLOs](https://sre.google/workbook/alerting-on-slos/) |
+| **Google / DORA — Four Keys** | Deployment frequency, lead time, CFR, MTTR as engineering health | No visibility into delivery performance | UC15 | [dora.dev](https://dora.dev/), [2023 State of DevOps](https://cloud.google.com/devops/state-of-devops) |
+| **Spotify — Backstage** | Service catalog, ownership, API discovery in one portal | Engineers don't know who owns what during incidents | UC20 | [Backstage.io — What is Backstage](https://backstage.io/docs/overview/what-is-backstage/) |
+| **Uber — Michelangelo / feature consistency** | Central ML platform; feature pipelines shared train/serve | Training-serving skew; siloed ML stacks | UC5, UC9 | [Uber Eng — Michelangelo](https://www.uber.com/blog/michelangelo-machine-learning-platform/) |
+| **Netflix — ML observability & automation** | Continuous monitoring; automated remediation culture | Silent model degradation; manual ops at scale | UC1, UC6 | [Netflix TechBlog — ML Platform](https://netflixtechblog.com/) (multiple posts on monitoring & MLP) |
+| **LinkedIn — data quality at scale** | Expectations on data pipelines before downstream ML | Bad data poisons models silently | UC13 | [LinkedIn Eng — DataHub / quality](https://engineering.linkedin.com/) |
+| **Airbnb — Great Expectations origin** | Declarative data tests in pipelines | Schema drift, null spikes in production data | UC5, UC13 | [GE — Airbnb origin story](https://docs.greatexpectations.io/docs/) |
+| **Shopify — production ML monitoring** | Drift and performance monitoring in live commerce ML | Revenue-impacting prediction drift | UC1, UC19 | [Shopify Eng — ML](https://shopify.engineering/) |
+| **CNCF — OTEL + Prometheus + Grafana** | Vendor-neutral telemetry; single collector fan-out | Tool sprawl; no correlated traces/logs/metrics | UC11, all observability | [CNCF OTEL](https://opentelemetry.io/), [Prometheus](https://prometheus.io/) |
+| **CNCF — OPA / Kyverno admission** | Policy-as-code at deploy time | CVE images, non-compliant manifests reach prod | UC7, UC12 | [OPA docs](https://www.openpolicyagent.org/docs/latest/), [Kyverno](https://kyverno.io/) |
+| **KServe / Knative serving** | Canary InferenceService, scale-to-zero | Risky big-bang model rollouts | UC9, UC22 | [KServe canary rollout](https://kserve.github.io/website/latest/modelserving/v1beta1/rollout-strategy/) |
+
+### Real production scenarios → platform response
+
+These are **representative incident classes** seen at large SaaS orgs (aggregated from public post-mortems and SRE literature). Each row shows how **this repo** would detect and respond in CI-proven paths.
+
+| Scenario | Symptoms in prod | Business impact | Platform response (UC chain) | Eval proof |
+|---|---|---|---|---|
+| **Payment fraud model drift** | Approval rate shifts +2%; chargebacks rise 48h later | $500K–$2M/month loss | UC1 PSI/KS → Airflow retrain; UC19 WhyLogs early warning | `03-drift-detection`, `25-feature-monitoring` |
+| **Black Friday CPU spike** | p99 latency 3×; HPA lags 10 min | Cart abandonment, SLO burn | UC4 Prophet forecast → KEDA pre-scale; UC21 fast-burn alert | `07-predictive-scaling`, `15-slo-monitoring` |
+| **Log storm after bad deploy** | 50K ERROR/min; real root cause buried | MTTR 2h → 45m with correlation | UC2 LSTM anomaly; UC3 DBSCAN dedup; UC8 RAG runbook | `04-log-anomaly`, `06-alert-correlation`, `09-rag-runbook` |
+| **CVE in base Python image** | Trivy flags CRITICAL in CI | Compliance audit failure | UC7 blocks promote; Kyverno denies admission | `13-security-policy` |
+| **Feature skew after refactor** | Model accuracy −15% post deploy; features "look fine" | Silent wrong predictions | UC5 Feast offline vs online PSI | `05-feature-skew` |
+| **On-call restart without guardrails** | Engineer restarts `kube-system` pod at 3 AM | Cluster instability | UC6 OPA allows `payments` only; denies system ns | `08-self-healing` |
+| **Model promoted without explainability** | Regulator asks for SHAP on loan decision | Audit block / fine | UC17 SHAP → MLflow; OPA denies promotion | `23-explainability`, `10-model-serving` |
+| **Idle GPU namespaces** | 30% cloud spend on unused dev clusters | $200K+/year waste | UC10 IsolationForest waste ratio → Prom alert | `11-cost-optimizer` |
+| **429 storm on public API** | Rate limit reactive; legitimate users blocked | Support tickets spike | UC18 predictive Redis limits from traffic forecast | `24-rate-limiting` |
+| **Post-mortem takes 4 hours** | Engineer searches Confluence + Slack | Learning loop delayed | UC23 RAG + n8n → draft GitHub Issue | `09-rag-runbook` |
+
+### Definitions — enterprise MLOps / AIOps vocabulary
+
+| Term | Definition | Critical in production because… | Official reference |
+|---|---|---|---|
+| **MLOps** | Discipline of deploying and maintaining ML systems in production reliably | Models decay; data changes; unlike traditional software | [Google ML Engineering](https://developers.google.com/machine-learning/guides/rules-of-ml) |
+| **AIOps** | AI/ML applied to IT operations (anomaly, correlation, automation) | Human on-call doesn't scale past ~500 microservices | [Gartner AIOps definition](https://www.gartner.com/en/information-technology/glossary/aiops-artificial-intelligence-operations) |
+| **Observability** | Ability to infer internal state from external outputs (metrics, logs, traces) | Debug distributed systems without SSH | [CNCF Observability](https://opentelemetry.io/docs/concepts/observability-primer/) |
+| **Feature store** | Central registry of features for training and serving with point-in-time correctness | #1 cause of silent ML bugs is train/serve mismatch | [Feast docs](https://docs.feast.dev/getting-started/concepts/overview) |
+| **Model registry** | Versioned store of models with stage transitions (Staging → Production) | Audit trail for who promoted what when | [MLflow Model Registry](https://mlflow.org/docs/latest/model-registry.html) |
+| **Policy-as-code** | Machine-readable rules (Rego, Kyverno YAML) enforced in CI/CD and admission | Manual review doesn't scale; compliance needs proof | [OPA policy language](https://www.openpolicyagent.org/docs/latest/policy-language/) |
+| **GitOps** | Git as source of truth; controllers reconcile cluster to declared state | Config drift causes "works in staging" prod failures | [CNCF GitOps WG](https://opengitops.dev/) |
+| **SLO / SLI / SLA** | SLI = measured metric; SLO = internal target; SLA = customer contract | Error budget ties reliability to release velocity | [Google SRE — SLI/SLO/SLA](https://sre.google/sre-book/service-level-objectives/) |
+| **Canary deployment** | Route small % traffic to new version; compare metrics before full rollout | Limits blast radius of bad model/API version | [KServe rollout](https://kserve.github.io/website/latest/modelserving/v1beta1/rollout-strategy/) |
+| **PSI (Population Stability Index)** | Quantifies distribution shift between reference and current populations | Standard drift signal in finance/risk ML | [Evidently — PSI](https://docs.evidentlyai.com/metrics/customize_metric) |
+| **Eval gate** | Automated quality bar (composite score) that blocks promotion/merge | Prevents "it ran" from meaning "it works" | This repo: `eval/scorer.py` |
+
+---
+
 ## System Thinking
 
 ### The problem space
 
 Enterprise SaaS teams run three overlapping planes that traditionally silo:
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  BUSINESS PLANE    SLOs, cost, DORA, compliance, catalog      │
-├─────────────────────────────────────────────────────────────────┤
-│  ML PLANE          Features, training, drift, serving, explain  │
-├─────────────────────────────────────────────────────────────────┤
-│  OPS PLANE         Logs, metrics, traces, alerts, self-heal    │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph Business["BUSINESS PLANE"]
+        B1["SLOs & error budgets"]
+        B2["Cloud cost & FinOps"]
+        B3["DORA / engineering metrics"]
+        B4["Compliance & catalog"]
+    end
+
+    subgraph ML["ML PLANE"]
+        M1["Feature store (Feast)"]
+        M2["Drift & monitoring"]
+        M3["Training & HPO"]
+        M4["Serving & canary"]
+        M5["Explainability (SHAP)"]
+    end
+
+    subgraph Ops["OPS PLANE"]
+        O1["Metrics (Prometheus)"]
+        O2["Logs (Loki)"]
+        O3["Traces (Tempo)"]
+        O4["Alerts & correlation"]
+        O5["Self-heal & runbooks"]
+    end
+
+    Business --- ML
+    ML --- Ops
+    Ops --- Business
 ```
 
 When these planes don't share signals, you get: **silent model drift**, **alert storms**, **manual runbooks**, **uncontrolled cloud spend**, and **slow incident response**.
 
 ### Our approach: closed-loop observability + eval gates
+
+```mermaid
+flowchart LR
+    DATA["Synthetic / Real Data"]
+    PIPE["ML / AIOps Pipeline"]
+    MET["Metrics + Artifacts"]
+    GHA["GitHub Actions<br/>UC Workflow"]
+    OTEL["OTEL → Prom / Loki / Tempo"]
+    EVAL["eval/scorer.py<br/>blocking gate"]
+    AM["Alertmanager → n8n / OPA"]
+    RES["eval-results/"]
+    E2E["90-e2e → 91-portal"]
+
+    DATA --> PIPE --> MET
+    PIPE --> GHA --> EVAL --> RES
+    PIPE --> OTEL --> AM
+    AM --> PIPE
+    RES --> E2E
+```
+
+ASCII equivalent (for plain-text viewers):
 
 ```
 Synthetic/Real Data → ML/AIOps Pipeline → Metrics + Artifacts
@@ -91,6 +316,45 @@ Synthetic/Real Data → ML/AIOps Pipeline → Metrics + Artifacts
 
 **Key insight**: Every UC workflow *proves* its value numerically before merging. Observability is not bolted on — alert rules in `observability/alerts/rules/platform.yml` are tagged with `uc: UCx` and validated in CI (`01-observability`, `00-pr-validate`).
 
+### Closed-loop control model (systems thinking)
+
+Production orgs treat ML + ops as a **feedback control system**:
+
+```mermaid
+flowchart LR
+    subgraph Observe["1. OBSERVE"]
+        M["Metrics"]
+        L["Logs"]
+        T["Traces"]
+    end
+
+    subgraph Orient["2. ORIENT"]
+        D["Drift / anomaly detection"]
+        C["Correlation / RCA"]
+    end
+
+    subgraph Decide["3. DECIDE"]
+        P["OPA policy"]
+        S["SLO budget check"]
+    end
+
+    subgraph Act["4. ACT"]
+        H["Self-heal"]
+        R["Retrain / redeploy"]
+        N["Notify / post-mortem"]
+    end
+
+    Observe --> Orient --> Decide --> Act
+    Act --> Observe
+```
+
+| OODA stage | Platform components | Example UC |
+|---|---|---|
+| **Observe** | OTEL, Prometheus, Loki, Tempo | UC11, UC21 |
+| **Orient** | Evidently, LSTM, DBSCAN, WhyLogs | UC1, UC2, UC3, UC19 |
+| **Decide** | OPA, Kyverno, eval gates, SLO rules | UC6, UC7, UC9, UC21 |
+| **Act** | n8n, Airflow retrain, KEDA scale, KServe canary | UC1, UC4, UC6, UC22 |
+
 ### Execution model (no local machine)
 
 | Layer | Technology | Why |
@@ -101,6 +365,304 @@ Synthetic/Real Data → ML/AIOps Pipeline → Metrics + Artifacts
 | Ephemeral K8s | Kind (in-job) | KServe, Kyverno, KEDA, OPA admission |
 | Persistence | DagsHub | MLflow tracking + DVC remote (one token) |
 | Reports | GitHub Pages | Drift reports, eval scorecards, portal |
+
+---
+
+## Architecture Diagrams & Flows
+
+### Full platform architecture (CI + runtime stacks)
+
+```mermaid
+flowchart TB
+    subgraph CI["GitHub Actions (Orchestrator)"]
+        W00["00-pr-validate"]
+        W01["01-observability"]
+        W03["03–26 UC workflows"]
+        W90["90-e2e"]
+        W91["91-portal"]
+    end
+
+    subgraph StackA["Stack A — ML / Data (Docker Compose)"]
+        MLF["MLflow"]
+        FST["Feast + Redis"]
+        AF["Airflow"]
+        QD["Qdrant"]
+        N8["n8n"]
+    end
+
+    subgraph StackB["Stack B — Observability (Docker Compose)"]
+        OTEL["OTEL Collector"]
+        PROM["Prometheus"]
+        GRAF["Grafana"]
+        LOKI["Loki"]
+        TEMPO["Tempo"]
+        AM["Alertmanager"]
+    end
+
+    subgraph K8s["Kind Cluster (Ephemeral)"]
+        KS["KServe"]
+        KYV["Kyverno"]
+        KEDA["KEDA"]
+        OPA["OPA"]
+    end
+
+    subgraph Remote["Persistent Remote"]
+        DH["DagsHub<br/>MLflow + DVC"]
+        GP["GitHub Pages<br/>Portal"]
+    end
+
+    CI --> StackA
+    CI --> StackB
+    CI --> K8s
+    StackA --> DH
+    StackB --> PROM
+    OTEL --> PROM & LOKI & TEMPO
+    PROM --> AM --> N8
+    W90 --> GP
+    W91 --> GP
+```
+
+### Data flow — from raw signals to eval gate
+
+```mermaid
+flowchart LR
+    GEN["data/synthetic/<br/>generators"]
+    PARQ["Parquet / JSON<br/>artifacts"]
+    SVC["services/*/<br/>FastAPI"]
+    MLOPS["mlops/<br/>pipelines"]
+    METRICS["Prometheus<br/>metrics"]
+    EVALJSON["eval-results/<br/>ucN.json"]
+    GATE["run_eval_gate()<br/>pass / fail"]
+
+    GEN --> PARQ
+    PARQ --> SVC & MLOPS
+    SVC --> METRICS
+    SVC & MLOPS --> EVALJSON --> GATE
+```
+
+### UC dependency graph (logical, not import)
+
+Shows which UCs **consume outputs** from others in a production rollout:
+
+```mermaid
+flowchart TD
+    UC13["UC13 Data Quality"] --> UC5["UC5 Feature Skew"]
+    UC5 --> UC9["UC9 Model Registry"]
+    UC9 --> UC22["UC22 Canary A/B"]
+    UC1["UC1 Drift"] --> UC9
+    UC19["UC19 Feature Monitor"] --> UC1
+    UC17["UC17 SHAP"] --> UC9
+    UC7["UC7 Security"] --> UC12["UC12 GitOps"]
+    UC21["UC21 SLO"] --> UC3["UC3 Alert Correlation"]
+    UC2["UC2 Log Anomaly"] --> UC8["UC8 RAG Runbook"]
+    UC8 --> UC23["UC23 Post-Mortem"]
+    UC6["UC6 Self-Heal"] --> UC23
+    UC11["UC11 Tracing"] --> UC8
+    UC15["UC15 DORA"] -.-> UC21
+    UC20["UC20 Catalog"] -.-> UC8
+```
+
+Solid arrows = hard pipeline dependencies. Dotted = operational context (ownership lookup, engineering metrics).
+
+### Observability fan-out (OTEL collector)
+
+```mermaid
+flowchart LR
+    APP["Apps / CI jobs<br/>OTLP gRPC/HTTP"]
+    COL["otel-collector<br/>otelcol.yml"]
+    T["Tempo<br/>traces"]
+    L["Loki<br/>logs"]
+    P["Prometheus<br/>metrics"]
+    G["Grafana<br/>dashboards"]
+    A["Alertmanager<br/>routes by uc: label"]
+
+    APP -->|OTLP| COL
+    COL -->|exporter| T & L & P
+    P --> G & A
+    L --> G
+    T --> G
+```
+
+Config: `observability/otel/otelcol.yml` · Rules: `observability/alerts/rules/platform.yml` · Dashboard: `observability/dashboards/grafana/overview.json`
+
+### CI validation pipeline (all 26 workflows)
+
+```mermaid
+flowchart TD
+    START["Push / dispatch / schedule"]
+    P0["Phase 0: 00-pr-validate"]
+    P1["Phase 1: 01-observability"]
+    P2["Phase 2: 02-data-pipeline"]
+    UC["Phase 3–6: UC workflows 03–26"]
+    E2E["90-e2e-integration<br/>aggregate eval-results"]
+    PORTAL["91-publish-portal<br/>GitHub Pages"]
+
+    START --> P0 --> P1 --> P2 --> UC
+    UC --> E2E --> PORTAL
+    UC -.->|artifact upload| E2E
+```
+
+---
+
+## Sequence Diagrams (Production Flows)
+
+These diagrams mirror **how a production org would run** the same paths. Component names match this repo.
+
+### UC1 — Drift detected → auto-retrain
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Cron as Airflow / Scheduler
+    participant Data as Feature Pipeline
+    participant Drift as drift-monitor (UC1)
+    participant Ev as Evidently / NannyML / Alibi
+    participant Prom as Prometheus
+    participant Eval as eval/scorer.py
+    participant DAG as Airflow Retrain DAG
+    participant MLflow as MLflow (DagsHub)
+
+    Cron->>Data: Fresh batch lands (parquet)
+    Data->>Drift: Reference vs current window
+    Drift->>Ev: PSI, KS, LSDD, performance estimate
+    Ev-->>Drift: Drift confirmed (PSI > threshold)
+    Drift->>Prom: ml_model_psi_score gauge
+    Prom-->>Drift: MLModelDriftDetected alert fires
+    Drift->>Eval: run_eval_gate("UC1", metrics)
+    alt score >= 70
+        Eval->>DAG: Trigger pod_failure_prediction_retrain
+        DAG->>MLflow: Log new model version
+        MLflow-->>DAG: version registered
+    else score < 70
+        Eval-->>Cron: CI fails — block merge
+    end
+```
+
+**Production parallel**: Shopify/Netflix-style continuous monitoring → automated retrain when statistical tests fail ([Evidently drift](https://docs.evidentlyai.com/), [NannyML](https://nannyml.readthedocs.io/)).
+
+### UC6 — Alert → OPA policy → self-heal
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Prom as Prometheus
+    participant AM as Alertmanager
+    participant N8 as n8n webhook
+    participant SH as self-healing service
+    participant OPA as OPA (Rego)
+    participant K8s as Kubernetes API
+
+    Prom->>AM: HighCPUPreScale / Falco event (uc=UC6)
+    AM->>N8: Route matching uc label
+    N8->>SH: POST /heal {namespace, action, alert}
+    SH->>OPA: POST /v1/data/self_healing/allow
+    alt namespace=payments, action=restart
+        OPA-->>SH: {"result": true}
+        SH->>K8s: rollout restart deployment
+        K8s-->>SH: OK
+    else namespace=kube-system
+        OPA-->>SH: {"result": false, deny_reasons}
+        SH-->>N8: 403 — manual escalation required
+    end
+```
+
+**Production parallel**: Policy-gated automation (Google SRE: "automate toil, not judgment calls") — OPA is CNCF standard for admission and app-level policy ([OPA Kubernetes admission](https://www.openpolicyagent.org/docs/latest/kubernetes-introduction/)).
+
+### UC9 + UC22 — Model promotion with OPA + canary
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant DS as Data Scientist
+    participant MLflow as MLflow Registry
+    participant OPA as OPA model_promotion.rego
+    participant KS as KServe (Kind)
+    participant AB as A/B stats (scipy)
+    participant Eval as eval/scorer.py
+
+    DS->>MLflow: Log experiment + register v2
+    MLflow->>OPA: Check shap_logged, drift_ok, accuracy
+    alt policy pass
+        OPA-->>MLflow: allow promotion to Staging
+        MLflow->>KS: Apply InferenceService 90/10 canary
+        KS-->>AB: Traffic split metrics
+        AB-->>Eval: p-value < 0.05 → promote v2
+        Eval->>KS: Update traffic 100% v2
+    else SHAP missing
+        OPA-->>DS: deny — UC17 gate
+    end
+```
+
+**Production parallel**: Uber Michelangelo / KServe patterns — registry + staged rollout ([KServe canary](https://kserve.github.io/website/latest/modelserving/v1beta1/rollout-strategy/)).
+
+### UC8 + UC23 — Incident → RAG runbook → post-mortem
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant AM as Alertmanager
+    participant N8 as n8n
+    participant Eng as On-call Engineer
+    participant RAG as runbook-agent (Qdrant + LLM)
+    participant QD as Qdrant
+    participant GH as GitHub Issues
+
+    AM->>N8: SLOFastBurnRate (uc=UC23)
+    N8->>Eng: Page + Slack notification
+    Eng->>RAG: "PodCrashLoopBackOff in payments"
+    RAG->>QD: Vector search (sentence-transformers)
+    QD-->>RAG: Top-k runbook chunks
+    RAG-->>Eng: Remediation steps (from runbooks/*.md)
+    Eng->>Eng: Apply fix, resolve incident
+    N8->>RAG: Generate post-mortem draft
+    RAG->>GH: Create issue with timeline + similar incidents
+```
+
+**Production parallel**: Spotify Backstage + internal runbooks; RAG reduces MTTR lookup time ([LangChain RAG](https://python.langchain.com/docs/tutorials/rag/), [Qdrant](https://qdrant.tech/documentation/)).
+
+### UC21 — SLO error budget burn
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Svc as HTTP Service
+    participant OTEL as OTEL SDK
+    participant Prom as Prometheus
+    participant Rules as SLO recording rules
+    participant AM as Alertmanager
+    participant Eng as On-call
+
+    Svc->>OTEL: Span per request (status code)
+    OTEL->>Prom: http_requests_total
+    Prom->>Rules: job:http_error_rate:ratio5m
+    Rules->>Prom: SLOFastBurnRate > 14.4x budget
+    Prom->>AM: Fire alert (2m window)
+    AM->>Eng: Page — stop releases if budget exhausted
+```
+
+**Production parallel**: Google SRE multi-window burn-rate alerting ([Alerting on SLOs](https://sre.google/workbook/alerting-on-slos/)) — implemented in `observability/alerts/rules/platform.yml`.
+
+### End-to-end: PR merge to portal publish
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Dev as Developer
+    participant GHA as GitHub Actions
+    participant UC as UC workflow
+    participant Eval as eval-results/
+    participant E2E as 90-e2e
+    participant Portal as 91-portal → gh-pages
+
+    Dev->>GHA: Push to main / workflow_dispatch
+    GHA->>UC: Run 03–26 (parallel jobs)
+    UC->>Eval: Upload ucN.json artifacts
+    UC-->>GHA: pass if score >= threshold
+    GHA->>E2E: Download all uc*.json
+    E2E->>Eval: Write summary.json
+    GHA->>Portal: Build portal/ + deploy
+    Portal-->>Dev: https://org.github.io/observable-mlops-platform/
+```
 
 ---
 
@@ -139,6 +701,33 @@ Production-grade observability follows the **three pillars**, unified by OpenTel
 
 ### OTEL collector pipeline
 
+```mermaid
+flowchart LR
+    subgraph Sources["Signal Sources"]
+        CI["CI test jobs"]
+        SVC["FastAPI services"]
+        FB["Fluent Bit"]
+    end
+
+    subgraph Collector["otel-collector"]
+        RCV["OTLP receivers"]
+        PROC["batch + memory_limiter"]
+        EXP["exporters"]
+    end
+
+    subgraph Backends["Backends"]
+        T["Tempo"]
+        L["Loki"]
+        P["Prometheus"]
+    end
+
+    CI & SVC -->|OTLP| RCV --> PROC --> EXP
+    FB -->|logs| RCV
+    EXP --> T & L & P
+```
+
+ASCII equivalent:
+
 ```
 App/CI  ──OTLP──►  otel-collector  ──►  Tempo (traces)
                               ├──►  Loki (logs)
@@ -152,6 +741,19 @@ Dashboard: `observability/dashboards/grafana/overview.json`
 ---
 
 ## 23 Use Cases — Business Value & ROI
+
+### ROI distribution by domain (conservative mid-size SaaS)
+
+```mermaid
+pie title Annual savings by domain ($1M–$3.5M total)
+    "Incident / MTTR (UC2,3,6,8,11,21,23)" : 35
+    "ML reliability (UC1,5,9,19,22)" : 25
+    "Cloud cost (UC4,10,18)" : 20
+    "Security / compliance (UC7,12,17,20)" : 12
+    "Engineering velocity (UC14,15,16,13)" : 8
+```
+
+### Problem → solution matrix (all 23 UCs)
 
 | UC | Problem (enterprise pain) | Solution | Tools | Typical impact |
 |---|---|---|---|---|
@@ -215,6 +817,43 @@ Dashboard: `observability/dashboards/grafana/overview.json`
 ## Implementation Phases (Complete)
 
 All phases are implemented. Validation is designed to run **after all phases** via `90-e2e-integration` + portal publish.
+
+### Phase timeline (build order)
+
+```mermaid
+gantt
+    title Platform build phases (0 → 6 + validation)
+    dateFormat X
+    axisFormat %s
+
+    section Foundation
+    Phase 0 Scaffold + Eval     :done, p0, 0, 1
+    section Infrastructure
+    Phase 1 Observability     :done, p1, 1, 2
+    Phase 2 Data Pipeline       :done, p2, 2, 3
+    section Core capabilities
+    Phase 3 MLOps UC1-5         :done, p3, 3, 4
+    Phase 4 AIOps UC6-8         :done, p4, 4, 5
+    Phase 5 Lifecycle UC9-12    :done, p5, 5, 6
+    Phase 6 Maturity UC13-23    :done, p6, 6, 7
+    section Validation
+    E2E + Portal 90/91          :done, p7, 7, 8
+```
+
+### Enterprise rollout hierarchy (production adoption order)
+
+When moving from this reference repo to a **live org**, teams typically adopt in this order (matches phase dependencies):
+
+```mermaid
+flowchart TD
+    A["1. Observability + SLOs<br/>UC21, 01-observability"] --> B["2. Data quality + catalog<br/>UC13, UC20"]
+    B --> C["3. Feature store + skew<br/>UC5"]
+    C --> D["4. Drift + monitoring<br/>UC1, UC19"]
+    D --> E["5. Model registry + security<br/>UC9, UC7, UC17"]
+    E --> F["6. Incident automation<br/>UC2, UC3, UC6, UC8"]
+    F --> G["7. Cost + scaling<br/>UC4, UC10, UC18"]
+    G --> H["8. Advanced: HPO, canary, post-mortem<br/>UC14, UC22, UC23"]
+```
 
 | Phase | Scope | Status | Key artifacts |
 |---|---|---|---|
@@ -406,7 +1045,7 @@ run_eval_gate("UC1", {"psi_score": 1.2, "ks_statistic": 0.45, ...}, Path("eval-r
 
 ## Complete Tool & Library Reference
 
-This section documents **every tool, library, and concept** used in the platform. Descriptions align with official project documentation (linked in [Section 18](#official-documentation-index)). For each entry: **problem solved**, **why we use it here**, **alternatives considered**, and **which UC(s) depend on it**.
+This section documents **every tool, library, and concept** used in the platform. Descriptions align with official project documentation (linked in [Section 22 — Official Documentation Index](#official-documentation-index)). For each entry: **problem solved**, **why we use it here**, **alternatives considered**, and **which UC(s) depend on it**.
 
 ### Platform & CI/CD
 
@@ -1133,7 +1772,24 @@ gh workflow run 90-e2e-integration.yml --ref main --repo sanjeev0120test/observa
 
 ## Official Documentation Index
 
-Primary references used for tool selection and implementation accuracy:
+Primary references used for tool selection and implementation accuracy. **Bold entries** are critical for production correctness.
+
+### Critical path docs (read first)
+
+| Priority | Topic | Why it matters here | URL |
+|---|---|---|---|
+| **P0** | OTEL Collector pipelines | All telemetry fan-out; misconfig = blind CI | https://opentelemetry.io/docs/collector/configuration/ |
+| **P0** | Prometheus alerting rules | UC-tagged alerts validated in `01-observability` | https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/ |
+| **P0** | Google SRE — SLO alerting | UC21 fast/slow burn semantics | https://sre.google/workbook/alerting-on-slos/ |
+| **P0** | OPA Rego language | UC6/UC9 policy tests fail on Rego mistakes | https://www.openpolicyagent.org/docs/latest/policy-language/ |
+| **P1** | MLflow Model Registry | UC9 promotion stages | https://mlflow.org/docs/latest/model-registry.html |
+| **P1** | Feast concepts | UC5 offline/online store model | https://docs.feast.dev/getting-started/concepts/overview |
+| **P1** | KServe rollout strategy | UC22 canary traffic split | https://kserve.github.io/website/latest/modelserving/v1beta1/rollout-strategy/ |
+| **P1** | DORA Four Keys | UC15 metric definitions | https://dora.dev/ |
+| **P2** | Evidently drift metrics | UC1 PSI interpretation | https://docs.evidentlyai.com/ |
+| **P2** | Backstage catalog format | UC20 entity lint rules | https://backstage.io/docs/features/software-catalog/descriptor-format/ |
+
+### Full tool documentation
 
 | Tool | Official documentation |
 |---|---|
