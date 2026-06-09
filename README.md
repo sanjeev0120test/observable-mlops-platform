@@ -1573,6 +1573,59 @@ run_eval_gate("UC1", {"psi_score": 1.2, "ks_statistic": 0.45, ...}, Path("eval-r
 - **Metrics**: `UC_METRICS` dict defines direction (`higher_better`, `lower_better`, `bool_true`, `exact`) and weights
 - **Output**: `eval-results/uc1.json`, `uc2.json`, … + `summary.json` from workflow 90
 
+### How the composite score is computed (exact algorithm)
+
+The scorer (`eval/scorer.py`) converts each raw metric into a **0–100 sub-score**, then combines sub-scores using their weights into one composite. A use case passes only if the composite meets its threshold.
+
+**Step 1 — per-metric sub-score** (`_score_metric`):
+
+| Direction | Meaning | Formula | Example |
+|---|---|---|---|
+| `bool_true` | Boolean must be true | `100 if value else 0` | `retrain_triggered=True` → 100 |
+| `exact` | Must equal the target | `100 if value == target else 0` | `n_entities=27` → 100; `26` → 0 |
+| `higher_better` | Larger is better, capped at target | `min(100, (value / target) × 100)` | PSI `0.30` vs target `0.25` → 100; `0.125` → 50 |
+| `lower_better` | Smaller is better, penalized above target | `min(100, max(0, (1 − (value − target)/|target|) × 100))` | error rate `0.01` vs target `0.01` → 100; `0.02` → 0 |
+
+**Step 2 — weighted composite** (`compute_score`):
+
+```
+composite = Σ(sub_score_i × weight_i) / Σ(weight_i)
+passed    = composite >= THRESHOLDS[uc]
+```
+
+**Step 3 — per-metric status bands** (shown in CI logs and `ucN.json`):
+
+| Status | Condition | Meaning |
+|---|---|---|
+| `PASS` | sub-score ≥ 80 | Metric comfortably meets the bar |
+| `WARN` | 50 ≤ sub-score < 80 | Borderline; contributes partial credit |
+| `FAIL` | sub-score < 50 | Below acceptable; drags composite down |
+| `MISSING` | metric absent in input | Scored 0 — forces the workflow to actually emit it |
+
+**Worked example — UC1 (threshold 70)**:
+
+| Metric | Direction | Weight | Observed | Sub-score |
+|---|---|---|---|---|
+| `psi_score` | higher_better (0.25) | 2.0 | 1.2 | 100 (capped) |
+| `ks_statistic` | higher_better (0.20) | 1.5 | 0.45 | 100 (capped) |
+| `alibi_lsdd_p_value` | lower_better (0.05) | 1.0 | 0.01 | 100 |
+| `retrain_triggered` | bool_true | 3.0 | true | 100 |
+| `nannyml_performance_estimate` | higher_better (0.0) | 0.5 | 0.8 | 100 |
+
+Composite = `(100×2 + 100×1.5 + 100×1 + 100×3 + 100×0.5) / 8 = 100` ≥ 70 → **PASS**.
+
+**Why this design**: a single missing or failing critical metric (high weight) cannot be hidden by many passing low-weight metrics — the weights encode what actually matters per use case. This is the executable-contract idea from [§5 — Quality gates as contracts](#critical-system-design-concepts).
+
+### Aggregation across use cases (workflow 90)
+
+`aggregate_all_results()` reads every `eval-results/uc*.json`, then writes `summary.json`:
+
+```json
+{ "passed": 23, "failed": 0, "total": 23, "ucs": { "UC1": {"score": 100.0, "passed": true, "threshold": 70}, ... } }
+```
+
+This summary feeds the published portal (workflow 91).
+
 ---
 
 ## Technology Stack
@@ -1805,15 +1858,24 @@ This section documents **every tool, library, and concept** used in the platform
 - **Official definition**: Kubernetes-native policy management ([kyverno.io/docs](https://kyverno.io/docs/introduction/)).
 - **Problem solved**: Validate/mutate/generate K8s resources at admission without custom webhook code.
 - **Why here**: UC7 and UC12 apply Kyverno policies in Kind cluster during CI.
+- **Concrete policies in this repo** (`aiops/policies/kyverno/`):
+  - `require-labels.yml` — `ClusterPolicy` with `validationFailureAction: Enforce`; rejects Deployments/StatefulSets/DaemonSets in business namespaces missing `app.kubernetes.io/team` (cost attribution → UC10) and ML-serving workloads missing `app.kubernetes.io/uc` (DORA/lineage → UC15).
+  - `disallow-privileged.yml` — blocks privileged containers (defense in depth).
 - **Alternatives**: Gatekeeper (also OPA-based) — Kyverno uses Kubernetes-style YAML policies (simpler for platform teams).
 - **Used in**: UC7, UC12, `13-security-policy`, `19-gitops-drift`.
 
 #### Falco
 - **Official definition**: Cloud-native runtime security ([falco.org/docs](https://falco.org/docs/)).
-- **Problem solved**: Detect anomalous syscalls/container behavior at runtime.
-- **Why here**: Custom rules in `aiops/falco/`; UC7 validates Falco rule syntax and simulated events.
+- **Problem solved**: Detect anomalous system calls and container behavior **at runtime** — after admission, when an exploit acts.
+- **Concrete rules in this repo** (`aiops/falco/custom_rules.yml`):
+  1. **Suspicious kubectl exec in production** (WARNING) — interactive shell into production pods.
+  2. **Write below /etc in container** (CRITICAL) — possible credential injection.
+  3. **Unexpected outbound connection** from ML serving pods to non-allowlisted hosts (WARNING) — data exfiltration signal.
+  4. **Model artifact tampered** (CRITICAL) — write to `/models` at runtime by a non-MLflow process — supply-chain attack on UC9 models.
+  5. **Container running as root** (WARNING) — UID 0 outside allowlisted namespaces.
+- **Why here**: Trivy catches vulnerable images *before* deploy; Falco catches malicious behavior *during* runtime — complementary layers.
 - **Alternatives**: Sysdig Secure, Aqua — Falco is CNCF graduated open-source runtime detection.
-- **Used in**: UC7, `13-security-policy`.
+- **Used in**: UC7, UC9, `13-security-policy`.
 
 #### Trivy
 - **Official definition**: Comprehensive security scanner for containers, IaC, secrets ([aquasecurity.github.io/trivy](https://aquasecurity.github.io/trivy/latest/)).
