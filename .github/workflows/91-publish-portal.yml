@@ -96,11 +96,20 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_SPACE: ${{ vars.HF_SPACE_NAME || 'observable-mlops-platform' }}
         run: |
+          if [ -z "${HF_TOKEN}" ]; then
+            echo "[HuggingFace] HF_TOKEN not set — skipping HuggingFace Spaces upload (opt-in only)"
+            exit 0
+          fi
           python3 - <<'PYEOF'
           import os
           from huggingface_hub import HfApi
 
-          api = HfApi(token=os.environ["HF_TOKEN"])
+          hf_token = os.environ.get("HF_TOKEN", "")
+          if not hf_token:
+              print("[HuggingFace] Token empty — skipping upload")
+              exit(0)
+
+          api = HfApi(token=hf_token)
           space_id = f"{api.whoami()['name']}/{os.environ['HF_SPACE']}"
 
           api.upload_file(
