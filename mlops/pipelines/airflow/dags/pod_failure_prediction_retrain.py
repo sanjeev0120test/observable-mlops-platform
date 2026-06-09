@@ -100,8 +100,6 @@ def train_model(**context) -> str:
     from sklearn.model_selection import train_test_split
     from sklearn.metrics import f1_score, roc_auc_score
     import pandas as pd
-    import numpy as np
-    import json
 
     data_path = context["ti"].xcom_pull(task_ids="pull_training_data")
     df = pd.read_parquet(data_path)
@@ -162,7 +160,7 @@ def register_model(**context) -> None:
     """Set Staging alias in MLflow Model Registry after validation passes."""
     import mlflow
 
-    run_id = context["ti"].xcom_pull(task_ids="train_model")
+    context["ti"].xcom_pull(task_ids="train_model")
     client = mlflow.MlflowClient()
 
     versions = client.get_latest_versions("pod-failure-prediction", stages=["None"])

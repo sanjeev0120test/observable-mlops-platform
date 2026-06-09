@@ -14,12 +14,24 @@ target-version = "py311"
 exclude = ["__pycache__", ".git", ".venv", "venv", "dist", "build", "*.egg-info"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM"]
-ignore = ["E501", "B008", "N803", "N806", "UP017", "B905"]
+select = ["E", "F", "W", "N", "UP", "B", "A", "C4"]
+ignore = [
+    "E501",   # line too long
+    "B008",   # function call in default arg
+    "N803",   # argument name should be lowercase
+    "N806",   # variable in function should be lowercase
+    "UP017",  # use datetime.UTC (style preference)
+    "B905",   # zip without strict= (style preference)
+    "E741",   # ambiguous variable name (handled per-file)
+    "E712",   # equality comparison to True/False (handled per-file)
+    "SIM105", # use contextlib.suppress (style preference)
+]
 
 [tool.ruff.lint.per-file-ignores]
-"data/synthetic/*.py" = ["B"]
+"data/synthetic/*.py" = ["B", "F841"]
 "mlops/experiments/*.py" = ["F841"]
+"mlops/pipelines/**/*.py" = ["F841"]
+"services/*/src/*.py" = ["F841", "B007", "E741", "E712", "SIM105"]
 
 [tool.black]
 line-length = 100

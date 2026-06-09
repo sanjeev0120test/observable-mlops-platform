@@ -26,7 +26,7 @@ jobs:
 
       - name: Install Trivy
         run: |
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.51.0
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.57.1
 
       - name: Trivy scan base images (python:3.11-slim)
         id: trivy
@@ -178,7 +178,9 @@ jobs:
 
           rules_file = Path("aiops/falco/custom_rules.yml")
           docs = list(yaml.safe_load_all(rules_file.read_text()))
-          n_rules = sum(1 for d in docs if isinstance(d, dict) and "rule" in d)
+          # The file is a single YAML document that is a list of rule dicts
+          rules_list = docs[0] if docs and isinstance(docs[0], list) else docs
+          n_rules = sum(1 for d in rules_list if isinstance(d, dict) and "rule" in d)
           print(f"Falco custom rules loaded: {n_rules}")
           assert n_rules >= 5, f"Expected >= 5 custom rules, got {n_rules}"
           print("Falco rules YAML syntax: OK")

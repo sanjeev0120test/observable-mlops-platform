@@ -6,8 +6,6 @@ Deduplicates alert storms and identifies root cause groups.
 
 from __future__ import annotations
 
-import os
-
 from fastapi import FastAPI
 from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST
 from pydantic import BaseModel

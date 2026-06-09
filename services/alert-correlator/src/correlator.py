@@ -5,7 +5,6 @@ DBSCAN clusters alerts by time + label similarity to reduce alert fatigue.
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 
@@ -13,7 +12,7 @@ import numpy as np
 import pandas as pd
 from sklearn.cluster import DBSCAN
 from sklearn.metrics import silhouette_score
-from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.preprocessing import LabelEncoder
 
 logger = logging.getLogger(__name__)
 
