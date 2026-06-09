@@ -17,37 +17,47 @@ import future.keywords.in
 
 default allow := false
 
+_protected_namespaces := {"kube-system", "cert-manager", "kyverno", "keda"}
+
+_is_protected if {
+    _protected_namespaces[input.target.namespace]
+}
+
+# Promotion is allowed when no deny reasons exist AND namespace is not protected
 allow if {
+    not _is_protected
     count(deny_reasons) == 0
 }
 
-# Block destructive actions in production without critical severity
+# Allow restart_pod for CrashLoopBackOff in non-protected namespaces
+allow if {
+    input.action == "restart_pod"
+    input.trigger.alert_name == "PodCrashLoopBackOff"
+    not _is_protected
+}
+
+# Allow scale_deployment when KEDA signals in non-protected namespace
+allow if {
+    input.action == "scale_deployment"
+    input.trigger.alert_name in {"HighCPUPreScale", "KafkaLag"}
+    not _is_protected
+}
+
+# Always allow in dry-run mode (for non-protected namespaces only)
+allow if {
+    input.dry_run == true
+    not _is_protected
+}
+
+# Deny: destructive actions in non-critical severity
 deny_reasons contains reason if {
     input.action in {"drain_node", "rollback_deployment"}
     input.trigger.severity != "critical"
     reason := sprintf("action '%s' requires critical severity, got '%s'", [input.action, input.trigger.severity])
 }
 
-# Block actions on protected namespaces
+# Deny: actions on protected namespaces
 deny_reasons contains reason if {
-    input.target.namespace in {"kube-system", "cert-manager", "kyverno", "keda"}
+    _protected_namespaces[input.target.namespace]
     reason := sprintf("namespace '%s' is protected — manual intervention required", [input.target.namespace])
-}
-
-# Allow restart_pod for any CrashLoopBackOff regardless of severity
-allow if {
-    input.action == "restart_pod"
-    input.trigger.alert_name == "PodCrashLoopBackOff"
-    not input.target.namespace in {"kube-system", "cert-manager", "kyverno", "keda"}
-}
-
-# Allow scale_deployment when KEDA signals
-allow if {
-    input.action == "scale_deployment"
-    input.trigger.alert_name in {"HighCPUPreScale", "KafkaLag"}
-}
-
-# Always allow in dry-run mode
-allow if {
-    input.dry_run == true
 }

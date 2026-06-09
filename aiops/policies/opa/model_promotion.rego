@@ -15,7 +15,7 @@ import future.keywords.in
 #       "accuracy": float,
 #       "drift_score": float,
 #       "test_dataset_size": int,
-#       "training_data_hash": string
+#       "shap_values_logged": bool
 #     },
 #     "requestor": string,
 #     "environment": "staging" | "production"
