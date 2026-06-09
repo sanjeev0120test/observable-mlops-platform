@@ -15,33 +15,34 @@ Enterprise-grade **AIOps + MLOps** reference platform for SaaS teams. **23 use c
 2. [Platform Hierarchy & Reading Guide](#platform-hierarchy--reading-guide)
 3. [Enterprise Production Context](#enterprise-production-context)
 4. [System Thinking](#system-thinking)
-5. [Architecture Diagrams & Flows](#architecture-diagrams--flows)
-6. [Sequence Diagrams (Production Flows)](#sequence-diagrams-production-flows)
+5. [Critical System Design Concepts](#critical-system-design-concepts)
+6. [Architecture Diagrams & Flows](#architecture-diagrams--flows)
+7. [Sequence Diagrams (Production Flows)](#sequence-diagrams-production-flows)
 
 ### Part II — Operations & Observability
-7. [Observability Strategy](#observability-strategy)
-8. [23 Use Cases — Business Value & Evidence](#23-use-cases--business-value--evidence)
+8. [Observability Strategy](#observability-strategy)
+9. [23 Use Cases — Business Value & Evidence](#23-use-cases--business-value--evidence)
 
 ### Part III — Build, Validate & Operate
-9. [Implementation Phases (Complete)](#implementation-phases-complete)
-10. [Validation — Run Everything at Once](#validation--run-everything-at-once)
-11. [Your Action Items](#your-action-items)
-12. [Architecture Decisions (Why We Chose This)](#architecture-decisions-why-we-chose-this)
-13. [Repository Structure](#repository-structure)
-14. [Eval Framework](#eval-framework)
-15. [Technology Stack](#technology-stack)
-16. [Troubleshooting](#troubleshooting)
+10. [Implementation Phases (Complete)](#implementation-phases-complete)
+11. [Validation — Run Everything at Once](#validation--run-everything-at-once)
+12. [Your Action Items](#your-action-items)
+13. [Architecture Decisions (Why We Chose This)](#architecture-decisions-why-we-chose-this)
+14. [Repository Structure](#repository-structure)
+15. [Eval Framework](#eval-framework)
+16. [Technology Stack](#technology-stack)
+17. [Troubleshooting](#troubleshooting)
 
 ### Part IV — Deep Reference
-17. [Complete Tool & Library Reference](#complete-tool--library-reference)
-18. [Phases — Step-by-Step from Scratch](#phases--step-by-step-from-scratch)
-19. [Use Cases — Step-by-Step Walkthrough](#use-cases--step-by-step-walkthrough)
-20. [Challenges Encountered & How They Were Fixed](#challenges-encountered--how-they-were-fixed)
-21. [Verification Evidence (All Workflows Green)](#verification-evidence-all-workflows-green)
-22. [Official Documentation Index](#official-documentation-index)
+18. [Complete Tool & Library Reference](#complete-tool--library-reference)
+19. [Phases — Step-by-Step from Scratch](#phases--step-by-step-from-scratch)
+20. [Use Cases — Step-by-Step Walkthrough](#use-cases--step-by-step-walkthrough)
+21. [Challenges Encountered & How They Were Fixed](#challenges-encountered--how-they-were-fixed)
+22. [Verification Evidence (All Workflows Green)](#verification-evidence-all-workflows-green)
+23. [Official Documentation Index](#official-documentation-index)
 
 ### Part V — Expert Reference (SRE · MLOps · AIOps · DevOps)
-23. [Expert Reference — Platform Architecture](#expert-reference--platform-architecture)
+24. [Expert Reference — Platform Architecture](#expert-reference--platform-architecture)
 
 ---
 
@@ -107,10 +108,10 @@ flowchart TB
 | If you are… | Start here | Then read |
 |---|---|---|
 | **Executive / PM** | [Executive Summary](#executive-summary) → [23 Use Cases](#23-use-cases--business-value--evidence) | [Enterprise Production Context](#enterprise-production-context) |
-| **Platform / SRE lead** | [Architecture Diagrams](#architecture-diagrams--flows) → [Observability Strategy](#observability-strategy) | [Expert Reference §23](#expert-reference--platform-architecture) |
-| **ML engineer** | [UC Walkthroughs](#use-cases--step-by-step-walkthrough) → [Eval Framework](#eval-framework) | [Tool Reference §17](#complete-tool--library-reference) |
+| **Platform / SRE lead** | [System Design Concepts §5](#critical-system-design-concepts) → [Architecture Diagrams](#architecture-diagrams--flows) | [Expert Reference §24](#expert-reference--platform-architecture) |
+| **ML engineer** | [UC Walkthroughs §20](#use-cases--step-by-step-walkthrough) → [Eval Framework §15](#eval-framework) | [Tool Reference §18](#complete-tool--library-reference) |
 | **Security / compliance** | UC7, UC12, UC17 in [Use Cases](#23-use-cases--business-value--evidence) | [OPA/Kyverno/Trivy in Tool Reference](#complete-tool--library-reference) |
-| **Operator validating CI** | [Validation — Run Everything](#validation--run-everything-at-once) | [Verification Evidence §21](#verification-evidence-all-workflows-green) |
+| **Operator validating CI** | [Validation §11](#validation--run-everything-at-once) | [Verification Evidence §22](#verification-evidence-all-workflows-green) |
 
 ### Domain → UC hierarchy
 
@@ -368,6 +369,536 @@ flowchart LR
 | Ephemeral K8s | Kind (in-job) | KServe, Kyverno, KEDA, OPA admission |
 | Persistence | DagsHub | MLflow tracking + DVC remote (one token) |
 | Reports | GitHub Pages | Drift reports, eval scorecards, portal |
+
+---
+
+## Critical System Design Concepts
+
+This section explains the **most important system design ideas** embodied in this platform — written for **platform architects, SREs, MLOps/AIOps engineers, and DevOps leads** who need to understand *why* the repo is structured the way it is, not just *what* it runs.
+
+Each concept follows: **definition → why it matters in production → how this repo implements it → where in code → related UCs → failure mode if ignored**.
+
+### Concept map (how ideas connect)
+
+```mermaid
+mindmap
+  root((Platform Design))
+    Reliability
+      Feedback loops
+      SLO error budgets
+      Blast radius
+      Idempotency
+    Data & ML
+      Train serve split
+      Drift as state change
+      Model lifecycle FSM
+      Lineage registry
+    Operations
+      Three pillars OTEL
+      Event driven alerts
+      Control vs data plane
+    Governance
+      Policy as code
+      Fail closed OPA
+      Defense in depth
+      GitOps SSOT
+    Validation
+      Eval gates contracts
+      Ephemeral envs
+      Deterministic CI
+```
+
+---
+
+### 1. Control plane vs data plane
+
+**Definition**: The **control plane** decides *what should happen* (policies, orchestration, deployment, scaling rules). The **data plane** carries *actual work* (inference requests, log bytes, metric samples, feature lookups).
+
+| Plane | In this repo | Examples |
+|---|---|---|
+| **Control** | GitHub Actions, OPA, Kyverno, Airflow DAG scheduler, KEDA, Alertmanager routing, eval gates | `eval/scorer.py`, `aiops/policies/opa/`, `.github/workflows/` |
+| **Data** | FastAPI microservices, KServe inference, Redis feature reads, Qdrant retrieval, Prometheus TSDB | `services/*/src/`, `mlops/serving/`, Stack A/B compose |
+
+**Why it matters**: Mixing control logic into data-path code creates tight coupling — you can't change policy without redeploying inference. Production platforms (Kubernetes itself, Istio, KServe) separate these deliberately.
+
+**How we apply it**: UC6 self-healing is control plane (OPA decides) calling data plane (K8s API restart). UC9 promotion is control (OPA + MLflow stage) gating data plane (KServe traffic).
+
+**Failure mode if ignored**: Engineers embed `if namespace == "payments"` in application code — unauditable, untestable, duplicated across 23 services.
+
+---
+
+### 2. Closed-loop feedback systems
+
+**Definition**: A system that **observes its own output**, compares to a target, and **acts to reduce error** — the same principle as a thermostat or PID controller.
+
+```mermaid
+flowchart LR
+    SET["Setpoint<br/>SLO / PSI threshold / eval score"]
+    PLANT["System under test<br/>ML pipeline / K8s cluster"]
+    SENSOR["Sensors<br/>OTEL / Evidently / Prom"]
+    CTRL["Controller<br/>OPA / KEDA / Airflow / eval gate"]
+    ACT["Actuator<br/>Scale / retrain / block merge"]
+
+    SET --> CTRL
+    PLANT --> SENSOR --> CTRL --> ACT --> PLANT
+```
+
+**Why it matters**: Open-loop ML (train once, deploy forever) always decays. Open-loop ops (alert without remediation path) burns out on-call. Closed-loop is the difference between a **platform** and a **collection of tools**.
+
+**How we apply it**:
+
+| Loop | Setpoint | Sensor | Controller | Actuator | UC |
+|---|---|---|---|---|---|
+| Model quality | PSI ≤ 0.25 | Evidently, NannyML | Drift engine | Airflow retrain DAG | UC1 |
+| Reliability | Error rate SLO | Prometheus | Alertmanager | Page / freeze deploy | UC21 |
+| Capacity | CPU forecast | Prophet | KEDA ScaledObject | Scale deployment | UC4 |
+| Code quality | Score ≥ threshold | `eval/scorer.py` | GHA job | Fail workflow | All UCs |
+| Security | CVE count | Trivy | CI gate | Block merge | UC7 |
+
+**Failure mode if ignored**: Dashboards full of graphs but nothing ever changes — "observability theater."
+
+---
+
+### 3. Separation of concerns (three planes)
+
+**Definition**: Split a complex system into **independent layers** with narrow interfaces so each layer can evolve without breaking others.
+
+This platform uses **three overlapping planes** (Business · ML · Ops) — see [System Thinking](#system-thinking). At implementation level, separation continues:
+
+| Concern | Owns | Does NOT own |
+|---|---|---|
+| **Eval framework** | Pass/fail semantics, thresholds | Business logic inside services |
+| **Services (`services/`)** | UC-specific algorithms | Shared scoring rules |
+| **Observability (`observability/`)** | Collection, routing, alerting | Application inference code |
+| **Workflows (`.github/workflows/`)** | Orchestration, infra spin-up | Long-running production state |
+
+**Why it matters**: A platform team can upgrade Prometheus without touching ML training code. A DS team can add UC24 without rewriting observability.
+
+**How we apply it**: Each UC = one workflow + one folder + one eval block in `eval/metrics.py`. **Piecemeal adoption** is a first-class design goal.
+
+**Failure mode if ignored**: Monolithic "ml-platform.jar" where one change breaks drift, serving, and logging together.
+
+---
+
+### 4. Single source of truth (SSOT)
+
+**Definition**: For any piece of system state, **exactly one authoritative store** — everyone else reads or reconciles to it.
+
+| Domain | SSOT in this repo | Consumers |
+|---|---|---|
+| **Desired cluster state** | Git manifests + Helm values | Kyverno, ArgoCD-style reconcile (UC12) |
+| **Model versions & experiments** | MLflow on DagsHub | KServe, OPA promotion, SHAP audit |
+| **Service ownership** | `backstage/catalog-info.yaml` | UC20 lint, UC8 runbook routing context |
+| **Feature definitions** | Feast `FeatureView` in git | Offline training parquet + online Redis |
+| **Policy rules** | OPA Rego + Kyverno YAML in git | CI `opa eval`, K8s admission |
+| **Quality bar per UC** | `eval/metrics.py` | All 26 workflows |
+
+**Why it matters**: During incidents, "which model was live?" and "who owns this service?" must have one answer. GitOps failures (UC12) happen when kubectl drift diverges from git SSOT.
+
+**Failure mode if ignored**: Model version in Slack, config in Confluence, features in a spreadsheet — impossible audit.
+
+---
+
+### 5. Declarative over imperative configuration
+
+**Definition**: Describe **desired end state**; let a controller reconcile reality to match. Imperative = "run these 47 commands in order."
+
+| Declarative (this repo) | Imperative (avoided) |
+|---|---|
+| `docker-compose.observability.yml` — services defined, Compose brings up | Shell script starting containers one-by-one |
+| OPA Rego — `allow` computed from rules | Hard-coded `if/else` in Python for every policy |
+| Kyverno policies — deny non-compliant manifests | Manual review checklist |
+| KEDA `ScaledObject` — desired replicas from metric | Engineer runs `kubectl scale` during incident |
+| Feast feature definitions — schema in git | Ad-hoc SQL per training script |
+
+**Why it matters**: Declarative configs are **diffable, reviewable in PRs, and replayable** — essential for compliance and GitOps.
+
+**Key files**: `infra/docker-compose/`, `aiops/policies/`, `mlops/feature-store/feature_repo/`, `mlops/serving/`
+
+**UCs**: UC5, UC6, UC7, UC12, UC4
+
+---
+
+### 6. Fail-closed vs fail-open (policy defaults)
+
+**Definition**: When the policy engine is uncertain or unavailable, does the system **deny** (fail-closed) or **allow** (fail-open)?
+
+**Production rule of thumb** ([Google security design](https://cloud.google.com/architecture/framework/security)): **fail-closed for authorization**; **fail-open only with explicit justification** (e.g. metrics drop vs user-facing outage).
+
+| Decision point | This repo's stance | Implementation |
+|---|---|---|
+| Model promotion without SHAP | **Fail-closed** | OPA `model_promotion.rego` denies |
+| Self-heal in `kube-system` | **Fail-closed** | OPA `self_healing.rego` explicit `!=` checks |
+| Eval gate score below threshold | **Fail-closed** | `run_eval_gate()` exits 1 |
+| DagsHub token missing | **Fail-open (non-critical path)** | `continue-on-error` on optional push |
+| OPA partial set `deny_reasons` | **Fail-closed semantics** | Empty set = no deny reasons (allow if other rules pass) |
+
+**Why it matters**: UC6 without OPA is dangerous automation. UC9 without OPA promotes unaudited models.
+
+**Failure mode if ignored**: Auto-restart deletes production database because policy service was down and default was `allow=true`.
+
+---
+
+### 7. Blast radius containment
+
+**Definition**: Limit how much damage a single failure, deploy, or bad model can cause.
+
+| Technique | Mechanism here | UC |
+|---|---|---|
+| **Canary deployment** | KServe traffic split 10/90 → 100% winner | UC22 |
+| **Namespace isolation** | OPA allowlist (`payments` yes, `kube-system` no) | UC6 |
+| **Eval isolation** | Each UC workflow independent; one failure ≠ all fail | All |
+| **Ephemeral CI stacks** | Compose/Kind torn down after job — no cross-run pollution | GHA |
+| **Statistical gate** | A/B p-value before full promotion | UC22 |
+| **Error budget freeze** | SLO fast-burn stops risky releases | UC21 |
+
+```mermaid
+flowchart TB
+    DEPLOY["New model v2 deploy"]
+    CANARY["10% canary traffic"]
+    MET["Monitor error rate + drift"]
+    AB["A/B test p < 0.05?"]
+    FULL["100% v2"]
+    ROLL["Rollback to v1"]
+
+    DEPLOY --> CANARY --> MET --> AB
+    AB -->|yes| FULL
+    AB -->|no| ROLL
+```
+
+**Failure mode if ignored**: One bad model serves 100% of fraud decisions until monthly review.
+
+---
+
+### 8. Idempotency and reproducibility
+
+**Definition**: Running the same operation twice produces the **same result** as running once — critical for CI, retries, and distributed systems.
+
+**How we apply it**:
+
+| Mechanism | Purpose | Location |
+|---|---|---|
+| Deterministic seeds in generators | Same synthetic data every CI run | `data/synthetic/*.py` |
+| Immutable eval artifacts | `eval-results/ucN.json` overwritten per run | `eval/scorer.py` |
+| DVC content-addressed storage | Same data hash → same remote object | `02-data-pipeline` |
+| MLflow run IDs | Retrain creates new version, not mutate old | UC1, UC9 |
+| Compose down after job | Clean slate each workflow | All stack workflows |
+
+**Why it matters**: Flaky CI destroys trust. Non-reproducible ML makes "works on my runner" incidents.
+
+**Failure mode if ignored**: UC1 passes Monday, fails Tuesday on identical code because random seed changed.
+
+---
+
+### 9. Event-driven architecture
+
+**Definition**: Components react to **events** (alerts, webhooks, drift detection) rather than polling continuously — loose coupling, scalable reaction.
+
+```mermaid
+flowchart LR
+    PROM["Prometheus<br/>alert firing"]
+    AM["Alertmanager<br/>group/route/inhibit"]
+    N8["n8n webhook"]
+    SH["self-healing API"]
+    AF["Airflow trigger"]
+
+    PROM -->|alert event| AM
+    AM -->|uc=UC6| N8
+    AM -->|uc=UC23| N8
+    N8 --> SH
+    UC1["UC1 drift detected"] -->|DAG trigger| AF
+```
+
+**Why it matters**: Polling MLflow every 30s for drift wastes resources. Event-driven retrain fires **only when PSI breaches**.
+
+**Key paths**: `observability/alerts/alertmanager.yml` (UC6, UC23 routes), UC1 → Airflow, n8n exports in `aiops/n8n-workflows/`
+
+**UCs**: UC1, UC6, UC23
+
+**Failure mode if ignored**: Cron retrain every night regardless of drift — wasted GPU, stale models still served.
+
+---
+
+### 10. CQRS-style read/write split (Feast offline vs online)
+
+**Definition**: **Command Query Responsibility Segregation** — separate paths for **writes** (batch feature computation) and **reads** (low-latency serving lookups), optimized independently.
+
+| Path | Store | Latency | Use case |
+|---|---|---|---|
+| **Write / batch (offline)** | Parquet via Feast `FileSource` | Minutes–hours | Training, batch scoring |
+| **Read / online** | Redis online store | Milliseconds | Real-time inference |
+
+**Why it matters**: UC5 exists because this split **introduces skew risk** — the #1 silent ML bug in production ([Feast overview](https://docs.feast.dev/getting-started/concepts/overview)).
+
+**How we validate**: Offline vs online PSI ≤ 0.10, GE ≥ 99% pass — `05-feature-skew.yml`
+
+**Failure mode if ignored**: Training uses `avg_7d`; serving uses `avg_24h` — accuracy drops, nobody knows why.
+
+---
+
+### 11. Observability as a first-class design constraint
+
+**Definition**: Telemetry is not an afterthought — **every critical path is instrumented at design time**, with alerts tied to use cases.
+
+**Design rules in this repo**:
+
+1. Prometheus rules carry `uc: UCx` labels — traceability from alert → capability
+2. OTEL collector fans out to three backends from one instrumentation point
+3. `00-pr-validate` **statically fails** if UC1, UC2, UC4, UC10, UC21 lack alert rules
+4. `01-observability` **runtime-proves** Stack B health + OTLP span
+
+**Three pillars** ([OpenTelemetry primer](https://opentelemetry.io/docs/concepts/observability-primer/)):
+
+| Pillar | Question it answers | Backend |
+|---|---|---|
+| **Metrics** | "How much / how fast?" | Prometheus |
+| **Logs** | "What exactly happened?" | Loki |
+| **Traces** | "Which service caused it?" | Tempo |
+
+**Failure mode if ignored**: You have logs but can't correlate across 40 microservices during a SEV1.
+
+---
+
+### 12. Sidecar and collector patterns
+
+**Definition**: Run auxiliary processes **alongside** main workloads to handle cross-cutting concerns (logs, metrics, proxies) without modifying app code.
+
+| Pattern | Component | Role |
+|---|---|---|
+| **Collector** | OTEL Collector | Receives OTLP once; exports to Prom/Loki/Tempo |
+| **Log shipper** | Fluent Bit | Tails container stdout → Loki |
+| **Policy sidecar** | OPA as HTTP service | UC6 queries policy without embedding Rego in app |
+
+**Why it matters**: Instrument once at collector boundary; swap backends without recompiling Python services.
+
+**Config**: `observability/otel/otelcol.yml`, Stack B compose
+
+---
+
+### 13. Orchestration vs choreography
+
+**Definition**:
+
+- **Orchestration**: Central coordinator directs each step (Airflow DAG, GHA workflow).
+- **Choreography**: Each service reacts to events without central boss (Alertmanager → n8n → self-heal).
+
+| Style | Used for | Example |
+|---|---|---|
+| **Orchestration** | Multi-step ML pipelines with dependencies | UC1 retrain DAG, UC13 GE pipeline, GHA jobs |
+| **Choreography** | Incident response, async reactions | Alert → n8n → OPA → K8s API |
+
+**Why it matters**: Retrain needs ordering (validate → train → register). Self-heal needs loose coupling so Alertmanager doesn't know K8s API details.
+
+**Failure mode if ignored**: One giant Airflow DAG for incidents — brittle, slow to change.
+
+---
+
+### 14. Quality gates as executable contracts
+
+**Definition**: An **eval gate** is a machine-enforceable contract: "this capability meets minimum quality" before merge or promotion — analogous to SLOs for code.
+
+```python
+# Contract: UC1 must prove drift detection + retrain
+run_eval_gate("UC1", {"psi_score": 1.2, "retrain_triggered": True, ...}, Path("eval-results"))
+# Exits 1 if composite score < 70 → blocks CI
+```
+
+**Contract structure** (`eval/metrics.py`):
+
+| Field | Meaning |
+|---|---|
+| `MetricSpec.direction` | `higher_better`, `lower_better`, `bool_true`, `exact` |
+| `pass_threshold` | Numeric/bar the metric must meet |
+| `weight` | Importance in composite score |
+| `THRESHOLDS["UC1"]` | Overall pass bar (70/100) |
+
+**Why it matters**: Without contracts, "green CI" means "container exited 0" not "drift detection works."
+
+**Related**: UC21 SLOs are **runtime contracts** for production; eval gates are **build-time contracts** for capabilities.
+
+---
+
+### 15. Ephemeral environments (cattle, not pets)
+
+**Definition**: Infrastructure is **disposable** — created for a job, destroyed after. No snowflake servers.
+
+| Environment | Lifetime | Technology |
+|---|---|---|
+| GHA runner + Compose Stack A/B | Single workflow run (~10–30 min) | Docker Compose |
+| Kind cluster | Single job needing K8s | Kind in GHA |
+| eval-results artifacts | Uploaded, consumed by 90-e2e | GHA artifacts |
+| Persistent state | MLflow/DVC on DagsHub, portal on gh-pages | Remote services only |
+
+**Why it matters**: Reproducible validation without maintaining staging clusters. Every merge gets a **fresh** full stack proof.
+
+**Tradeoff**: Cold-start time in CI vs fidelity. We accept startup cost for isolation.
+
+**Failure mode if ignored**: Shared staging cluster — UC7 breaks UC5 because Kyverno left in bad state.
+
+---
+
+### 16. Correlation, causality, and context propagation
+
+**Definition**: **Correlation** links related signals (trace ID, alert cluster). **Causality** identifies root cause among correlated events.
+
+| Mechanism | Links what | UC |
+|---|---|---|
+| **Trace ID (OTEL)** | Spans across services | UC11 |
+| **Alert `root_cause_id` labels** | Duplicate alerts → one incident | UC3 |
+| **`uc:` label on alerts** | Metric → platform capability | All observability |
+| **Qdrant similar incidents** | Current incident → past runbooks | UC2, UC8, UC23 |
+
+**Why it matters**: 50 alerts from one bad deploy must become **one** correlated page (UC3) with **one** trace root span (UC11).
+
+**Failure mode if ignored**: Engineers fix symptom in service C while root cause in service A.
+
+---
+
+### 17. Backpressure and flow control
+
+**Definition**: When downstream can't keep up, the system **signals upstream to slow down** rather than queue infinitely until crash.
+
+| Mechanism | Signal | Response | UC |
+|---|---|---|---|
+| **KEDA scaling** | Prometheus metric threshold | Add replicas before queue builds | UC4 |
+| **Predictive rate limiting** | Forecast request rate | Adjust Redis window limits | UC18 |
+| **Error budget policy** | SLO burn rate | Stop releases / shed load | UC21 |
+| **GHA job concurrency** | Workflow queue | GitHub queues runs (platform limit) | CI |
+
+**Failure mode if ignored**: OOM kills during traffic spike because HPA reacted 10 minutes late.
+
+---
+
+### 18. Defense in depth (layered security)
+
+**Definition**: Multiple independent security layers — breaching one doesn't compromise the system.
+
+See [Expert Reference — Defense in depth](#expert-reference--platform-architecture) for diagram. Layers in order:
+
+1. **Supply chain** — Trivy image scan (UC7)
+2. **Admission** — Kyverno deny bad manifests (UC7, UC12)
+3. **Runtime** — Falco syscall detection (UC7)
+4. **Application policy** — OPA promotion + self-heal (UC6, UC9, UC17)
+5. **Audit** — MLflow lineage + SHAP artifacts (UC17)
+6. **Detection** — Alerts on policy violations (UC6 route)
+
+**Why it matters**: CVE scan alone doesn't catch runtime shell escape. OPA alone doesn't scan images.
+
+---
+
+### 19. State machines for lifecycle management
+
+**Definition**: Entities move through **finite states** with **guarded transitions** — illegal transitions are rejected.
+
+**Model lifecycle** (UC9, UC17, UC22):
+
+```
+Experiment → Staging → Canary → Production → Retired
+              ↑___________|         |
+              rollback (UC22)       drift breach (UC1)
+```
+
+**Incident lifecycle** (UC21, UC6, UC23):
+
+```
+Normal → Alert firing → Correlated → Remediation → Resolved → Post-mortem
+```
+
+**Why it matters**: You cannot jump Experiment → Production without OPA + SHAP + canary — each transition has a **guard** (eval metric or policy).
+
+---
+
+### 20. Loose coupling, high cohesion
+
+**Definition** ([Structured Design](https://en.wikipedia.org/wiki/Structured_design)):
+
+- **High cohesion**: Everything in one module serves one purpose (UC3 = alert correlation only).
+- **Loose coupling**: Modules interact through narrow interfaces (eval JSON schema, OTLP, OPA HTTP API).
+
+**How we apply it**:
+
+| Cohesive unit | Interface to others |
+|---|---|
+| `services/drift-monitor/` | Writes metrics; triggers via eval artifact |
+| `eval/scorer.py` | Reads dict → writes JSON; no service imports |
+| `observability/otel/otelcol.yml` | OTLP in; exporters out — apps don't know Tempo vs Jaeger |
+
+**Why it matters**: Replace Qdrant with Weaviate — only UC8 service changes, not 23 workflows.
+
+---
+
+### 21. Consistency, availability, and partition tolerance (CAP)
+
+**Definition**: In distributed systems under network partition, you choose between **consistency** (all nodes see same data) and **availability** (every request gets a response) — you cannot have both ([CAP theorem](https://en.wikipedia.org/wiki/CAP_theorem)).
+
+**Practical choices in this platform**:
+
+| Component | Typical choice | Tradeoff accepted |
+|---|---|---|
+| Feast online store (Redis) | **Availability** for reads | Eventual consistency after materialize — UC5 catches skew |
+| MLflow registry (DagsHub) | **Consistency** for model version | Brief unavailability if remote down — CI uses `continue-on-error` |
+| Prometheus (single replica in CI) | **Consistency** within shard | Not HA in CI — production would use Thanos/Cortex |
+| OPA policy eval | **Consistency** (same input → same allow) | Must be available for UC6 — cache policies locally in prod |
+
+**Why it matters**: Don't assume Redis online features are **instantly** consistent with parquet offline — UC5 exists to measure that gap.
+
+---
+
+### 22. Design for operability (Google SRE)
+
+**Definition**: Systems are designed so **operators can run, debug, and restore** them without heroics ([Google SRE — Operability](https://sre.google/sre-book/effective-troubleshooting/)).
+
+| Operability feature | Implementation |
+|---|---|
+| **Runbooks as code** | `services/runbook-agent/runbooks/*.md` → Qdrant | UC8 |
+| **Service catalog** | Backstage YAML with owners | UC20 |
+| **Meaningful alert labels** | `uc`, `severity`, `namespace` on every rule | `platform.yml` |
+| **Post-mortem automation** | n8n + GitHub Issue template | UC23 |
+| **Deterministic repro** | Synthetic data + eval artifacts downloadable from CI | All UCs |
+
+**Failure mode if ignored**: Only one engineer knows how to fix drift pipeline — bus factor = 1.
+
+---
+
+### 23. Composability and strangler-fig adoption
+
+**Definition**: Teams adopt **one UC at a time** without rewriting the whole platform — new capabilities **wrap** legacy rather than big-bang replace ([Strangler Fig pattern](https://martinfowler.com/bliki/StranglerFigApplication.html)).
+
+**How we enable it**:
+
+| Property | Benefit |
+|---|---|
+| 23 isolated workflows | Enable UC1 drift without UC8 RAG |
+| Shared eval framework only | One dependency between UCs |
+| UC labels on alerts | Add observability for new UC without renaming old rules |
+| Stack A / Stack B split | Run ML workflows without full observability stack if needed |
+
+**Recommended adoption order**: See [Enterprise rollout hierarchy](#implementation-phases-complete) in Implementation Phases.
+
+---
+
+### System design concept → UC quick reference
+
+| Concept | Primary UCs | Key artifact |
+|---|---|---|
+| Control vs data plane | UC6, UC9 | OPA policies, KServe manifests |
+| Closed-loop feedback | UC1, UC4, UC21 | Airflow DAG, KEDA, SLO rules |
+| SSOT / GitOps | UC12, UC20 | `catalog-info.yaml`, git manifests |
+| Fail-closed policy | UC6, UC9, UC17 | `self_healing.rego`, `model_promotion.rego` |
+| Blast radius | UC22, UC6 | KServe canary, namespace allowlist |
+| Idempotency | All | `data/synthetic/` seeds, eval JSON |
+| Event-driven | UC1, UC6, UC23 | Alertmanager, n8n |
+| CQRS / train-serve split | UC5 | Feast offline + Redis online |
+| Observability-first | UC11, UC21 | OTEL, `platform.yml` |
+| Quality gates | All | `eval/metrics.py`, `eval/scorer.py` |
+| Ephemeral envs | All CI | Docker Compose, Kind |
+| Correlation / traces | UC3, UC11 | DBSCAN, Tempo |
+| Backpressure | UC4, UC18 | KEDA, Redis rate limits |
+| Defense in depth | UC7 | Trivy + Kyverno + Falco + OPA |
+| State machines | UC9, UC22 | MLflow stages, canary promotion |
+| CAP / consistency | UC5 | Offline/online PSI gate |
+| Operability | UC8, UC20, UC23 | Runbooks, catalog, post-mortem |
+| Composability | All | Per-UC workflow isolation |
 
 ---
 
@@ -1070,7 +1601,7 @@ run_eval_gate("UC1", {"psi_score": 1.2, "ks_statistic": 0.45, ...}, Path("eval-r
 
 ## Complete Tool & Library Reference
 
-This section documents **every tool, library, and concept** used in the platform. Descriptions align with official project documentation (linked in [Section 22 — Official Documentation Index](#official-documentation-index)). For each entry: **problem solved**, **why we use it here**, **alternatives considered**, and **which UC(s) depend on it**.
+This section documents **every tool, library, and concept** used in the platform. Descriptions align with official project documentation (linked in [Section 23 — Official Documentation Index](#official-documentation-index)). For each entry: **problem solved**, **why we use it here**, **alternatives considered**, and **which UC(s) depend on it**.
 
 ### Platform & CI/CD
 
@@ -2109,7 +2640,7 @@ Before promoting from this reference CI to a **live cluster**, verify:
 
 | # | Check | Owner | Platform proof |
 |---|---|---|---|
-| 1 | All 26 workflows green on `main` | Platform | [Verification Evidence §21](#verification-evidence-all-workflows-green) |
+| 1 | All 26 workflows green on `main` | Platform | [Verification Evidence §22](#verification-evidence-all-workflows-green) |
 | 2 | `DAGSHUB_TOKEN` + GitHub Pages configured | Platform | [Your Action Items](#your-action-items) |
 | 3 | SLOs defined per critical service | SRE | UC21 rules in `platform.yml` |
 | 4 | Alert routes tested (PagerDuty/Slack) | SRE | Alertmanager config |
