@@ -3218,6 +3218,108 @@ Full step-by-step runbook, validation checklist, MLflow/DVC links, and cleanup: 
 
 Grafana home dashboard (when provisioned): [Platform Overview](http://localhost:3000/d/platform-overview/platform-overview?orgId=1&refresh=10s&from=now-15m&to=now).
 
+### Visual walkthrough (51 screenshots)
+
+Evidence from the **2026-06-11** local validation session and **CI runs on DagsHub/GitHub Actions**. Every screenshot is stored in [`docs/images/local-observability-lab/`](docs/images/local-observability-lab/) and referenced below in runbook order.
+
+#### A. Docker Desktop — images, volumes, and Grafana bind mounts (7)
+
+| # | Screenshot | What it proves |
+|---|---|---|
+| 01 | ![Docker Desktop local images](docs/images/local-observability-lab/01.png) | Observability images pulled (Prometheus, Grafana, Loki, Tempo, OTEL, Alertmanager, Fluent Bit). |
+| 02 | ![Docker volumes list](docs/images/local-observability-lab/02.png) | Stack B persistent volumes (`platform-obs_*`) created and in use. |
+| 03 | ![Grafana volume stored data](docs/images/local-observability-lab/03.png) | Grafana state persisted in `grafana.db` inside `platform-obs_grafana_data`. |
+| 04 | ![Prometheus volume WAL](docs/images/local-observability-lab/04.png) | Prometheus TSDB writing WAL/chunks (metrics actively ingested). |
+| 05 | ![Loki volume stored data](docs/images/local-observability-lab/05.png) | Loki chunks + tsdb-shipper directories present on disk. |
+| 06 | ![Tempo volume stored data](docs/images/local-observability-lab/06.png) | Tempo trace blocks/WAL written to `platform-obs_tempo_data`. |
+| 07 | ![Grafana container bind mounts](docs/images/local-observability-lab/07.png) | Dashboard + datasource provisioning paths mounted from repo into Grafana. |
+
+#### B. Grafana — Platform Overview dashboard (2)
+
+| # | Screenshot | What it proves |
+|---|---|---|
+| 08 | ![Grafana overview health PSI alerts](docs/images/local-observability-lab/08.png) | **After datasource fix**: Platform Health 100%, Active Alerts (7), Model PSI (UC1) panels populated. |
+| 09 | ![Grafana overview SLO cost](docs/images/local-observability-lab/09.png) | HTTP Error Rate SLO (UC21) and Cost by Namespace (UC10) panels show live series. |
+
+#### C. Grafana Explore — Prometheus queries (4)
+
+| # | Screenshot | What it proves |
+|---|---|---|
+| 10 | ![Explore ml_model_psi_score graph](docs/images/local-observability-lab/10.png) | `ml_model_psi_score` time series from metrics hub / platform-services job. |
+| 11 | ![Explore ml_model_psi_score raw table](docs/images/local-observability-lab/11.png) | 14 PSI series across all seven service hostnames on `:8000`. |
+| 12 | ![Explore platform_seed_active_requests](docs/images/local-observability-lab/12.png) | OTEL-seeded gauge visible in Prometheus via Grafana Explore. |
+| 13 | ![Explore metric picker ml_model_psi_score](docs/images/local-observability-lab/13.png) | Metric autocomplete confirms Prometheus datasource bound correctly. |
+
+#### D. Prometheus — targets, rules, alerts (10)
+
+| # | Screenshot | What it proves |
+|---|---|---|
+| 14 | ![Prometheus targets 7 of 7 up](docs/images/local-observability-lab/14.png) | All `platform-services` scrape targets **UP** (metrics hub aliases working). |
+| 15 | ![Prometheus target detail cost-optimizer](docs/images/local-observability-lab/15.png) | Individual target labels, 30s scrape interval, endpoint `/metrics`. |
+| 16 | ![Prometheus SLO recording rules](docs/images/local-observability-lab/16.png) | `job:http_error_rate:ratio5m` + `SLOFastBurnRate` rules loaded (UC21). |
+| 17 | ![Prometheus UC2 UC4 alert rules](docs/images/local-observability-lab/17.png) | `HighCPUPreScale` (UC4) and `PodCrashLoopBackOff` (UC2) rules present. |
+| 18 | ![Prometheus graph ml_model_psi_score](docs/images/local-observability-lab/18.png) | PSI query returns series for `pod-failure-prediction` across instances. |
+| 19 | ![Prometheus service discovery](docs/images/local-observability-lab/19.png) | `otel-collector` and `platform-services` jobs discovered on `platform-net`. |
+| 20 | ![Prometheus TSDB label stats](docs/images/local-observability-lab/20.png) | TSDB label cardinality — confirms active metric ingestion. |
+| 21 | ![Prometheus TSDB series counts](docs/images/local-observability-lab/21.png) | Top series by metric name (HTTP histogram buckets, app metrics). |
+| 22 | ![Prometheus alerts MLModelDriftDetected firing](docs/images/local-observability-lab/22.png) | **UC1 drift alert firing** (7 instances) when PSI ≥ 0.2. |
+| 23 | ![Prometheus alert rule detail UC1](docs/images/local-observability-lab/23.png) | `MLModelDriftDetected` expression and firing instance breakdown. |
+
+#### E. Alertmanager (2)
+
+| # | Screenshot | What it proves |
+|---|---|---|
+| 24 | ![Alertmanager grouped drift alerts](docs/images/local-observability-lab/24.png) | Prometheus alerts routed to Alertmanager (UC1 drift group). |
+| 25 | ![Alertmanager cluster status](docs/images/local-observability-lab/25.png) | Alertmanager healthy, single-peer cluster ready. |
+
+#### F. OTEL Collector and Qdrant (2)
+
+| # | Screenshot | What it proves |
+|---|---|---|
+| 26 | ![OTEL collector metrics endpoint](docs/images/local-observability-lab/26.png) | `localhost:8889/metrics` — OTEL accepted logs/spans/metrics, zero refused. |
+| 27 | ![Qdrant dashboard console](docs/images/local-observability-lab/27.png) | Stack A Qdrant UI reachable on `:6333` (RAG/UC8 vector store). |
+
+#### G. GitHub Actions — CI validation (7)
+
+| # | Screenshot | What it proves |
+|---|---|---|
+| 28 | ![GitHub Actions UC1 drift workflow](docs/images/local-observability-lab/28.png) | `03-drift-detection.yml` green — UC1 eval gate passed in CI. |
+| 29 | ![GitHub Actions publish portal](docs/images/local-observability-lab/29.png) | `91-publish-portal.yml` deploys eval dashboard to GitHub Pages. |
+| 30 | ![GitHub Actions E2E workflow YAML](docs/images/local-observability-lab/30.png) | `90-e2e-integration.yml` aggregates all 23 UC workflow results. |
+| 31 | ![GitHub Pages deployment](docs/images/local-observability-lab/31.png) | Pages build/deploy job succeeded (`gh-pages` branch). |
+| 32 | ![GitHub Actions all workflows list](docs/images/local-observability-lab/32.png) | Recent runs green across observability, E2E, portal, and UC workflows. |
+| 33 | ![GitHub Actions 01-observability history](docs/images/local-observability-lab/33.png) | Stack B workflow history — failed run then **fix commit** (`fa64bf8`) green. |
+| 34 | ![GitHub Actions observability health steps](docs/images/local-observability-lab/34.png) | CI validates datasources, OTEL span, Prometheus rules, UC alert coverage. |
+
+#### H. DagsHub — experiments and model registry (5)
+
+| # | Screenshot | What it proves |
+|---|---|---|
+| 35 | ![DagsHub experiments tab](docs/images/local-observability-lab/35.png) | 16 MLflow runs on DagsHub with drift/HPO/SHAP metrics (UC1, UC14, UC17). |
+| 36 | ![DagsHub registered models](docs/images/local-observability-lab/36.png) | Model registry: `cost-anomaly-detector` v1, `pod-failure-prediction` v3. |
+| 37 | ![DagsHub cost model charts](docs/images/local-observability-lab/37.png) | UC10 cost model f1/precision/recall charts on DagsHub. |
+| 38 | ![DagsHub pod-failure model versions](docs/images/local-observability-lab/38.png) | Pod-failure-prediction versions 1–3 with linked source runs. |
+| 39 | ![DagsHub isolation-forest run detail](docs/images/local-observability-lab/39.png) | Finished `isolation-forest-ci` run with UC10 tags and metrics. |
+
+#### I. MLflow on DagsHub — per-UC run evidence (12)
+
+| # | Screenshot | What it proves |
+|---|---|---|
+| 40 | ![MLflow isolation-forest overview](docs/images/local-observability-lab/40.png) | UC10 run: f1 0.896, precision 0.867, recall 0.926, sklearn logged. |
+| 41 | ![MLflow home experiments list](docs/images/local-observability-lab/41.png) | Five experiments: explainability, pod-failure, HPO, cost, alert-correlation. |
+| 42 | ![MLflow UC17 SHAP metrics](docs/images/local-observability-lab/42.png) | UC17 `uc17-shap-ci`: `n_explained_predictions` = 200. |
+| 43 | ![MLflow pod-failure runs table](docs/images/local-observability-lab/43.png) | UC9 candidate/baseline GBC runs linked to model versions v1–v3. |
+| 44 | ![MLflow candidate-gbc overview](docs/images/local-observability-lab/44.png) | UC9 candidate run registered as `pod-failure-prediction` v3. |
+| 45 | ![MLflow baseline-gbc overview](docs/images/local-observability-lab/45.png) | UC9 baseline run with GBC hyperparameters and UC9 baseline tag. |
+| 46 | ![MLflow Optuna HPO overview](docs/images/local-observability-lab/46.png) | UC14 `optuna-study-ci`: 20 trials, best f1 logged to MLflow. |
+| 47 | ![MLflow alert-correlation runs](docs/images/local-observability-lab/47.png) | UC1 + UC3 drift/DBSCAN runs in `alert-correlation` experiment. |
+| 48 | ![MLflow UC1 drift overview](docs/images/local-observability-lab/48.png) | UC1 `uc1-drift-detection-ci`: PSI, KS, NannyML, Alibi metrics; drift detected. |
+| 49 | ![MLflow UC1 drift model metrics charts](docs/images/local-observability-lab/49.png) | UC1 drift metric charts (ks_statistic 0.32, psi_score, etc.). |
+| 50 | ![MLflow UC3 DBSCAN overview](docs/images/local-observability-lab/50.png) | UC3 `uc3-dbscan-ci`: deduplication_rate, silhouette_score, false_positive_rate. |
+| 51 | ![MLflow UC3 DBSCAN model metrics](docs/images/local-observability-lab/51.png) | UC3 metric charts: deduplication_rate 0.88, false_positive_rate 0.96. |
+
+> **Tip**: Start with **A → F** for local observability proof, then **G** for CI, then **H → I** for MLflow/DVC lineage on DagsHub.
+
 ### Step-by-step: end-to-end local observability demo
 
 Follow this order. Each step exists because a later step depends on it (see failure points below).
