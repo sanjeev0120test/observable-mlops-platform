@@ -61,18 +61,19 @@ These are the **non-negotiable design invariants** — if you adopt only one ide
 16. [Eval Framework](#eval-framework)
 17. [Technology Stack](#technology-stack)
 18. [Troubleshooting](#troubleshooting)
+19. [Local Observability Lab — Runbook & Lessons Learned](#local-observability-lab--runbook--lessons-learned)
 
 ### Part IV - Reference
-19. [Complete Tool & Library Reference](#complete-tool--library-reference)
-20. [Extended Coverage — Tools, Algorithms & Concepts](#extended-coverage--tools-algorithms--concepts)
-21. [Phases — Step-by-Step from Scratch](#phases--step-by-step-from-scratch)
-22. [Use Cases — Step-by-Step Walkthrough](#use-cases--step-by-step-walkthrough)
-23. [Challenges Encountered & How They Were Fixed](#challenges-encountered--how-they-were-fixed)
-24. [Verification Evidence (All Workflows Green)](#verification-evidence-all-workflows-green)
-25. [Official Documentation Index](#official-documentation-index)
+20. [Complete Tool & Library Reference](#complete-tool--library-reference)
+21. [Extended Coverage — Tools, Algorithms & Concepts](#extended-coverage--tools-algorithms--concepts)
+22. [Phases — Step-by-Step from Scratch](#phases--step-by-step-from-scratch)
+23. [Use Cases — Step-by-Step Walkthrough](#use-cases--step-by-step-walkthrough)
+24. [Challenges Encountered & How They Were Fixed](#challenges-encountered--how-they-were-fixed)
+25. [Verification Evidence (All Workflows Green)](#verification-evidence-all-workflows-green)
+26. [Official Documentation Index](#official-documentation-index)
 
 ### Part V - Expert Reference (SRE · MLOps · AIOps · DevOps)
-26. [Expert Reference — Platform Architecture](#expert-reference--platform-architecture)
+27. [Expert Reference — Platform Architecture](#expert-reference--platform-architecture)
 
 ---
 
@@ -3146,6 +3147,8 @@ Full per-tool detail: [§18 Complete Tool Reference](#complete-tool--library-ref
 
 ## Troubleshooting
 
+### CI / GitHub Actions
+
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | `DAGSHUB_TOKEN` errors in MLflow steps | Secret not set | Add secret; workflow continues with `continue-on-error` where non-critical |
@@ -3154,6 +3157,438 @@ Full per-tool detail: [§18 Complete Tool Reference](#complete-tool--library-ref
 | E2E shows missing UCs | Not all workflows run yet | `bash scripts/run-all-workflows.sh` |
 | OPA test failures | Input JSON wrapper for `opa eval -i` | Input file IS the document (no `{"input":{}}` wrapper) |
 | Portal 404 | Pages not enabled | Enable GitHub Pages on `gh-pages` branch |
+| `dvc: command not found` in setup | DVC not installed on runner | Wrapped in `if command -v dvc` in `scripts/setup-dagshub.sh` |
+
+### Local Docker / observability (quick index)
+
+| Symptom | Section |
+|---|---|
+| Grafana login works but every panel says **No data** | [Failure #1 — `${DS_PROMETHEUS}`](#failure-1-grafana-panels-show-no-data-datasource-uid) |
+| Prometheus targets **DOWN** for all Stack C services | [Failure #2 — Stack C not running](#failure-2-prometheus-scrape-targets-down--stack-c-build-failures) |
+| Loki Explore empty | [Failure #6 — wrong LogQL label](#failure-6-loki-explore-empty-wrong-logql) |
+| OTEL metrics missing in Prometheus | [Failure #5 — remote-write receiver](#failure-5-otel-metrics-not-in-prometheus) |
+| Stack A fails: network `platform-net` already exists | [Failure #3 — network conflict](#failure-3-platform-net-network-conflict-between-stacks) |
+| Stack C alone: `depends on undefined service mlflow` | [Failure #4 — compose file merge](#failure-4-stack-c-compose-depends-on-undefined-services) |
+
+Full step-by-step runbook, validation checklist, MLflow/DVC links, and cleanup: [Local Observability Lab](#local-observability-lab--runbook--lessons-learned).
+
+---
+
+## Local Observability Lab — Runbook & Lessons Learned
+
+**Last validated locally**: 2026-06-11 (Docker Desktop on Windows; Stack B + metrics hub + OTEL seed).  
+**Purpose**: Run Prometheus, Grafana, Loki, Tempo, and OTEL locally with **real data in every UI** — not just empty infrastructure. Documents every failure encountered during setup and the exact fix.
+
+> **CI vs local**: GitHub Actions runs **Stack B only** in [`01-observability.yml`](.github/workflows/01-observability.yml) (health checks + alert rule inventory). Full dashboard data requires **application metrics** from Stack C microservices or the **metrics hub workaround** below. MLflow/DVC run in CI via DagsHub; locally MLflow is on `:5000` when Stack A is up.
+
+### Quick links (bookmarks)
+
+| Resource | URL |
+|---|---|
+| **GitHub repo** | [github.com/sanjeev0120test/observable-mlops-platform](https://github.com/sanjeev0120test/observable-mlops-platform) |
+| **All GitHub Actions** | [github.com/sanjeev0120test/observable-mlops-platform/actions](https://github.com/sanjeev0120test/observable-mlops-platform/actions) |
+| **Observability workflow (Stack B CI)** | [01-observability.yml](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/01-observability.yml) |
+| **DVC + MLflow remote (DagsHub)** | [dagshub.com/sanjeev0120test/observable-mlops-platform](https://dagshub.com/sanjeev0120test/observable-mlops-platform) |
+| **Eval portal (GitHub Pages)** | [sanjeev0120test.github.io/observable-mlops-platform](https://sanjeev0120test.github.io/observable-mlops-platform/) |
+| **Data pipeline workflow (DVC)** | [02-data-pipeline.yml](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/02-data-pipeline.yml) |
+
+### Prerequisites
+
+| Requirement | Notes |
+|---|---|
+| **Docker Desktop** | ~8 GB RAM recommended for Stack A+B; Stack B alone ~1.8 GB |
+| **Git clone** | `git clone https://github.com/sanjeev0120test/observable-mlops-platform.git` |
+| **Python 3.11+** (optional) | For OTEL seed scripts and Grafana API fix |
+| **DagsHub token** (CI only) | `DAGSHUB_TOKEN` in GitHub Secrets — see [Your Action Items](#your-action-items) |
+
+### Port map (when stacks are running)
+
+| Service | Host port | Login / notes |
+|---|---|---|
+| **Grafana** | [localhost:3000](http://localhost:3000) | `admin` / `admin` |
+| **Prometheus** | [localhost:9090](http://localhost:9090) | Targets: `/targets` |
+| **Alertmanager** | [localhost:9093](http://localhost:9093) | Routes UC6/UC23 webhooks |
+| **Loki** | [localhost:3100](http://localhost:3100) | Query via Grafana Explore |
+| **Tempo** | [localhost:3200](http://localhost:3200) | Traces via Grafana Explore |
+| **OTEL Collector** | OTLP gRPC `localhost:4319`, metrics `localhost:8889` | Maps host 4319 → container 4317 |
+| **MLflow** (Stack A) | [localhost:5000](http://localhost:5000) | Local tracking UI |
+| **Airflow** (Stack A) | [localhost:8080](http://localhost:8080) | Retrain DAGs (UC1) |
+| **Qdrant** (Stack A) | [localhost:6333](http://localhost:6333) | RAG vector store (UC8) |
+| **n8n** (Stack A) | [localhost:5678](http://localhost:5678) | UC6/UC23 automation |
+
+Grafana home dashboard (when provisioned): [Platform Overview](http://localhost:3000/d/platform-overview/platform-overview?orgId=1&refresh=10s&from=now-15m&to=now).
+
+### Step-by-step: end-to-end local observability demo
+
+Follow this order. Each step exists because a later step depends on it (see failure points below).
+
+```mermaid
+flowchart TD
+    A["1. Create platform-net"] --> B["2. Start Stack B + Prometheus override"]
+    B --> C["3. Start Stack A (with net override if needed)"]
+    C --> D["4. Metrics hub OR Stack C services"]
+    D --> E["5. Fix Grafana dashboard UID"]
+    E --> F["6. Seed OTEL traces + logs"]
+    F --> G["7. Validate all UIs"]
+    G --> H["8. Cleanup when done"]
+```
+
+#### Step 1 — Create shared Docker network
+
+Stack B expects `platform-net` as **external** (same as CI):
+
+```bash
+docker network create platform-net || true
+```
+
+#### Step 2 — Start Stack B (observability)
+
+From repo root:
+
+```bash
+docker compose -f infra/docker-compose/docker-compose.observability.yml -p platform-obs up -d
+```
+
+Wait until health checks pass (~60s). Verify:
+
+```bash
+curl -sf http://localhost:9090/-/healthy && echo "Prometheus OK"
+curl -sf http://localhost:3000/api/health && echo "Grafana OK"
+curl -sf http://localhost:3100/ready && echo "Loki OK"
+curl -sf http://localhost:3200/ready && echo "Tempo OK"
+```
+
+**Important**: Default Prometheus in compose does **not** enable the remote-write receiver. OTEL metrics will not appear until Step 2b.
+
+##### Step 2b — Enable Prometheus remote-write receiver (required for OTEL metrics)
+
+Create a compose override file (save anywhere, e.g. `docker-compose.observability.override.yml`):
+
+```yaml
+services:
+  prometheus:
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+      - "--web.enable-lifecycle"
+      - "--web.enable-remote-write-receiver"
+      - "--log.level=warn"
+```
+
+Recreate Prometheus:
+
+```bash
+docker compose -f infra/docker-compose/docker-compose.observability.yml \
+  -f docker-compose.observability.override.yml -p platform-obs up -d --force-recreate prometheus
+```
+
+Verify OTEL → Prometheus path after seeding (Step 6): query `http://localhost:9090/api/v1/query?query=up{job="otel-collector"}`.
+
+#### Step 3 — Start Stack A (MLflow, Postgres, Redis, …) — optional but needed for full platform
+
+If Stack B was started first, Stack A may fail with **network already exists**. Fix with a network override:
+
+```yaml
+# docker-compose.mlops-core.override.yml
+networks:
+  default:
+    name: platform-net
+    external: true
+```
+
+```bash
+docker compose -f infra/docker-compose/docker-compose.mlops-core.yml \
+  -f docker-compose.mlops-core.override.yml -p platform-ml up -d \
+  postgresql redis mlflow qdrant n8n
+```
+
+Verify MLflow: [http://localhost:5000](http://localhost:5000).
+
+#### Step 4 — Application metrics (choose one path)
+
+**Path A — Metrics hub (recommended until Stack C Dockerfiles are fixed)**
+
+Prometheus scrapes Stack C hostnames (`anomaly-detector`, `drift-monitor`, etc.). A lightweight Python container with **network aliases** exposes the metrics the dashboard expects:
+
+```bash
+# Save as metrics-hub.py (see Failure #2 for full script content)
+docker rm -f platform-metrics-hub 2>/dev/null
+docker run -d --name platform-metrics-hub --network platform-net \
+  --network-alias anomaly-detector --network-alias drift-monitor \
+  --network-alias alert-correlator --network-alias predictive-scaler \
+  --network-alias self-healing --network-alias runbook-agent \
+  --network-alias cost-optimizer \
+  -v "$(pwd)/metrics-hub.py:/app/hub.py:ro" \
+  python:3.11-slim bash -c "pip install -q prometheus_client && python /app/hub.py"
+```
+
+The hub exposes `/metrics` on port 8000 and publishes gauges such as `ml_model_psi_score`, `cloud_cost_waste_ratio`, and counters `http_requests_total` — matching [`observability/dashboards/grafana/overview.json`](observability/dashboards/grafana/overview.json) queries.
+
+Verify from Prometheus container:
+
+```bash
+docker exec platform-prometheus wget -qO- http://anomaly-detector:8000/metrics | head
+```
+
+Check targets: [http://localhost:9090/targets](http://localhost:9090/targets) — expect **UP** for service jobs.
+
+**Path B — Full Stack C (currently blocked by build issues)**
+
+```bash
+docker compose \
+  -f infra/docker-compose/docker-compose.mlops-core.yml \
+  -f infra/docker-compose/docker-compose.observability.yml \
+  -f infra/docker-compose/docker-compose.services.yml \
+  -f docker-compose.mlops-core.override.yml \
+  -f docker-compose.observability.override.yml \
+  -p platform up -d
+```
+
+See [Failure #2](#failure-2-prometheus-scrape-targets-down--stack-c-build-failures) for known Dockerfile/image blockers.
+
+#### Step 5 — Fix Grafana dashboard datasource binding
+
+File-provisioned dashboards use `"uid": "${DS_PROMETHEUS}"` in panel definitions. **Grafana file provisioning does not resolve this template variable**, so panels query a non-existent datasource and show **No data** even when Prometheus has metrics.
+
+**Symptom**: Login succeeds, home dashboard loads, every panel empty.
+
+**Fix (runtime, via Grafana API)**:
+
+```python
+# fix-grafana-dashboard.py — run with: python fix-grafana-dashboard.py
+import base64, json, urllib.request
+
+auth = base64.b64encode(b"admin:admin").decode()
+hdrs = {"Authorization": f"Basic {auth}", "Content-Type": "application/json"}
+
+# 1) Get real Prometheus datasource UID
+with urllib.request.urlopen(urllib.request.Request(
+    "http://localhost:3000/api/datasources", headers=hdrs)) as r:
+    prom_uid = next(d["uid"] for d in json.load(r) if d["type"] == "prometheus")
+
+# 2) Load dashboard, replace ${DS_PROMETHEUS} in every panel
+with urllib.request.urlopen(urllib.request.Request(
+    "http://localhost:3000/api/dashboards/uid/platform-overview", headers=hdrs)) as r:
+    dash = json.load(r)["dashboard"]
+
+for panel in dash.get("panels", []):
+    ds = panel.get("datasource")
+    if isinstance(ds, dict) and ds.get("uid") == "${DS_PROMETHEUS}":
+        panel["datasource"]["uid"] = prom_uid
+
+dash["refresh"] = "10s"
+dash["time"] = {"from": "now-15m", "to": "now"}
+
+# 3) POST updated dashboard
+body = json.dumps({"dashboard": dash, "overwrite": True}).encode()
+req = urllib.request.Request("http://localhost:3000/api/dashboards/db",
+    data=body, headers=hdrs, method="POST")
+with urllib.request.urlopen(req) as r:
+    print("Dashboard fixed:", json.load(r).get("url"))
+```
+
+**Permanent repo fix (recommended)**: Replace `${DS_PROMETHEUS}` with the provisioned datasource UID in `overview.json`, or use Grafana's `__inputs` / unified provisioning — see [Grafana provisioning docs](https://grafana.com/docs/grafana/latest/administration/provisioning/).
+
+#### Step 6 — Seed OTEL traces and logs
+
+Send OTLP to `localhost:4319` (gRPC). Example Python seed (install `opentelemetry-sdk opentelemetry-exporter-otlp`):
+
+```python
+# telemetry-seed.py — sends traces + logs for ~90 seconds
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
+import logging, time
+
+resource = Resource.create({
+    "service.name": "observability/platform-local-seed",
+    "service.namespace": "observability",
+    "cluster": "platform-local",
+})
+# ... configure trace + log exporters to endpoint="localhost:4319", insecure=True
+# Emit spans and log lines in a loop for 90s
+```
+
+**Critical label lesson**: OTEL sets `service.name` → Loki label `service_name`. The value is **`observability/platform-local-seed`**, not `platform-local-seed`.
+
+#### Step 7 — Validation checklist
+
+| Tool | What to check | Pass criteria |
+|---|---|---|
+| **Prometheus** | [Targets](http://localhost:9090/targets) | Stack C jobs UP; `prometheus` self UP |
+| **Prometheus** | Query `ml_model_psi_score` | ≥1 time series |
+| **Prometheus** | Query `job:http_error_rate:ratio5m` | Recording rule present (may need HTTP traffic) |
+| **Grafana** | [Platform Overview](http://localhost:3000/d/platform-overview) | All 5 panels show data (after Step 5) |
+| **Grafana Explore → Loki** | `{service_name="observability/platform-local-seed"}` | Log lines returned |
+| **Grafana Explore → Tempo** | Search `service.name="observability/platform-local-seed"` | Traces returned |
+| **Alertmanager** | [Alerts](http://localhost:9093/#/alerts) | May show `MLModelDriftDetected` if PSI ≥ 0.25 |
+| **MLflow** (Stack A) | [localhost:5000](http://localhost:5000) | UI loads |
+| **GitHub Actions** | [01-observability run](https://github.com/sanjeev0120test/observable-mlops-platform/actions/workflows/01-observability.yml) | Stack B health + eval gate green |
+
+PromQL spot-checks:
+
+```bash
+curl -s 'http://localhost:9090/api/v1/query?query=ml_model_psi_score' | jq '.data.result | length'
+curl -s 'http://localhost:9090/api/v1/query?query=up' | jq '.data.result | length'
+```
+
+LogQL spot-check (PowerShell/bash — use nanosecond timestamps):
+
+```
+{service_name="observability/platform-local-seed"}
+{service_name=~".+"}   # any service
+```
+
+#### Step 8 — Cleanup (free disk and RAM)
+
+When finished testing:
+
+```bash
+docker rm -f platform-metrics-hub 2>/dev/null
+
+docker compose -f infra/docker-compose/docker-compose.observability.yml -p platform-obs down -v
+docker compose -f infra/docker-compose/docker-compose.services.yml -p platform-svc down -v 2>/dev/null
+docker compose -f infra/docker-compose/docker-compose.mlops-core.yml \
+  -f docker-compose.mlops-core.override.yml -p platform-ml down -v 2>/dev/null
+
+docker network rm platform-net 2>/dev/null
+
+# Optional aggressive cleanup (removes ALL unused images/volumes):
+docker volume prune -f
+docker system prune -a -f
+docker builder prune -a -f
+```
+
+Typical reclaim after full lab: **~5–7 GB** disk (images + volumes). Docker Desktop RAM drops once containers stop.
+
+---
+
+### Failure points — symptoms, root cause, fix
+
+Detailed record of every issue hit during local validation (2026-06-11).
+
+#### Failure #1: Grafana panels show "No data" (datasource UID)
+
+| | |
+|---|---|
+| **Symptom** | Grafana login OK; Platform Overview loads; all panels empty |
+| **Root cause** | `observability/dashboards/grafana/overview.json` panels use `"uid": "${DS_PROMETHEUS}"`. File provisioning does **not** substitute template variables — panels bind to invalid UID |
+| **How to confirm** | Grafana → panel → Inspect → Query → datasource UID is literal `${DS_PROMETHEUS}` |
+| **Fix applied** | Grafana API PATCH: replace UID with live Prometheus datasource UID (e.g. `PBFA97CFB590B2093` — yours will differ). See [Step 5](#step-5--fix-grafana-dashboard-datasource-binding) |
+| **Permanent fix** | Edit `overview.json` to use provisioned UID from `grafana-provisioning/datasources/` |
+
+#### Failure #2: Prometheus scrape targets DOWN / Stack C build failures
+
+| | |
+|---|---|
+| **Symptom** | [Prometheus targets](http://localhost:9090/targets) show DOWN for `anomaly-detector`, `drift-monitor`, etc.; Grafana PSI/cost/HTTP panels empty |
+| **Root cause** | Stack B is infrastructure only — metrics come from Stack C FastAPI `/metrics` endpoints. Stack C was never started, or **Docker builds fail** |
+| **Build blockers found** | (1) `anomaly-detector` Dockerfile: pip `--index-url` for torch breaks FastAPI install; (2) `drift-monitor` heavy deps timeout/fail; (3) `openpolicyagent/opa:0.65.0-rootless` image tag not found on Docker Hub |
+| **Fix applied** | **Metrics hub** container with network aliases for all seven service hostnames, exposing synthetic Prometheus metrics on `:8000` |
+| **Alternative** | Fix Dockerfiles + OPA image tag, then merge all three compose files |
+
+#### Failure #3: `platform-net` network conflict between stacks
+
+| | |
+|---|---|
+| **Symptom** | `docker compose ... mlops-core.yml up` fails: network `platform-net` already exists but was not created by this compose project |
+| **Root cause** | Stack B declares `platform-net` as `external: true`. Stack A tries to **create** the same network without `external: true` |
+| **Fix applied** | Override Stack A with `networks.default.external: true`; create network first: `docker network create platform-net` |
+| **CI pattern** | `01-observability.yml` runs `docker network create platform-net \|\| true` before compose up |
+
+#### Failure #4: Stack C compose "depends on undefined service"
+
+| | |
+|---|---|
+| **Symptom** | `docker compose -f docker-compose.services.yml up` → `service "drift-monitor" depends on undefined service "mlflow"` |
+| **Root cause** | Stack C references Stack A services (`mlflow`, `qdrant`, `postgresql`) defined in **separate** compose files |
+| **Fix** | Merge compose files in one command (see Step 4 Path B) or start Stack A first on shared `platform-net` |
+
+#### Failure #5: OTEL metrics not in Prometheus
+
+| | |
+|---|---|
+| **Symptom** | Traces in Tempo, logs in Loki, but no OTEL-derived metrics in Prometheus; `up{job="otel-collector"}` empty |
+| **Root cause** | OTEL collector exports metrics via **Prometheus remote write** (`observability/otel/otelcol.yml`). Default Prometheus image lacks `--web.enable-remote-write-receiver` |
+| **Fix applied** | Compose override adding that flag; recreate Prometheus container |
+| **Confirm** | `curl localhost:8889/metrics` on OTEL collector returns metrics; after seed, Prometheus query returns series |
+
+#### Failure #6: Loki Explore empty (wrong LogQL)
+
+| | |
+|---|---|
+| **Symptom** | Tempo has traces; Loki label browser shows labels; query `{service_name="platform-local-seed"}` returns nothing |
+| **Root cause** | OTEL resource attribute `service.name=observability/platform-local-seed` maps to Loki label `service_name="observability/platform-local-seed"` (includes namespace prefix) |
+| **Working queries** | `{service_name="observability/platform-local-seed"}` or `{service_name=~".+"}` |
+| **Debug tip** | `GET http://localhost:3100/loki/api/v1/label/service_name/values` lists actual values |
+
+#### Failure #7: Metrics hub container exits immediately
+
+| | |
+|---|---|
+| **Symptom** | `platform-metrics-hub` status **Exited**; logs show Python `SyntaxError` |
+| **Root cause** | Inline Python in PowerShell heredoc mangled quotes/indentation |
+| **Fix applied** | Mount script file with `-v .../metrics-hub.py:/app/hub.py:ro` instead of inline `-c` script |
+
+#### Failure #8: OTEL Collector timeout on port 8889 (CI — already fixed in repo)
+
+| | |
+|---|---|
+| **Symptom** | CI health check on `:8889/metrics` times out |
+| **Root cause** | Internal telemetry metrics not bound to `0.0.0.0` |
+| **Fix** | Added `service.telemetry.metrics.address: "0.0.0.0:8889"` in `observability/otel/otelcol.yml` — see Challenges table #12 |
+
+---
+
+### MLflow, DVC, and DagsHub — how they fit
+
+| Layer | Local (Stack A) | CI (GitHub Actions) |
+|---|---|---|
+| **MLflow UI** | [localhost:5000](http://localhost:5000) when Stack A running | Experiments logged to [DagsHub MLflow](https://dagshub.com/sanjeev0120test/observable-mlops-platform/mlflow) |
+| **DVC remote** | Configure with `scripts/setup-dagshub.sh` + token | `02-data-pipeline.yml` runs `dvc push` when `DAGSHUB_TOKEN` set |
+| **Model registry** | Local MLflow or DagsHub | UC9/UC17/UC22 workflows log to DagsHub when token present |
+| **Eval results** | N/A locally | Artifacts → `90-e2e-integration` → [GitHub Pages portal](https://sanjeev0120test.github.io/observable-mlops-platform/) |
+
+**One-time CI setup**:
+
+1. Create token at [dagshub.com/user/settings/tokens](https://dagshub.com/user/settings/tokens)
+2. Add `DAGSHUB_TOKEN` to GitHub Secrets
+3. Run `bash scripts/run-all-workflows.sh` or dispatch `02-data-pipeline.yml` for DVC proof
+
+**What you see where**:
+
+- **Grafana** → live SLO, drift PSI, cost, alert panels (needs metrics hub or Stack C)
+- **Prometheus** → raw metrics + alert rules from [`observability/alerts/rules/platform.yml`](observability/alerts/rules/platform.yml)
+- **MLflow/DagsHub** → experiment runs, model versions, DVC artifact lineage (CI-driven)
+- **GitHub Actions** → eval gate scores per UC; green = threshold met in [`eval/metrics.py`](eval/metrics.py)
+
+---
+
+### Docker Desktop tips (Windows)
+
+| Topic | Guidance |
+|---|---|
+| **RAM** | Stack B ~1.8 GB; A+B+C target ~7+ GB — close other heavy apps |
+| **Disk** | First pull ~3–5 GB images; run cleanup (Step 8) after labs |
+| **WSL2 backend** | Recommended; ensure WSL integration enabled for Docker Desktop |
+| **Cursor Docker MCP** | Uses `mcp-server-docker:local` image; after `docker system prune -a`, MCP re-pulls on next use |
+
+---
+
+### Recommended permanent repo improvements (not yet applied)
+
+These would remove the need for local override files and API patches:
+
+1. Add `--web.enable-remote-write-receiver` to [`docker-compose.observability.yml`](infra/docker-compose/docker-compose.observability.yml) Prometheus command
+2. Fix `${DS_PROMETHEUS}` in [`overview.json`](observability/dashboards/grafana/overview.json) to use provisioned datasource UID
+3. Set `external: true` on `platform-net` in [`docker-compose.mlops-core.yml`](infra/docker-compose/docker-compose.mlops-core.yml) (match Stack B/C)
+4. Fix Stack C Dockerfiles (torch pip index, OPA image tag) so metrics hub is not required
+5. Add `scripts/local/` with metrics-hub, telemetry-seed, and grafana-fix scripts checked into git
 
 ---
 
@@ -4113,12 +4548,21 @@ This section documents **real CI failures** encountered during implementation an
 | 20 | UC20 | `n_entities_correct` failed at 26 | Catalog has 27 YAML documents | Updated threshold to 27 in `eval/metrics.py` |
 | 21 | CI | actionlint `secrets` in `if:` | GitHub Actions disallows secrets context in job-level `if` | Moved checks into shell scripts |
 | 22 | DagsHub | `dvc: command not found` | setup script ran dvc unconditionally | Wrapped in `if command -v dvc` block |
+| 23 | Local / Grafana | All dashboard panels **No data** | File provisioning does not resolve `${DS_PROMETHEUS}` in `overview.json` | Runtime: Grafana API — bind panels to live Prometheus UID; permanent: fix UID in JSON |
+| 24 | Local / Prometheus | Stack C scrape targets **DOWN** | Stack C not started; Docker builds fail (torch pip, OPA image tag) | Metrics hub container with network aliases + synthetic `/metrics` |
+| 25 | Local / Compose | Stack A fails on `platform-net` | Stack B uses `external: true`; Stack A tries to create same network | `docker network create platform-net` + override Stack A with `external: true` |
+| 26 | Local / Compose | `depends on undefined service mlflow` | Stack C references services in separate compose file | Merge `-f mlops-core.yml -f observability.yml -f services.yml` |
+| 27 | Local / OTEL | Metrics in Tempo/Loki but not Prometheus | OTEL uses remote write; Prometheus missing `--web.enable-remote-write-receiver` | Compose override on Prometheus command; recreate container |
+| 28 | Local / Loki | Explore empty with `{service_name="platform-local-seed"}` | OTEL `service.name` includes prefix: `observability/platform-local-seed` | Use `{service_name="observability/platform-local-seed"}` or `{service_name=~".+"}` |
+| 29 | Local / metrics hub | Container exits (SyntaxError) | PowerShell mangled inline Python heredoc | Mount script file with `-v` instead of inline `-c` |
+| 30 | Local / Stack C build | `anomaly-detector` build fails | pip `--index-url` for torch breaks FastAPI install | Fix Dockerfile (separate torch install) — use metrics hub until fixed |
+| 31 | Local / Stack C build | OPA container fails to pull | `openpolicyagent/opa:0.65.0-rootless` tag not found | Pin to available OPA tag in `docker-compose.services.yml` |
 
----
+See [Local Observability Lab — Runbook & Lessons Learned](#local-observability-lab--runbook--lessons-learned) for step-by-step reproduction and validation.
 
 ## Verification Evidence (All Workflows Green)
 
-**Last verified**: 2026-06-09 — confirm latest run status on [GitHub Actions](https://github.com/sanjeev0120test/observable-mlops-platform/actions) after each push to `main`.
+**Last verified**: 2026-06-11 — confirm latest run status on [GitHub Actions](https://github.com/sanjeev0120test/observable-mlops-platform/actions) after each push to `main`. Local observability lab validated 2026-06-11 — see [Local Observability Lab](#local-observability-lab--runbook--lessons-learned).
 
 ### Quick links
 
