@@ -613,12 +613,11 @@ docker rm -f platform-metrics-hub
 docker network rm platform-net
 ```
 
-### Visual walkthrough — 51 validation screenshots
+### Visual walkthrough (51 screenshots)
 
-Evidence from the **2026-06-11** local session and CI runs on DagsHub/GitHub Actions. Every screenshot is in
-[`docs/images/local-observability-lab/`](docs/images/local-observability-lab/) and referenced below in runbook order.
+Evidence from the **2026-06-11** local validation session and **CI runs on DagsHub/GitHub Actions**. Every screenshot is stored in [`docs/images/local-observability-lab/`](docs/images/local-observability-lab/) and referenced below in runbook order.
 
-**Docker Desktop — volumes and images**
+#### A. Docker Desktop — images, volumes, and Grafana bind mounts (7)
 
 | # | Screenshot | What it proves |
 |---|---|---|
@@ -630,14 +629,14 @@ Evidence from the **2026-06-11** local session and CI runs on DagsHub/GitHub Act
 | 06 | ![Tempo volume stored data](docs/images/local-observability-lab/06.png) | Tempo trace blocks/WAL written to `platform-obs_tempo_data`. |
 | 07 | ![Grafana container bind mounts](docs/images/local-observability-lab/07.png) | Dashboard + datasource provisioning paths mounted from repo into Grafana. |
 
-**Grafana — dashboards and panels**
+#### B. Grafana — Platform Overview dashboard (2)
 
 | # | Screenshot | What it proves |
 |---|---|---|
 | 08 | ![Grafana overview health PSI alerts](docs/images/local-observability-lab/08.png) | **After datasource fix**: Platform Health 100%, Active Alerts (7), Model PSI (UC1) panels populated. |
 | 09 | ![Grafana overview SLO cost](docs/images/local-observability-lab/09.png) | HTTP Error Rate SLO (UC21) and Cost by Namespace (UC10) panels show live series. |
 
-**Grafana Explore — metric queries**
+#### C. Grafana Explore — Prometheus queries (4)
 
 | # | Screenshot | What it proves |
 |---|---|---|
@@ -646,7 +645,7 @@ Evidence from the **2026-06-11** local session and CI runs on DagsHub/GitHub Act
 | 12 | ![Explore platform_seed_active_requests](docs/images/local-observability-lab/12.png) | OTEL-seeded gauge visible in Prometheus via Grafana Explore. |
 | 13 | ![Explore metric picker ml_model_psi_score](docs/images/local-observability-lab/13.png) | Metric autocomplete confirms Prometheus datasource bound correctly. |
 
-**Prometheus — targets, rules, queries**
+#### D. Prometheus — targets, rules, alerts (10)
 
 | # | Screenshot | What it proves |
 |---|---|---|
@@ -661,21 +660,21 @@ Evidence from the **2026-06-11** local session and CI runs on DagsHub/GitHub Act
 | 22 | ![Prometheus alerts MLModelDriftDetected firing](docs/images/local-observability-lab/22.png) | **UC1 drift alert firing** (7 instances) when PSI ≥ 0.2. |
 | 23 | ![Prometheus alert rule detail UC1](docs/images/local-observability-lab/23.png) | `MLModelDriftDetected` expression and firing instance breakdown. |
 
-**Alertmanager**
+#### E. Alertmanager (2)
 
 | # | Screenshot | What it proves |
 |---|---|---|
 | 24 | ![Alertmanager grouped drift alerts](docs/images/local-observability-lab/24.png) | Prometheus alerts routed to Alertmanager (UC1 drift group). |
 | 25 | ![Alertmanager cluster status](docs/images/local-observability-lab/25.png) | Alertmanager healthy, single-peer cluster ready. |
 
-**OTEL Collector and Qdrant**
+#### F. OTEL Collector and Qdrant (2)
 
 | # | Screenshot | What it proves |
 |---|---|---|
 | 26 | ![OTEL collector metrics endpoint](docs/images/local-observability-lab/26.png) | `localhost:8889/metrics` — OTEL accepted logs/spans/metrics, zero refused. |
 | 27 | ![Qdrant dashboard console](docs/images/local-observability-lab/27.png) | Stack A Qdrant UI reachable on `:6333` (RAG/UC8 vector store). |
 
-**GitHub Actions — CI runs**
+#### G. GitHub Actions — CI validation (7)
 
 | # | Screenshot | What it proves |
 |---|---|---|
@@ -684,10 +683,10 @@ Evidence from the **2026-06-11** local session and CI runs on DagsHub/GitHub Act
 | 30 | ![GitHub Actions E2E workflow YAML](docs/images/local-observability-lab/30.png) | `90-e2e-integration.yml` aggregates all 23 UC workflow results. |
 | 31 | ![GitHub Pages deployment](docs/images/local-observability-lab/31.png) | Pages build/deploy job succeeded (`gh-pages` branch). |
 | 32 | ![GitHub Actions all workflows list](docs/images/local-observability-lab/32.png) | Recent runs green across observability, E2E, portal, and UC workflows. |
-| 33 | ![GitHub Actions 01-observability history](docs/images/local-observability-lab/33.png) | Stack B workflow history — failed run then **fix commit** green. |
+| 33 | ![GitHub Actions 01-observability history](docs/images/local-observability-lab/33.png) | Stack B workflow history — failed run then **fix commit** (`fa64bf8`) green. |
 | 34 | ![GitHub Actions observability health steps](docs/images/local-observability-lab/34.png) | CI validates datasources, OTEL span, Prometheus rules, UC alert coverage. |
 
-**DagsHub — model registry and experiments**
+#### H. DagsHub — experiments and model registry (5)
 
 | # | Screenshot | What it proves |
 |---|---|---|
@@ -697,7 +696,7 @@ Evidence from the **2026-06-11** local session and CI runs on DagsHub/GitHub Act
 | 38 | ![DagsHub pod-failure model versions](docs/images/local-observability-lab/38.png) | Pod-failure-prediction versions 1–3 with linked source runs. |
 | 39 | ![DagsHub isolation-forest run detail](docs/images/local-observability-lab/39.png) | Finished `isolation-forest-ci` run with UC10 tags and metrics. |
 
-**MLflow — local tracking UI**
+#### I. MLflow on DagsHub — per-UC run evidence (12)
 
 | # | Screenshot | What it proves |
 |---|---|---|
@@ -714,8 +713,120 @@ Evidence from the **2026-06-11** local session and CI runs on DagsHub/GitHub Act
 | 50 | ![MLflow UC3 DBSCAN overview](docs/images/local-observability-lab/50.png) | UC3 `uc3-dbscan-ci`: deduplication_rate, silhouette_score, false_positive_rate. |
 | 51 | ![MLflow UC3 DBSCAN model metrics](docs/images/local-observability-lab/51.png) | UC3 metric charts: deduplication_rate 0.88, false_positive_rate 0.96. |
 
+> **Tip**: Start with **A–F** for local observability proof, then **G** for CI evidence, then **H–I** for MLflow/DVC lineage on DagsHub.
+
+### Recommended permanent repo improvements (not yet applied)
+
+These would remove the need for local override files and API patches:
+
+1. Add `--web.enable-remote-write-receiver` to [`docker-compose.observability.yml`](infra/docker-compose/docker-compose.observability.yml) Prometheus command
+2. Fix `${DS_PROMETHEUS}` in [`overview.json`](observability/dashboards/grafana/overview.json) to use the provisioned datasource UID from `grafana-provisioning/datasources/`
+3. Set `external: true` on `platform-net` in [`docker-compose.mlops-core.yml`](infra/docker-compose/docker-compose.mlops-core.yml) (match Stack B/C)
+4. Fix Stack C Dockerfiles (torch pip index URL, OPA image tag) so the metrics hub workaround is not required
+5. Add `scripts/local/` with metrics-hub, telemetry-seed, and Grafana-fix scripts checked into git
+
 ---
 
+## 12. Enterprise production context
+
+### How this platform maps to real org patterns at scale
+
+The table below cross-references each use case against publicly documented patterns from hyperscalers and CNCF projects. This is how mature SaaS engineering orgs actually use these tools.
+
+| Enterprise pattern | What they publish / do | Problem solved | This repo's UC(s) | Public reference |
+|---|---|---|---|---|
+| **Google SRE — SLO + error budget** | Multi-window burn alerts; error budget policy gates releases | SLO breaches discovered too late; releases during outage windows | UC21 | [Google SRE Book — SLOs](https://sre.google/sre-book/service-level-objectives/), [Alerting on SLOs](https://sre.google/workbook/alerting-on-slos/) |
+| **DORA Four Keys** | Deployment frequency, lead time, CFR, MTTR as engineering health KPIs | No visibility into delivery pipeline health | UC15 | [dora.dev](https://dora.dev/), [2023 State of DevOps](https://cloud.google.com/devops/state-of-devops) |
+| **Spotify — Backstage** | Service catalog, ownership, API discovery in one internal portal | Engineers don't know who owns what during incidents | UC20 | [Backstage.io](https://backstage.io/docs/overview/what-is-backstage/) |
+| **Uber — Michelangelo** | Central ML platform with shared feature pipelines for train/serve | Training-serving skew; siloed ML teams reimplementing the same infra | UC5, UC9 | [Uber Engineering — Michelangelo](https://www.uber.com/blog/michelangelo-machine-learning-platform/) |
+| **Netflix — ML observability** | Continuous model monitoring; automated remediation culture | Silent model degradation; manual ops that don't scale past hundreds of models | UC1, UC6 | [Netflix TechBlog](https://netflixtechblog.com/) |
+| **LinkedIn — data quality at scale** | Expectations on data pipelines before downstream ML jobs | Bad data poisoning models silently; no audit trail | UC13 | [LinkedIn Engineering](https://engineering.linkedin.com/) |
+| **Airbnb — Great Expectations origin** | Declarative data tests embedded in pipelines | Schema drift, null spikes, type changes in production data | UC5, UC13 | [Great Expectations docs](https://docs.greatexpectations.io/) |
+| **CNCF — OTEL + Prometheus + Grafana** | Vendor-neutral telemetry; single collector fan-out to multiple backends | Tool sprawl; no correlated traces/logs/metrics in one place | UC11, all obs | [OTEL](https://opentelemetry.io/), [Prometheus](https://prometheus.io/) |
+| **CNCF — OPA / Kyverno admission** | Policy-as-code enforced at deploy time and runtime | CVE-bearing images; non-compliant manifests reaching production | UC7, UC12 | [OPA](https://www.openpolicyagent.org/docs/latest/), [Kyverno](https://kyverno.io/) |
+| **KServe / Knative — canary serving** | InferenceService canary splits, scale-to-zero, shadow mode | Risky big-bang model rollouts; serving infra cost during quiet hours | UC9, UC22 | [KServe canary rollout](https://kserve.github.io/website/latest/modelserving/v1beta1/rollout-strategy/) |
+| **Shopify — production ML monitoring** | Drift and feature distribution monitoring in live commerce | Revenue-impacting prediction degradation caught days after deployment | UC1, UC19 | [Shopify Engineering](https://shopify.engineering/) |
+
+### Real production scenarios — platform response
+
+Representative incident classes from SaaS post-mortems. Each row shows how this repo's CI-proven UC chain would detect and respond.
+
+| Scenario | Symptoms in prod | Business impact | Platform response (UC chain) | CI evidence |
+|---|---|---|---|---|
+| **Payment fraud model drift** | Approval rate shifts; chargebacks spike days later | Wrong fraud decisions; regulatory scrutiny | UC1 PSI/KS → Airflow retrain; UC19 WhyLogs early warning | `03`, `25` |
+| **Black Friday CPU spike** | p99 latency spikes; HPA lags behind load | Cart/checkout degradation; SLO burn | UC4 forecast → KEDA pre-scale; UC21 fast-burn alert fires | `07`, `15` |
+| **Log storm after bad deploy** | ERROR volume floods dashboards; root cause buried | Long MTTR; alert fatigue; wrong escalations | UC2 LSTM anomaly; UC3 DBSCAN dedup; UC8 RAG runbook answer | `04`, `06`, `09` |
+| **CVE in base Python image** | Trivy flags CRITICAL in CI build | Compliance audit fail; exploit risk | UC7 blocks promotion; Kyverno denies admission | `13`, `28` |
+| **Feature skew after refactor** | Model accuracy drops post-deploy; features "look fine" in isolation | Silent wrong predictions in production | UC5 Feast offline vs online PSI check | `05` |
+| **On-call restart of wrong namespace** | Engineer restarts kube-system pod at 3am | Cluster instability; cascading failure | UC6 OPA allows `payments`; denies `kube-system` — HTTP 403 | `08` |
+| **Model promoted without explainability** | Regulator asks for prediction rationale post-incident | Audit block; potential fine | UC17 SHAP → MLflow; OPA `model_promotion.rego` denies promotion if SHAP run absent | `23`, `10` |
+| **Idle GPU namespaces** | Utilization near zero on dev/test clusters for weeks | Unnecessary cloud spend; budget overrun | UC10 IsolationForest waste ratio → Prometheus alert | `11` |
+| **429 storm on public API** | Reactive rate limits block legitimate users | SLA miss; support tickets; revenue impact | UC18 predictive Redis limits from traffic forecast | `24` |
+| **Post-mortem takes 4 hours** | Engineer searches Confluence + Slack manually for similar incidents | Slow learning loop; same incidents repeat | UC23 RAG → n8n → draft GitHub Issue with linked runbook | `09` |
+
+### How enterprises adopt this incrementally
+
+Large organizations do not deploy all 23 use cases on day one. The realistic adoption path:
+
+**Phase 1 — Baseline observability (weeks 1–4)**
+Set up Prometheus + Grafana + Alertmanager + OTEL. Define SLOs (UC21). This alone
+reduces on-call noise by routing only budget-burning alerts. Most orgs already have
+Datadog/New Relic here — OTEL is the migration path out of vendor lock-in.
+
+**Phase 2 — ML monitoring (weeks 4–12)**
+Add drift detection (UC1) and anomaly detection (UC2). Wire to Airflow retrain DAG.
+This is where most orgs first measure real model ROI: they discover their "98% accurate"
+model was actually at 71% for two months before anyone noticed.
+
+**Phase 3 — Policy and governance (weeks 8–16)**
+Add OPA policy gates (UC6, UC9) and Kyverno admission. This unblocks compliance teams
+who were manually reviewing every production change. The key insight: policy as code
+means audit evidence is automatic, not a quarterly scramble.
+
+**Phase 4 — Intelligent operations (weeks 12–24)**
+Add alert correlation (UC3), self-healing (UC6), and RAG runbooks (UC8/UC23). At this
+stage teams reduce P1 incident MTTR from 45+ minutes to under 10 because the system
+can narrow root cause and surface the exact runbook before a human starts Slack threads.
+
+**Phase 5 — Full ML lifecycle (ongoing)**
+HPO (UC14), explainability (UC17), feature monitoring (UC19), DORA metrics (UC15),
+SBOM signing (UC7). These are the patterns that separate a team that ships ML from one
+that can defend their ML to auditors, regulators, and the board.
+
+### Eval scoring — how the CI gate works
+
+Every UC workflow writes structured metrics to `eval-results/ucN_metrics.json`. `run_eval_gate` in `eval/scorer.py` computes:
+
+```
+composite_score = sum(score_i * weight_i for each metric_i) / total_weight
+```
+
+Where each `score_i` is 0–100:
+- `higher_better`: `min(100, (observed / threshold) * 100)`
+- `lower_better`: `min(100, max(0, (1 - (observed - threshold) / threshold) * 100))`
+- `bool_true`: `100 if observed else 0`
+
+If `composite_score < THRESHOLDS[UC]`, the job calls `sys.exit(1)` — the CI job fails, the PR is blocked, and `90-e2e-integration` cannot aggregate. The threshold is the contract; the CI run is the proof.
+
+```python
+# eval/metrics.py — UC3 example
+UC_METRICS["UC3"] = [
+    MetricSpec("deduplication_rate", "higher_better", pass_threshold=0.70, weight=2.0),
+    MetricSpec("silhouette_score",   "higher_better", pass_threshold=0.30, weight=1.5),
+    MetricSpec("false_positive_rate","lower_better",  pass_threshold=0.10, weight=2.0),
+]
+THRESHOLDS["UC3"] = 50  # composite must reach 50/100
+```
+
+---
+
+## 13. Contributing
+
+1. Branch from `main`: `git checkout -b fix/<area>` or `feature/<area>`.
+2. Run `make lint && make test-unit` locally — both must pass cleanly.
+3. For any behavior change, add or update the corresponding test in `tests/unit/`.
+4. Open a PR — `00-pr-validate` and the per-UC gates that cover your change must pass.
+5. Human-readable commit messages: `<type>(<scope>): <what and why>` — no AI boilerplate.
 
 ---
 
