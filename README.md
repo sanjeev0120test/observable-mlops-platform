@@ -11,6 +11,10 @@ with a **blocking CI eval gate** so value is *proven*, never merely claimed.
 - **MLflow / DVC remote**: https://dagshub.com/sanjeev0120test/observable-mlops-platform
 - **Eval portal**: published by `91-publish-portal` after CI is green
 
+> **Status:** all CI workflows green — 23 per-UC eval gates + lint/structure,
+> unit tests (101), OPA policy tests (30), chaos/k8s manifest validation, SBOM,
+> and end-to-end aggregation. Every use case must clear its threshold before merge.
+
 ---
 
 ## 1. What this is
