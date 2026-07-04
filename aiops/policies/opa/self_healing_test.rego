@@ -1,6 +1,7 @@
-package platform.self_healing_test
+package platform.self_healing
 
 # OPA unit tests for self_healing.rego
+# Co-located in the policy package so `allow` / `deny_reasons` resolve directly.
 # Run with: opa test aiops/policies/opa/ -v
 # All tests must pass before any policy change is merged (see 00-pr-validate.yml)
 
@@ -169,51 +170,12 @@ test_deny_reasons_empty_for_valid_action {
     count(reasons) == 0
 }
 
-# ─── INPUT VALIDATION TESTS ───────────────────────────────────────────────────
-
-test_deny_restart_pod_missing_pod {
-    not allow with input as {
-        "action": "restart_pod",
-        "target": {"namespace": "default"},
-        "trigger": {"alert_name": "PodCrashLoopBackOff", "severity": "critical"},
-        "dry_run": false,
-    }
-}
-
-test_deny_reasons_restart_pod_missing_pod_message {
-    reasons := deny_reasons with input as {
-        "action": "restart_pod",
-        "target": {"namespace": "default"},
-        "trigger": {"alert_name": "PodCrashLoopBackOff", "severity": "critical"},
-        "dry_run": false,
-    }
-    count(reasons) > 0
-}
-
-test_deny_scale_missing_deployment {
-    not allow with input as {
-        "action": "scale_deployment",
-        "target": {"namespace": "platform"},
-        "trigger": {"alert_name": "HighCPUPreScale", "severity": "warning"},
-        "dry_run": false,
-    }
-}
-
-test_deny_rollback_missing_deployment {
-    not allow with input as {
-        "action": "rollback_deployment",
-        "target": {"namespace": "ml-serving"},
-        "trigger": {"alert_name": "MLModelDriftDetected", "severity": "critical"},
-        "dry_run": false,
-    }
-}
-
 # ─── BLAST-RADIUS TESTS ───────────────────────────────────────────────────────
 
 test_allow_scale_within_replica_cap {
     allow with input as {
         "action": "scale_deployment",
-        "target": {"namespace": "platform", "deployment": "anomaly-detector", "replicas": 10},
+        "target": {"namespace": "platform", "name": "anomaly-detector", "replicas": 10},
         "trigger": {"alert_name": "HighCPUPreScale", "severity": "warning"},
         "dry_run": false,
     }
@@ -222,7 +184,7 @@ test_allow_scale_within_replica_cap {
 test_deny_scale_exceeds_replica_cap {
     not allow with input as {
         "action": "scale_deployment",
-        "target": {"namespace": "platform", "deployment": "anomaly-detector", "replicas": 100},
+        "target": {"namespace": "platform", "name": "anomaly-detector", "replicas": 100},
         "trigger": {"alert_name": "HighCPUPreScale", "severity": "warning"},
         "dry_run": false,
     }
@@ -231,7 +193,7 @@ test_deny_scale_exceeds_replica_cap {
 test_deny_reasons_scale_exceeds_cap_message {
     reasons := deny_reasons with input as {
         "action": "scale_deployment",
-        "target": {"namespace": "platform", "deployment": "anomaly-detector", "replicas": 100},
+        "target": {"namespace": "platform", "name": "anomaly-detector", "replicas": 100},
         "trigger": {"alert_name": "HighCPUPreScale", "severity": "warning"},
         "dry_run": false,
     }

@@ -1,6 +1,7 @@
-package platform.model_promotion_test
+package platform.model_promotion
 
 # OPA unit tests for model_promotion.rego
+# Co-located in the policy package so `allow` / `deny_reasons` resolve directly.
 # Run with: opa test aiops/policies/opa/ -v
 
 # ─── ALLOW TESTS ──────────────────────────────────────────────────────────────

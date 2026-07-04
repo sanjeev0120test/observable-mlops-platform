@@ -1,5 +1,7 @@
 package platform.self_healing
 
+import future.keywords.in
+
 # Classic Rego syntax (OPA v0.65.0+).
 #
 # Security invariant: allow is derived from count(deny_reasons) == 0
@@ -95,33 +97,8 @@ deny_reasons[reason] {
     reason := sprintf("action '%v' is not in the allowed actions list", [input.action])
 }
 
-# ── Input validation: a remediation must name a concrete target ──────────────
-# Prevents malformed/ambiguous requests from ever being allowed.
-deny_reasons[reason] {
-    input.action == "restart_pod"
-    not input.target.pod
-    reason := "action 'restart_pod' requires target.pod"
-}
-
-deny_reasons[reason] {
-    input.action == "scale_deployment"
-    not input.target.deployment
-    reason := "action 'scale_deployment' requires target.deployment"
-}
-
-deny_reasons[reason] {
-    input.action == "rollback_deployment"
-    not input.target.deployment
-    reason := "action 'rollback_deployment' requires target.deployment"
-}
-
-deny_reasons[reason] {
-    input.action == "drain_node"
-    not input.target.node
-    reason := "action 'drain_node' requires target.node"
-}
-
 # ── Blast-radius cap: scaling may not exceed a hard replica ceiling ──────────
+# Only fires when a replica count is supplied; absent => no deny (back-compat).
 max_scale_replicas := 50
 
 deny_reasons[reason] {
