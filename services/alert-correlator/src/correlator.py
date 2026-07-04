@@ -4,8 +4,10 @@ DBSCAN clusters alerts by time + label similarity to reduce alert fatigue.
 
 Design notes:
 - eps=0.15 tuned for typical platform alert volumes (100-2000 alerts/window)
-- TIME_WEIGHT, NAMESPACE_WEIGHT, ALERT_WEIGHT control feature importance in distance
-- false_positive_rate computed only when ground-truth columns present
+- time is scaled by a fixed correlation horizon (TIME_SCALE_SECONDS) and namespace
+  is one-hot encoded (NAMESPACE_WEIGHT) so the distance space is interpretable
+- false_positive_rate measures cross-incident contamination, computed only when
+  ground-truth columns (is_root, root_cause_id) are present
 """
 
 from __future__ import annotations
@@ -17,15 +19,22 @@ import numpy as np
 import pandas as pd
 from sklearn.cluster import DBSCAN
 from sklearn.metrics import silhouette_score
-from sklearn.preprocessing import LabelEncoder
 
 logger = logging.getLogger(__name__)
 
-# Feature weights in the DBSCAN distance space
-# Tune: higher TIME_WEIGHT = cluster more aggressively by time proximity
-TIME_WEIGHT = 0.6  # Temporal proximity is the strongest signal
-NAMESPACE_WEIGHT = 0.3  # Same namespace = likely same blast radius
-ALERT_WEIGHT = 0.1  # Same alert type matters but less than time+namespace
+# Temporal correlation horizon. Time is expressed in units of this window so that
+# `eps` is interpretable: two alerts one full window apart sit at distance 1.0 on
+# the time axis. An incident's cascade alerts fire within seconds-to-minutes of the
+# root, while distinct incidents are typically tens of minutes apart, so a ~20 min
+# horizon keeps intra-incident alerts inside a small eps while separating incidents.
+TIME_SCALE_SECONDS = 1200.0
+
+# Secondary blast-radius signal. Namespace is one-hot encoded (not label-encoded):
+# label encoding invents a meaningless ordinal distance between namespaces, which is
+# what previously collapsed every alert into a single chained cluster. With one-hot,
+# two different namespaces are sqrt(2) * NAMESPACE_WEIGHT apart — enough to split
+# concurrent incidents in different namespaces without drowning the temporal signal.
+NAMESPACE_WEIGHT = 0.20
 
 MIN_SAMPLES = 2  # Minimum cluster size — single alerts remain as outliers
 
@@ -43,33 +52,27 @@ class CorrelationResult:
 
 def _build_feature_matrix(alerts_df: pd.DataFrame) -> np.ndarray:
     """
-    Build weighted feature matrix for DBSCAN:
-    - TIME_WEIGHT * normalized timestamp (seconds since first alert)
-    - NAMESPACE_WEIGHT * encoded namespace
-    - ALERT_WEIGHT * encoded alertname
+    Build the DBSCAN feature matrix.
+
+    - time: seconds since the first alert, expressed in TIME_SCALE_SECONDS units.
+      Using an absolute horizon (rather than min-max scaling over the whole window)
+      is what makes clustering correct: min-max scaling squeezes a 24h window into
+      [0, 1], so incidents 20 minutes apart end up ~0.008 apart and DBSCAN chains
+      the entire timeline into one cluster.
+    - namespace: one-hot encoded and scaled by NAMESPACE_WEIGHT so different
+      namespaces are a fixed, meaningful distance apart.
+
+    Alert name is intentionally excluded: cascade alerts carry different names from
+    their root by design, so it is noise for grouping alerts of the same incident.
     """
-    le_ns = LabelEncoder()
-    le_alert = LabelEncoder()
+    ts = pd.to_datetime(alerts_df["timestamp"], utc=True, errors="coerce")
+    time_seconds = (ts - ts.min()).dt.total_seconds().fillna(0.0).to_numpy(dtype=float)
+    time_feat = (time_seconds / TIME_SCALE_SECONDS).reshape(-1, 1)
 
-    ts = pd.to_datetime(alerts_df["timestamp"])
-    time_seconds = (ts - ts.min()).dt.total_seconds().values
+    ns = alerts_df["namespace"].fillna("unknown").astype(str)
+    ns_onehot = pd.get_dummies(ns).to_numpy(dtype=float) * NAMESPACE_WEIGHT
 
-    ns_encoded = le_ns.fit_transform(alerts_df["namespace"].fillna("unknown").values)
-    alert_encoded = le_alert.fit_transform(alerts_df["alertname"].fillna("unknown").values)
-
-    # Normalize each dimension to [0, 1] then apply weights
-    time_norm = time_seconds / max(float(time_seconds.max()), 1.0)
-    ns_norm = ns_encoded.astype(float) / max(float(ns_encoded.max()), 1.0)
-    alert_norm = alert_encoded.astype(float) / max(float(alert_encoded.max()), 1.0)
-
-    X = np.column_stack(
-        [
-            TIME_WEIGHT * time_norm,
-            NAMESPACE_WEIGHT * ns_norm,
-            ALERT_WEIGHT * alert_norm,
-        ]
-    )
-    return X
+    return np.column_stack([time_feat, ns_onehot])
 
 
 def correlate_alerts(
@@ -131,24 +134,27 @@ def correlate_alerts(
             except Exception:
                 pass
 
-    # False positive rate: root cause alerts incorrectly suppressed
-    # Only computed when ground-truth columns are present
+    # False positive rate: root-cause alerts incorrectly suppressed into the WRONG
+    # incident. A root alert grouped with its own cascade alerts is correct and must
+    # not count; the failure mode we measure is cross-incident contamination — a root
+    # alert landing in a cluster that mixes more than one root_cause_id, which would
+    # bury a real incident under an unrelated one.
+    # Only computed when ground-truth columns are present.
     false_positives = 0
     n_root_alerts = 0
     if "is_root" in df.columns and "root_cause_id" in df.columns:
-        for _rc_id, group in df.groupby("root_cause_id"):
-            root_rows = group[group["is_root"].astype(bool)]
-            n_root_alerts += len(root_rows)
-            if not root_rows.empty:
-                root_cluster = root_rows.iloc[0]["cluster"]
-                if root_cluster != -1:
-                    # Root alert was clustered — check if it was grouped with non-root alerts
-                    cluster_members = df[df["cluster"] == root_cluster]
-                    non_root_in_cluster = cluster_members[~cluster_members["is_root"].astype(bool)]
-                    if len(non_root_in_cluster) > 0:
-                        false_positives += 1
+        root_rows = df[df["is_root"].astype(bool)]
+        n_root_alerts = len(root_rows)
+        for _, root in root_rows.iterrows():
+            root_cluster = root["cluster"]
+            if root_cluster == -1:
+                # Left as its own outlier — not suppressed into another incident.
+                continue
+            cluster_members = df[df["cluster"] == root_cluster]
+            if cluster_members["root_cause_id"].nunique() > 1:
+                false_positives += 1
 
-    denom = max(n_root_alerts, n_clusters, 1)
+    denom = max(n_root_alerts, 1)
     false_positive_rate = min(1.0, false_positives / denom)
 
     # Build root cause groups for downstream consumption

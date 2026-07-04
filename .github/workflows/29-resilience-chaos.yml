@@ -82,14 +82,22 @@ jobs:
 
       - name: Ensure fail-closed OPA chaos scenario exists
         run: |
-          test -f platform/chaos/opa-unavailable.yaml \
-            && echo "OPA fail-closed chaos scenario present" \
-            || (echo "Missing opa-unavailable chaos scenario" && exit 1)
+          if test -f platform/chaos/opa-unavailable.yaml; then
+            echo "OPA fail-closed chaos scenario present"
+          else
+            echo "Missing opa-unavailable chaos scenario"
+            exit 1
+          fi
 
       - name: Check k6 load scripts are present
         run: |
           for f in tests/load/k6_self_healing.js tests/load/k6_drift_monitor.js tests/load/k6_runbook_agent.js; do
-            test -f "$f" && echo "found $f" || (echo "missing $f" && exit 1)
+            if test -f "$f"; then
+              echo "found $f"
+            else
+              echo "missing $f"
+              exit 1
+            fi
           done
 
       - name: Validate Kubernetes hardening manifests parse + enforce security context

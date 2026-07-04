@@ -36,15 +36,11 @@ jobs:
 
       - name: Generate Python dependency SBOM (SPDX)
         run: |
-          syft . --output spdx-json=sbom-python.spdx.json \
-            --config - <<'EOF'
-          anchore:
-            package:
-              cataloger:
-                enabled: true
-                scope: squashed
-          EOF
-          echo "SBOM generated: $(cat sbom-python.spdx.json | python3 -c 'import sys,json; d=json.load(sys.stdin); print(f\"{len(d.get(\"packages\",[])) } packages\")')"
+          # Directory scan of the whole repo (picks up requirements.txt / pyproject
+          # deps). No --config needed: the default catalogers cover a filesystem scan,
+          # and `--config -` (stdin) is not a valid syft config source.
+          syft scan dir:. --output spdx-json=sbom-python.spdx.json
+          python3 -c "import json; print('SBOM generated:', len(json.load(open('sbom-python.spdx.json')).get('packages', [])), 'packages')"
 
       - name: Scan SBOM for known vulnerabilities
         run: |
@@ -71,6 +67,9 @@ jobs:
   trivy-image-scan:
     name: "Trivy Container Security Scan"
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write  # Required by upload-sarif to write to the code-scanning API
     strategy:
       matrix:
         service: [anomaly-detector, drift-monitor, alert-correlator, self-healing, runbook-agent, cost-optimizer]
@@ -90,6 +89,7 @@ jobs:
 
       - name: Upload Trivy SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
+        continue-on-error: true  # Report to the Security tab; don't block if code scanning is unavailable
         with:
           sarif_file: trivy-${{ matrix.service }}.sarif
           category: trivy-${{ matrix.service }}

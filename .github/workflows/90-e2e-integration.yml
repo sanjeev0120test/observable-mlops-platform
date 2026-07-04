@@ -56,7 +56,8 @@ jobs:
       - name: Aggregate all UC results
         run: |
           python3 - <<'PYEOF'
-          import sys, json          sys.path.insert(0, '.')
+          import sys, json
+          sys.path.insert(0, '.')
           from pathlib import Path
           from eval.scorer import aggregate_all_results
           from eval.metrics import THRESHOLDS

@@ -83,7 +83,7 @@ jobs:
           done
 
           echo "Total critical CVEs found: $CRITICAL_COUNT"
-          echo "critical_cves=$CRITICAL_COUNT" >> $GITHUB_OUTPUT
+          echo "critical_cves=$CRITICAL_COUNT" >> "$GITHUB_OUTPUT"
 
       - name: Generate SBOM (CycloneDX)
         run: |

@@ -41,7 +41,7 @@ jobs:
               break
             fi
             sleep 5
-            if [ $i -eq 30 ]; then echo "Prometheus timeout" && exit 1; fi
+            if [ "$i" -eq 30 ]; then echo "Prometheus timeout" && exit 1; fi
           done
 
       - name: Wait for Grafana
@@ -53,7 +53,7 @@ jobs:
               break
             fi
             sleep 5
-            if [ $i -eq 30 ]; then echo "Grafana timeout" && exit 1; fi
+            if [ "$i" -eq 30 ]; then echo "Grafana timeout" && exit 1; fi
           done
 
       - name: Wait for Loki
@@ -61,7 +61,7 @@ jobs:
           for i in $(seq 1 20); do
             if curl -sf http://localhost:3100/ready; then echo "Loki ready"; break; fi
             sleep 5
-            if [ $i -eq 20 ]; then echo "Loki timeout" && exit 1; fi
+            if [ "$i" -eq 20 ]; then echo "Loki timeout" && exit 1; fi
           done
 
       - name: Wait for Tempo
@@ -69,7 +69,7 @@ jobs:
           for i in $(seq 1 20); do
             if curl -sf http://localhost:3200/ready; then echo "Tempo ready"; break; fi
             sleep 5
-            if [ $i -eq 20 ]; then echo "Tempo timeout" && exit 1; fi
+            if [ "$i" -eq 20 ]; then echo "Tempo timeout" && exit 1; fi
           done
 
       - name: Wait for OTEL Collector
@@ -84,7 +84,7 @@ jobs:
             fi
             echo "  Attempt $i/24: HTTP $STATUS — waiting 5s..."
             sleep 5
-            if [ $i -eq 24 ]; then
+            if [ "$i" -eq 24 ]; then
               echo "OTEL Collector timeout — dumping container logs:"
               docker compose -f ${{ env.COMPOSE_FILE }} logs otel-collector --tail=30
               exit 1

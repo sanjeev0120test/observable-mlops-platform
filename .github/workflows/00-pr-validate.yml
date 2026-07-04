@@ -265,8 +265,8 @@ jobs:
       - name: Count and list workflows
         run: |
           echo "=== GitHub Actions Workflows ==="
-          ls -1 .github/workflows/*.yml | sort
-          COUNT=$(ls .github/workflows/*.yml | wc -l)
+          find .github/workflows -maxdepth 1 -name '*.yml' | sort
+          COUNT=$(find .github/workflows -maxdepth 1 -name '*.yml' | wc -l)
           echo ""
           echo "Total workflow files: $COUNT"
           [ "$COUNT" -ge 26 ] || { echo "Expected at least 26 workflow files"; exit 1; }
