@@ -93,7 +93,9 @@ def compute_score(uc: str, metric_values: dict[str, Any]) -> EvalResult:
                 "score": round(metric_score, 2),
                 "weight": spec.weight,
                 "threshold": spec.pass_threshold,
-                "status": "PASS" if metric_score >= 80 else "WARN" if metric_score >= 50 else "FAIL",
+                "status": (
+                    "PASS" if metric_score >= 80 else "WARN" if metric_score >= 50 else "FAIL"
+                ),
             }
         weighted_sum += metric_score * spec.weight
 
@@ -131,10 +133,14 @@ def run_eval_gate(
 
     for metric, info in result.details.items():
         status_icon = "✓" if info["status"] == "PASS" else "~" if info["status"] == "WARN" else "✗"
-        print(f"  {status_icon} {metric}: {info['value']} (score={info['score']:.0f}, status={info['status']})")
+        print(
+            f"  {status_icon} {metric}: {info['value']} (score={info['score']:.0f}, status={info['status']})"
+        )
 
     if not result.passed:
-        print(f"\n[FAIL] {uc} scored {result.score:.1f} < threshold {result.threshold} — CI gate blocked.")
+        print(
+            f"\n[FAIL] {uc} scored {result.score:.1f} < threshold {result.threshold} — CI gate blocked."
+        )
         sys.exit(1)
 
     print(f"\n[PASS] {uc} scored {result.score:.1f} >= threshold {result.threshold}.")

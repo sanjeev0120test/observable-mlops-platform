@@ -79,6 +79,7 @@ def _run_alibi_lsdd(reference: np.ndarray, current: np.ndarray) -> float:
     """
     try:
         from alibi_detect.cd import LSDDDrift
+
         detector = LSDDDrift(reference.reshape(-1, 1))
         result = detector.predict(current.reshape(-1, 1))
         p_value = result["data"]["p_val"]
@@ -125,8 +126,11 @@ def compute_drift(
 
     Returns DriftMetrics with all UC1 eval metrics populated.
     """
-    feature_cols = [c for c in ["cpu_usage_pct", "mem_usage_pct", "restart_count"]
-                    if c in reference_df.columns and c in current_df.columns]
+    feature_cols = [
+        c
+        for c in ["cpu_usage_pct", "mem_usage_pct", "restart_count"]
+        if c in reference_df.columns and c in current_df.columns
+    ]
 
     ref_primary = reference_df[primary_feature].dropna().values
     cur_primary = current_df[primary_feature].dropna().values
@@ -138,10 +142,7 @@ def compute_drift(
 
     drifted = []
     for col in feature_cols:
-        col_ks, _ = _run_ks_test(
-            reference_df[col].dropna().values,
-            current_df[col].dropna().values
-        )
+        col_ks, _ = _run_ks_test(reference_df[col].dropna().values, current_df[col].dropna().values)
         if col_ks > KS_THRESHOLD:
             drifted.append(col)
 

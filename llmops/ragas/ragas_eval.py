@@ -131,28 +131,32 @@ def evaluate_rag_agent(
             keyword_score = _keyword_precision(answer, q.get("expected_keywords", []))
             length_score = _answer_length_score(answer)
 
-            results.append({
-                "id": q["id"],
-                "question": q["question"],
-                "uc": q.get("uc", "UC8"),
-                "n_context_chunks": len(context_chunks),
-                "has_context": has_context,
-                "answer_length_words": len(answer.split()),
-                "keyword_precision": keyword_score,
-                "answer_completeness": length_score,
-                "composite_score": 0.6 * keyword_score + 0.4 * length_score,
-                "raw_retrieval_precision": data.get("retrieval_precision_at_5", 0.0),
-                "raw_groundedness": data.get("answer_groundedness_score", 0.0),
-            })
+            results.append(
+                {
+                    "id": q["id"],
+                    "question": q["question"],
+                    "uc": q.get("uc", "UC8"),
+                    "n_context_chunks": len(context_chunks),
+                    "has_context": has_context,
+                    "answer_length_words": len(answer.split()),
+                    "keyword_precision": keyword_score,
+                    "answer_completeness": length_score,
+                    "composite_score": 0.6 * keyword_score + 0.4 * length_score,
+                    "raw_retrieval_precision": data.get("retrieval_precision_at_5", 0.0),
+                    "raw_groundedness": data.get("answer_groundedness_score", 0.0),
+                }
+            )
         except Exception as exc:
             logger.warning("Query %s failed: %s", q["id"], exc)
-            results.append({
-                "id": q["id"],
-                "question": q["question"],
-                "error": str(exc),
-                "composite_score": 0.0,
-                "keyword_precision": 0.0,
-            })
+            results.append(
+                {
+                    "id": q["id"],
+                    "question": q["question"],
+                    "error": str(exc),
+                    "composite_score": 0.0,
+                    "keyword_precision": 0.0,
+                }
+            )
 
     n_total = len(questions)
     retrieval_precision = n_retrieved / n_total if n_total else 0.0
@@ -163,9 +167,7 @@ def evaluate_rag_agent(
     mean_completeness = (
         sum(r.get("answer_completeness", 0.0) for r in results) / n_total if n_total else 0.0
     )
-    mean_context = (
-        sum(r.get("n_context_chunks", 0) for r in results) / n_total if n_total else 0.0
-    )
+    mean_context = sum(r.get("n_context_chunks", 0) for r in results) / n_total if n_total else 0.0
 
     eval_output = {
         "uc": "UC8",

@@ -12,12 +12,19 @@ from pathlib import Path
 
 import pandas as pd
 
-
 CHECKS: dict[str, dict] = {
     "pod_metrics.parquet": {
         "min_rows": 1000,
-        "required_cols": ["timestamp", "namespace", "pod_name", "cpu_usage_pct",
-                          "mem_usage_pct", "restart_count", "is_anomaly", "is_drifted"],
+        "required_cols": [
+            "timestamp",
+            "namespace",
+            "pod_name",
+            "cpu_usage_pct",
+            "mem_usage_pct",
+            "restart_count",
+            "is_anomaly",
+            "is_drifted",
+        ],
         "range_checks": {"cpu_usage_pct": (0, 100), "mem_usage_pct": (0, 100)},
     },
     "cost_data.parquet": {
@@ -27,8 +34,14 @@ CHECKS: dict[str, dict] = {
     },
     "alerts.parquet": {
         "min_rows": 50,
-        "required_cols": ["alert_id", "timestamp", "alertname", "severity",
-                          "root_cause_id", "is_duplicate"],
+        "required_cols": [
+            "alert_id",
+            "timestamp",
+            "alertname",
+            "severity",
+            "root_cause_id",
+            "is_duplicate",
+        ],
         "duplicate_rate_min": 0.30,
     },
     "http_traffic.parquet": {

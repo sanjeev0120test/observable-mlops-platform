@@ -1,0 +1,123 @@
+name: "29 · Resilience, Shadow-Mode & Chaos Validation"
+
+on:
+  push:
+    branches: [main, "feature/**", "fix/**"]
+    paths:
+      - "services/**"
+      - "platform/**"
+      - "tests/**"
+      - ".github/workflows/29-resilience-chaos.yml"
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: "resilience-chaos-${{ github.ref }}"
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  resilience-shadow-tests:
+    name: "Resilience + Shadow-Mode + RAG hardening unit tests"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pytest httpx fastapi "starlette[full]" pydantic prometheus-client
+
+      - name: Run resilience / shadow-mode / predictive / RAG tests
+        run: |
+          python -m pytest \
+            tests/unit/test_resilience.py \
+            tests/unit/test_shadow_evaluator.py \
+            tests/unit/test_predictive_scaler.py \
+            tests/unit/test_runbook_agent.py \
+            tests/unit/test_self_healing.py \
+            -v --tb=short
+
+  chaos-manifest-validation:
+    name: "Chaos manifests + k6 scripts validation"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install PyYAML
+        run: pip install pyyaml
+
+      - name: Validate all chaos manifests parse as YAML
+        run: |
+          python3 - <<'PYEOF'
+          import sys
+          from pathlib import Path
+          import yaml
+
+          chaos_dir = Path("platform/chaos")
+          files = sorted(chaos_dir.glob("*.yaml")) + sorted(chaos_dir.glob("*.yml"))
+          assert files, "No chaos manifests found"
+          total_docs = 0
+          for f in files:
+              docs = [d for d in yaml.safe_load_all(f.read_text()) if d]
+              assert docs, f"{f} contains no YAML documents"
+              for d in docs:
+                  assert "kind" in d, f"{f}: a document has no 'kind'"
+                  assert "metadata" in d, f"{f}: {d.get('kind')} has no metadata"
+              total_docs += len(docs)
+              print(f"OK  {f}  ({len(docs)} docs)")
+          print(f"\nValidated {len(files)} chaos files, {total_docs} documents.")
+          PYEOF
+
+      - name: Ensure fail-closed OPA chaos scenario exists
+        run: |
+          test -f platform/chaos/opa-unavailable.yaml \
+            && echo "OPA fail-closed chaos scenario present" \
+            || (echo "Missing opa-unavailable chaos scenario" && exit 1)
+
+      - name: Check k6 load scripts are present
+        run: |
+          for f in tests/load/k6_self_healing.js tests/load/k6_drift_monitor.js tests/load/k6_runbook_agent.js; do
+            test -f "$f" && echo "found $f" || (echo "missing $f" && exit 1)
+          done
+
+      - name: Validate Kubernetes hardening manifests parse + enforce security context
+        run: |
+          python3 - <<'PYEOF'
+          from pathlib import Path
+          import yaml
+
+          base = Path("infra/kubernetes/base")
+          files = sorted(base.rglob("*.yaml"))
+          assert files, "No kubernetes base manifests found"
+          found_deploy = False
+          for f in files:
+              docs = [d for d in yaml.safe_load_all(f.read_text()) if d]
+              for d in docs:
+                  kind = d.get("kind")
+                  assert kind, f"{f}: document missing kind"
+                  if kind == "Deployment":
+                      found_deploy = True
+                      sc = d["spec"]["template"]["spec"]["securityContext"]
+                      assert sc.get("runAsNonRoot") is True, f"{f}: must runAsNonRoot"
+                      c = d["spec"]["template"]["spec"]["containers"][0]
+                      csc = c["securityContext"]
+                      assert csc.get("allowPrivilegeEscalation") is False
+                      assert csc.get("readOnlyRootFilesystem") is True
+                      assert "ALL" in csc["capabilities"]["drop"]
+                      assert c["resources"]["limits"]["memory"], "memory limit required"
+              print(f"OK  {f}  ({len(docs)} docs)")
+          assert found_deploy, "Expected at least one hardened Deployment"
+          print("\nKubernetes hardening manifests validated.")
+          PYEOF

@@ -21,7 +21,6 @@ from drift_engine import (  # noqa: E402
     _compute_psi,
     _run_ks_test,
     compute_drift,
-    PSI_THRESHOLD,
     RETRAIN_PSI_THRESHOLD,
 )
 
@@ -98,17 +97,19 @@ class TestComputeDrift:
     def stable_df(self):
         rng = np.random.default_rng(42)
         n = 500
-        return pd.DataFrame({
-            "cpu_usage_pct": rng.normal(45, 10, n).clip(0, 100),
-            "mem_usage_pct": rng.normal(55, 10, n).clip(0, 100),
-            "restart_count": rng.poisson(0.5, n).astype(float),
-        })
+        return pd.DataFrame(
+            {
+                "cpu_usage_pct": rng.normal(45, 10, n).clip(0, 100),
+                "mem_usage_pct": rng.normal(55, 10, n).clip(0, 100),
+                "restart_count": rng.poisson(0.5, n).astype(float),
+            }
+        )
 
     def test_no_drift_does_not_trigger_retrain(self, stable_df):
         result = compute_drift(stable_df, stable_df.copy())
-        assert not result.retrain_triggered, (
-            f"Identical data should not trigger retrain, PSI={result.psi_score}"
-        )
+        assert (
+            not result.retrain_triggered
+        ), f"Identical data should not trigger retrain, PSI={result.psi_score}"
         assert result.psi_score < RETRAIN_PSI_THRESHOLD
 
     def test_large_drift_triggers_retrain(self, stable_df):
@@ -116,9 +117,9 @@ class TestComputeDrift:
         shifted["cpu_usage_pct"] = (shifted["cpu_usage_pct"] + 40).clip(0, 100)
         shifted["mem_usage_pct"] = (shifted["mem_usage_pct"] + 30).clip(0, 100)
         result = compute_drift(stable_df, shifted)
-        assert result.retrain_triggered, (
-            f"Large drift should trigger retrain, PSI={result.psi_score}"
-        )
+        assert (
+            result.retrain_triggered
+        ), f"Large drift should trigger retrain, PSI={result.psi_score}"
         assert result.psi_score > RETRAIN_PSI_THRESHOLD
 
     def test_result_counts_match_input(self, stable_df):

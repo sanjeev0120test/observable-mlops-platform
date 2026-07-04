@@ -69,9 +69,7 @@ def _extract_features(log_lines: list[str]) -> np.ndarray:
     """
     from sklearn.feature_extraction.text import HashingVectorizer
 
-    vectorizer = HashingVectorizer(
-        n_features=EMBEDDING_DIM, norm="l2", alternate_sign=False
-    )
+    vectorizer = HashingVectorizer(n_features=EMBEDDING_DIM, norm="l2", alternate_sign=False)
 
     windows = []
     for i in range(0, len(log_lines) - WINDOW_SIZE + 1, WINDOW_SIZE // 2):

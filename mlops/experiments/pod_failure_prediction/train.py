@@ -67,16 +67,19 @@ def train_and_log(
         accuracy = float(clf.score(X_test, y_test))
 
         mlflow.log_params(params)
-        mlflow.log_metrics({
-            "f1_score": f1,
-            "roc_auc": auc,
-            "accuracy": accuracy,
-            "test_samples": len(X_test),
-        })
+        mlflow.log_metrics(
+            {
+                "f1_score": f1,
+                "roc_auc": auc,
+                "accuracy": accuracy,
+                "test_samples": len(X_test),
+            }
+        )
         mlflow.set_tags({"uc": "UC4,UC9", "feature_cols": ",".join(FEATURE_COLS)})
 
         model_info = mlflow.sklearn.log_model(
-            clf, "model",
+            clf,
+            "model",
             registered_model_name=MODEL_NAME if register_model else None,
         )
 

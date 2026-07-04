@@ -6,6 +6,7 @@ on:
     paths:
       - "eval/**"
       - "services/**"
+      - "platform/**"
       - "tests/unit/**"
       - "aiops/policies/opa/**"
       - "pyproject.toml"

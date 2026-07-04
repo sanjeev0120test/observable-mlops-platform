@@ -94,3 +94,41 @@ deny_reasons[reason] {
     not input.action in {"restart_pod", "scale_deployment", "rollback_deployment", "drain_node"}
     reason := sprintf("action '%v' is not in the allowed actions list", [input.action])
 }
+
+# ── Input validation: a remediation must name a concrete target ──────────────
+# Prevents malformed/ambiguous requests from ever being allowed.
+deny_reasons[reason] {
+    input.action == "restart_pod"
+    not input.target.pod
+    reason := "action 'restart_pod' requires target.pod"
+}
+
+deny_reasons[reason] {
+    input.action == "scale_deployment"
+    not input.target.deployment
+    reason := "action 'scale_deployment' requires target.deployment"
+}
+
+deny_reasons[reason] {
+    input.action == "rollback_deployment"
+    not input.target.deployment
+    reason := "action 'rollback_deployment' requires target.deployment"
+}
+
+deny_reasons[reason] {
+    input.action == "drain_node"
+    not input.target.node
+    reason := "action 'drain_node' requires target.node"
+}
+
+# ── Blast-radius cap: scaling may not exceed a hard replica ceiling ──────────
+max_scale_replicas := 50
+
+deny_reasons[reason] {
+    input.action == "scale_deployment"
+    input.target.replicas > max_scale_replicas
+    reason := sprintf(
+        "scale_deployment replicas %v exceeds blast-radius cap %v",
+        [input.target.replicas, max_scale_replicas],
+    )
+}

@@ -13,7 +13,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from eval.metrics import THRESHOLDS, UC_METRICS, EvalResult, MetricSpec
+from eval.metrics import THRESHOLDS, UC_METRICS, MetricSpec
 from eval.scorer import _score_metric, compute_score
 
 
@@ -67,9 +67,9 @@ class TestUCMetricsDefinitions:
 
     def test_all_23_ucs_defined(self):
         expected = {f"UC{i}" for i in range(1, 24)}
-        assert expected == set(UC_METRICS.keys()), (
-            f"Missing UCs: {expected - set(UC_METRICS.keys())}"
-        )
+        assert expected == set(
+            UC_METRICS.keys()
+        ), f"Missing UCs: {expected - set(UC_METRICS.keys())}"
 
     def test_all_23_thresholds_defined(self):
         expected = {f"UC{i}" for i in range(1, 24)}
@@ -83,9 +83,9 @@ class TestUCMetricsDefinitions:
         valid_directions = {"higher_better", "lower_better", "bool_true", "exact"}
         for uc, specs in UC_METRICS.items():
             for spec in specs:
-                assert spec.direction in valid_directions, (
-                    f"{uc}.{spec.name} has invalid direction: {spec.direction}"
-                )
+                assert (
+                    spec.direction in valid_directions
+                ), f"{uc}.{spec.name} has invalid direction: {spec.direction}"
 
     def test_all_metric_weights_positive(self):
         for uc, specs in UC_METRICS.items():
@@ -101,23 +101,29 @@ class TestComputeScore:
     """Tests for the composite score computation."""
 
     def test_uc1_drift_detected_should_pass(self):
-        result = compute_score("UC1", {
-            "psi_score": 1.2,
-            "ks_statistic": 0.45,
-            "alibi_lsdd_p_value": 0.001,
-            "retrain_triggered": True,
-            "nannyml_performance_estimate": 0.1,
-        })
+        result = compute_score(
+            "UC1",
+            {
+                "psi_score": 1.2,
+                "ks_statistic": 0.45,
+                "alibi_lsdd_p_value": 0.001,
+                "retrain_triggered": True,
+                "nannyml_performance_estimate": 0.1,
+            },
+        )
         assert result.passed, f"UC1 drift-detected should PASS, got score={result.score}"
 
     def test_uc1_no_drift_should_fail(self):
-        result = compute_score("UC1", {
-            "psi_score": 0.01,
-            "ks_statistic": 0.01,
-            "alibi_lsdd_p_value": 0.95,
-            "retrain_triggered": False,
-            "nannyml_performance_estimate": 0.0,
-        })
+        result = compute_score(
+            "UC1",
+            {
+                "psi_score": 0.01,
+                "ks_statistic": 0.01,
+                "alibi_lsdd_p_value": 0.95,
+                "retrain_triggered": False,
+                "nannyml_performance_estimate": 0.0,
+            },
+        )
         assert not result.passed, f"UC1 no-drift should FAIL, got score={result.score}"
 
     def test_missing_metric_scores_zero_for_that_metric(self):
@@ -148,27 +154,36 @@ class TestComputeScore:
 
     def test_uc6_opa_gate_must_be_exact_1(self):
         """UC6: opa_gate_pass_rate is 'exact' direction — must equal 1.0 to score 100."""
-        result_pass = compute_score("UC6", {
-            "remediation_success_rate": 0.95,
-            "opa_gate_pass_rate": 1.0,
-            "false_remediation_rate": 0.02,
-            "mttr_seconds": 200.0,
-        })
-        result_fail = compute_score("UC6", {
-            "remediation_success_rate": 0.95,
-            "opa_gate_pass_rate": 0.9,  # Not exactly 1.0
-            "false_remediation_rate": 0.02,
-            "mttr_seconds": 200.0,
-        })
+        result_pass = compute_score(
+            "UC6",
+            {
+                "remediation_success_rate": 0.95,
+                "opa_gate_pass_rate": 1.0,
+                "false_remediation_rate": 0.02,
+                "mttr_seconds": 200.0,
+            },
+        )
+        result_fail = compute_score(
+            "UC6",
+            {
+                "remediation_success_rate": 0.95,
+                "opa_gate_pass_rate": 0.9,  # Not exactly 1.0
+                "false_remediation_rate": 0.02,
+                "mttr_seconds": 200.0,
+            },
+        )
         assert result_pass.details["opa_gate_pass_rate"]["score"] == 100.0
         assert result_fail.details["opa_gate_pass_rate"]["score"] == 0.0
 
     def test_eval_result_serialization(self):
-        result = compute_score("UC3", {
-            "deduplication_rate": 0.80,
-            "silhouette_score": 0.45,
-            "false_positive_rate": 0.05,
-        })
+        result = compute_score(
+            "UC3",
+            {
+                "deduplication_rate": 0.80,
+                "silhouette_score": 0.45,
+                "false_positive_rate": 0.05,
+            },
+        )
         d = result.to_dict()
         assert "uc" in d
         assert "score" in d
@@ -180,13 +195,16 @@ class TestComputeScore:
         assert loaded["uc"] == "UC3"
 
     def test_eval_result_save_creates_file(self, tmp_path):
-        result = compute_score("UC1", {
-            "psi_score": 0.5,
-            "ks_statistic": 0.3,
-            "alibi_lsdd_p_value": 0.02,
-            "retrain_triggered": True,
-            "nannyml_performance_estimate": 0.7,
-        })
+        result = compute_score(
+            "UC1",
+            {
+                "psi_score": 0.5,
+                "ks_statistic": 0.3,
+                "alibi_lsdd_p_value": 0.02,
+                "retrain_triggered": True,
+                "nannyml_performance_estimate": 0.7,
+            },
+        )
         path = result.save(tmp_path)
         assert path.exists()
         data = json.loads(path.read_text())

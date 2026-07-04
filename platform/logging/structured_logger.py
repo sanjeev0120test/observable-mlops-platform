@@ -70,10 +70,28 @@ class StructuredFormatter(logging.Formatter):
 
         # Standard log record extra fields (set via logger.info("msg", extra={"key": v}))
         standard_attrs = {
-            "name", "msg", "args", "created", "filename", "funcName",
-            "levelname", "levelno", "lineno", "module", "msecs", "pathname",
-            "process", "processName", "relativeCreated", "thread", "threadName",
-            "exc_info", "exc_text", "stack_info", "message", "structured_fields",
+            "name",
+            "msg",
+            "args",
+            "created",
+            "filename",
+            "funcName",
+            "levelname",
+            "levelno",
+            "lineno",
+            "module",
+            "msecs",
+            "pathname",
+            "process",
+            "processName",
+            "relativeCreated",
+            "thread",
+            "threadName",
+            "exc_info",
+            "exc_text",
+            "stack_info",
+            "message",
+            "structured_fields",
         }
         for key, value in record.__dict__.items():
             if key not in standard_attrs and not key.startswith("_"):

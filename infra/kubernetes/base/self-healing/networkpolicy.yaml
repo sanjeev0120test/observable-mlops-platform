@@ -1,0 +1,71 @@
+---
+# Default-deny all ingress/egress for self-healing, then allow only what it needs.
+# Least-privilege networking: the remediation brain can ONLY reach OPA and the
+# Kubernetes API, and only Prometheus/n8n can reach it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: self-healing-default-deny
+  namespace: platform
+  labels:
+    app: self-healing
+spec:
+  podSelector:
+    matchLabels:
+      app: self-healing
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: self-healing-allow
+  namespace: platform
+  labels:
+    app: self-healing
+spec:
+  podSelector:
+    matchLabels:
+      app: self-healing
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Scrape from Prometheus and remediation triggers from n8n.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+        - podSelector:
+            matchLabels:
+              app: n8n
+      ports:
+        - protocol: TCP
+          port: 8000
+  egress:
+    # Policy decisions from OPA.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: opa
+      ports:
+        - protocol: TCP
+          port: 8181
+    # DNS resolution.
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Kubernetes API for executing remediations.
+    - ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443

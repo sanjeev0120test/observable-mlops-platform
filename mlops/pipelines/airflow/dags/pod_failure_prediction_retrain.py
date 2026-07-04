@@ -125,7 +125,9 @@ def _emit_lineage_event(
             json=event,
             timeout=5.0,
         )
-        log.info("OpenLineage event emitted: %s state=%s status=%d", job_name, state, resp.status_code)
+        log.info(
+            "OpenLineage event emitted: %s state=%s status=%d", job_name, state, resp.status_code
+        )
     except Exception as exc:
         log.warning("OpenLineage unavailable — lineage not tracked: %s", exc)
 
@@ -178,10 +180,12 @@ def pull_training_data(**context) -> str:
         from datetime import timezone
 
         store = FeatureStore(repo_path=FEAST_REPO_PATH)
-        entity_df = pd.DataFrame({
-            "pod_name": [f"pod-{i}" for i in range(500)],
-            "event_timestamp": [datetime.now(timezone.utc)] * 500,
-        })
+        entity_df = pd.DataFrame(
+            {
+                "pod_name": [f"pod-{i}" for i in range(500)],
+                "event_timestamp": [datetime.now(timezone.utc)] * 500,
+            }
+        )
         training_df = store.get_historical_features(
             entity_df=entity_df,
             features=[
@@ -200,13 +204,15 @@ def pull_training_data(**context) -> str:
 
         rng = np.random.default_rng(42)
         n = 5000
-        fallback = pd.DataFrame({
-            "cpu_usage_pct": rng.normal(45, 15, n).clip(0, 100),
-            "mem_usage_pct": rng.normal(55, 12, n).clip(0, 100),
-            "restart_count": rng.poisson(0.5, n),
-            "ready_status": rng.choice([True, False], n, p=[0.95, 0.05]),
-            "label": rng.choice([0, 1], n, p=[0.92, 0.08]),
-        })
+        fallback = pd.DataFrame(
+            {
+                "cpu_usage_pct": rng.normal(45, 15, n).clip(0, 100),
+                "mem_usage_pct": rng.normal(55, 12, n).clip(0, 100),
+                "restart_count": rng.poisson(0.5, n),
+                "ready_status": rng.choice([True, False], n, p=[0.95, 0.05]),
+                "label": rng.choice([0, 1], n, p=[0.92, 0.08]),
+            }
+        )
         fallback.to_parquet(output, index=False)
         log.info("Synthetic fallback: %d rows → %s", n, output)
 
@@ -288,13 +294,15 @@ def train_model(**context) -> str:
             "model",
             registered_model_name=context["params"].get("model_name", "pod-failure-prediction"),
         )
-        mlflow.set_tags({
-            "uc": "UC1",
-            "trigger": context["params"].get("trigger", "manual"),
-            "psi_score": context["params"].get("psi_score", "0.0"),
-            "training_dataset": "feast/pod_metrics_features",
-            "shap_values_logged": "false",  # UC17 pipeline adds SHAP separately
-        })
+        mlflow.set_tags(
+            {
+                "uc": "UC1",
+                "trigger": context["params"].get("trigger", "manual"),
+                "psi_score": context["params"].get("psi_score", "0.0"),
+                "training_dataset": "feast/pod_metrics_features",
+                "shap_values_logged": "false",  # UC17 pipeline adds SHAP separately
+            }
+        )
 
         run_id = run.info.run_id
         log.info("Model trained — %s run_id=%s", metrics, run_id)
@@ -345,9 +353,7 @@ def opa_promotion_gate(**context) -> bool:
 
     if not opa_result.get("allow", False):
         deny_reasons = opa_result.get("deny_reasons", ["No reason returned"])
-        raise ValueError(
-            f"OPA DENIED model promotion to staging. Reasons: {deny_reasons}"
-        )
+        raise ValueError(f"OPA DENIED model promotion to staging. Reasons: {deny_reasons}")
 
     log.info("OPA ALLOWED model promotion to staging: %s", opa_result)
     return True

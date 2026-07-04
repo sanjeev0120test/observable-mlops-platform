@@ -51,9 +51,7 @@ class ComplianceReport:
 
     @property
     def is_compliant(self) -> bool:
-        return all(
-            c.passed for c in self.checks if c.severity == "error"
-        )
+        return all(c.passed for c in self.checks if c.severity == "error")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -61,7 +59,9 @@ class ComplianceReport:
             "version": self.version,
             "is_compliant": self.is_compliant,
             "errors": [c.details for c in self.checks if not c.passed and c.severity == "error"],
-            "warnings": [c.details for c in self.checks if not c.passed and c.severity == "warning"],
+            "warnings": [
+                c.details for c in self.checks if not c.passed and c.severity == "warning"
+            ],
             "checks": [
                 {
                     "name": c.name,
@@ -117,133 +117,151 @@ def check_eu_ai_act_compliance(
 
     # ── Article 9: Risk Management ────────────────────────────────────────────
     has_risk_doc = bool(
-        run_tags.get("risk_assessment") or
-        run_tags.get("eu_ai_act_risk_level") or
-        (model_card_path and model_card_path.exists() and
-         "risk" in model_card_path.read_text().lower())
+        run_tags.get("risk_assessment")
+        or run_tags.get("eu_ai_act_risk_level")
+        or (
+            model_card_path
+            and model_card_path.exists()
+            and "risk" in model_card_path.read_text().lower()
+        )
     )
-    report.checks.append(ComplianceCheck(
-        name="risk_assessment_documented",
-        article="Art. 9 — Risk Management",
-        passed=has_risk_doc,
-        details=(
-            "Risk assessment documented in MLflow tags or model card"
-            if has_risk_doc
-            else "MISSING: Tag 'eu_ai_act_risk_level' or model card with risk section required"
-        ),
-        severity="error",
-    ))
+    report.checks.append(
+        ComplianceCheck(
+            name="risk_assessment_documented",
+            article="Art. 9 — Risk Management",
+            passed=has_risk_doc,
+            details=(
+                "Risk assessment documented in MLflow tags or model card"
+                if has_risk_doc
+                else "MISSING: Tag 'eu_ai_act_risk_level' or model card with risk section required"
+            ),
+            severity="error",
+        )
+    )
 
     # ── Article 10: Data Governance ────────────────────────────────────────────
     has_data_lineage = bool(
-        run_tags.get("training_dataset") or
-        run_tags.get("data_source") or
-        run_tags.get("openlineage_run_id")
+        run_tags.get("training_dataset")
+        or run_tags.get("data_source")
+        or run_tags.get("openlineage_run_id")
     )
-    report.checks.append(ComplianceCheck(
-        name="training_data_documented",
-        article="Art. 10 — Data Governance",
-        passed=has_data_lineage,
-        details=(
-            f"Training data source documented: {run_tags.get('training_dataset', run_tags.get('data_source'))}"
-            if has_data_lineage
-            else "MISSING: Tag 'training_dataset' or 'data_source' required for data governance"
-        ),
-        severity="error",
-    ))
+    report.checks.append(
+        ComplianceCheck(
+            name="training_data_documented",
+            article="Art. 10 — Data Governance",
+            passed=has_data_lineage,
+            details=(
+                f"Training data source documented: {run_tags.get('training_dataset', run_tags.get('data_source'))}"
+                if has_data_lineage
+                else "MISSING: Tag 'training_dataset' or 'data_source' required for data governance"
+            ),
+            severity="error",
+        )
+    )
 
     # ── Article 13: Transparency (Explainability) ─────────────────────────────
     has_shap = bool(
-        run_tags.get("shap_values_logged") == "true" or
-        run_metrics.get("shap_mean_abs_impact")
+        run_tags.get("shap_values_logged") == "true" or run_metrics.get("shap_mean_abs_impact")
     )
-    report.checks.append(ComplianceCheck(
-        name="explainability_logged",
-        article="Art. 13 — Transparency",
-        passed=has_shap,
-        details=(
-            "SHAP values logged — model is explainable (UC17)"
-            if has_shap
-            else "MISSING: SHAP values must be logged for high-risk AI transparency (UC17)"
-        ),
-        severity="error",
-    ))
+    report.checks.append(
+        ComplianceCheck(
+            name="explainability_logged",
+            article="Art. 13 — Transparency",
+            passed=has_shap,
+            details=(
+                "SHAP values logged — model is explainable (UC17)"
+                if has_shap
+                else "MISSING: SHAP values must be logged for high-risk AI transparency (UC17)"
+            ),
+            severity="error",
+        )
+    )
 
     # ── Article 14: Human Oversight ────────────────────────────────────────────
     has_human_oversight = bool(
-        run_tags.get("human_review_approved") == "true" or
-        run_tags.get("approval_gate_passed") == "true" or
-        run_tags.get("requestor") not in (None, "anonymous", "ci-pipeline")
+        run_tags.get("human_review_approved") == "true"
+        or run_tags.get("approval_gate_passed") == "true"
+        or run_tags.get("requestor") not in (None, "anonymous", "ci-pipeline")
     )
-    report.checks.append(ComplianceCheck(
-        name="human_oversight_gate",
-        article="Art. 14 — Human Oversight",
-        passed=has_human_oversight,
-        details=(
-            f"Human oversight gate passed by: {run_tags.get('requestor', 'unknown')}"
-            if has_human_oversight
-            else "WARNING: No human review approval tag found — autonomous promotion to production"
-        ),
-        severity="warning",
-    ))
+    report.checks.append(
+        ComplianceCheck(
+            name="human_oversight_gate",
+            article="Art. 14 — Human Oversight",
+            passed=has_human_oversight,
+            details=(
+                f"Human oversight gate passed by: {run_tags.get('requestor', 'unknown')}"
+                if has_human_oversight
+                else "WARNING: No human review approval tag found — autonomous promotion to production"
+            ),
+            severity="warning",
+        )
+    )
 
     # ── Article 17: Technical Documentation ───────────────────────────────────
     has_model_card = model_card_path is not None and model_card_path.exists()
-    report.checks.append(ComplianceCheck(
-        name="model_card_exists",
-        article="Art. 17 — Technical Documentation",
-        passed=has_model_card,
-        details=(
-            f"Model card found at {model_card_path}"
-            if has_model_card
-            else "MISSING: Model card required at mlops/models/<model_name>/model_card.md"
-        ),
-        severity="error",
-    ))
+    report.checks.append(
+        ComplianceCheck(
+            name="model_card_exists",
+            article="Art. 17 — Technical Documentation",
+            passed=has_model_card,
+            details=(
+                f"Model card found at {model_card_path}"
+                if has_model_card
+                else "MISSING: Model card required at mlops/models/<model_name>/model_card.md"
+            ),
+            severity="error",
+        )
+    )
 
     # ── Drift Monitoring (Recital 47, Art. 9): Continuous monitoring ──────────
     accuracy = run_metrics.get("accuracy", run_metrics.get("val_accuracy", 0.0))
     drift_psi = run_metrics.get("drift_psi", run_metrics.get("psi_score", 0.0))
     has_performance_metrics = accuracy > 0.0
-    report.checks.append(ComplianceCheck(
-        name="performance_metrics_logged",
-        article="Art. 9 — Continuous Monitoring",
-        passed=has_performance_metrics,
-        details=(
-            f"Performance metrics: accuracy={accuracy:.4f}, drift_psi={drift_psi:.4f}"
-            if has_performance_metrics
-            else "MISSING: Performance metrics (accuracy, F1) must be logged to MLflow"
-        ),
-        severity="error",
-    ))
+    report.checks.append(
+        ComplianceCheck(
+            name="performance_metrics_logged",
+            article="Art. 9 — Continuous Monitoring",
+            passed=has_performance_metrics,
+            details=(
+                f"Performance metrics: accuracy={accuracy:.4f}, drift_psi={drift_psi:.4f}"
+                if has_performance_metrics
+                else "MISSING: Performance metrics (accuracy, F1) must be logged to MLflow"
+            ),
+            severity="error",
+        )
+    )
 
     # ── Minimum accuracy threshold for high-risk AI ────────────────────────────
     accuracy_sufficient = accuracy >= 0.70 or not has_performance_metrics
-    report.checks.append(ComplianceCheck(
-        name="minimum_accuracy_threshold",
-        article="Art. 9 — Technical Robustness",
-        passed=accuracy_sufficient,
-        details=(
-            f"Accuracy {accuracy:.4f} meets minimum 0.70 threshold"
-            if accuracy_sufficient
-            else f"FAIL: Accuracy {accuracy:.4f} < 0.70 minimum for production deployment"
-        ),
-        severity="error",
-    ))
+    report.checks.append(
+        ComplianceCheck(
+            name="minimum_accuracy_threshold",
+            article="Art. 9 — Technical Robustness",
+            passed=accuracy_sufficient,
+            details=(
+                f"Accuracy {accuracy:.4f} meets minimum 0.70 threshold"
+                if accuracy_sufficient
+                else f"FAIL: Accuracy {accuracy:.4f} < 0.70 minimum for production deployment"
+            ),
+            severity="error",
+        )
+    )
 
     # ── Bias / Fairness check tag ──────────────────────────────────────────────
     has_bias_check = bool(run_tags.get("bias_check_completed") or run_tags.get("fairness_report"))
-    report.checks.append(ComplianceCheck(
-        name="bias_fairness_check",
-        article="Art. 10 — Bias & Fairness",
-        passed=has_bias_check,
-        details=(
-            "Bias/fairness check completed"
-            if has_bias_check
-            else "WARNING: No bias check documented — consider adding tag 'bias_check_completed'"
-        ),
-        severity="warning",
-    ))
+    report.checks.append(
+        ComplianceCheck(
+            name="bias_fairness_check",
+            article="Art. 10 — Bias & Fairness",
+            passed=has_bias_check,
+            details=(
+                "Bias/fairness check completed"
+                if has_bias_check
+                else "WARNING: No bias check documented — consider adding tag 'bias_check_completed'"
+            ),
+            severity="warning",
+        )
+    )
 
     error_count = sum(1 for c in report.checks if not c.passed and c.severity == "error")
     warning_count = sum(1 for c in report.checks if not c.passed and c.severity == "warning")

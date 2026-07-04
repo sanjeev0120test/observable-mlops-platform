@@ -1,0 +1,16 @@
+---
+# Keep at least one self-healing replica available during voluntary disruptions
+# (node drains, rollouts) so remediation capability is never fully lost.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: self-healing
+  namespace: platform
+  labels:
+    app: self-healing
+    app.kubernetes.io/part-of: observable-mlops-platform
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: self-healing

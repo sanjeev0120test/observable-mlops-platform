@@ -127,7 +127,8 @@ def _find_stable_previous_version(model_name: str, current_version: str) -> str 
         # Find versions older than current that were previously in Production
         current_int = int(current_version) if current_version.isdigit() else 0
         candidates = [
-            v for v in versions
+            v
+            for v in versions
             if int(v.get("version", 0)) < current_int
             and v.get("current_stage") in ("Production", "Staging", "Archived")
         ]
@@ -175,7 +176,11 @@ def check_rollback_needed(model_name: str) -> RollbackDecision:
             continue
         # Higher-better metrics: rollback if below threshold
         # Lower-better metrics (drift_psi, reconstruction_error): rollback if above threshold
-        is_lower_better = metric_name in ("drift_psi", "reconstruction_error", "false_positive_rate")
+        is_lower_better = metric_name in (
+            "drift_psi",
+            "reconstruction_error",
+            "false_positive_rate",
+        )
         if is_lower_better and live_value > threshold:
             reasons.append(
                 f"{metric_name}={live_value:.4f} exceeds rollback threshold {threshold:.4f}"

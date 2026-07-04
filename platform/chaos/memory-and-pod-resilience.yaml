@@ -1,0 +1,119 @@
+---
+# Chaos Suite: Memory pressure + pod-kill resilience (Chaos Mesh + Litmus)
+#
+# Scenarios in this file:
+#   1. StressChaos  — memory hog on drift-monitor (validate OOM handling + probes)
+#   2. PodChaos     — kill self-healing pod (validate it recovers fail-closed)
+#   3. Job          — verifier confirming self-healing is fail-closed after restart
+#   4. Litmus       — pod-delete experiment as an alternative chaos engine
+#
+# Run (Chaos Mesh): kubectl apply -f platform/chaos/memory-and-pod-resilience.yaml
+# Prereqs: Chaos Mesh (helm install chaos-mesh chaos-mesh/chaos-mesh) and/or
+#          Litmus (kubectl apply -f https://litmuschaos.github.io/litmus/litmus-operator-latest.yaml)
+
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: drift-monitor-memory-hog
+  namespace: platform
+  labels:
+    app.kubernetes.io/part-of: observable-mlops-platform
+    chaos-scenario: memory-stress
+    uc: UC1
+spec:
+  mode: one
+  selector:
+    namespaces:
+      - platform
+    labelSelectors:
+      app: drift-monitor
+  stressors:
+    memory:
+      workers: 2
+      size: "512MB"
+  duration: "180s"
+---
+# Kill the self-healing pod; it must come back and STILL be fail-closed on OPA loss.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: self-healing-pod-kill
+  namespace: platform
+  labels:
+    app.kubernetes.io/part-of: observable-mlops-platform
+    chaos-scenario: pod-kill
+    uc: UC6
+spec:
+  action: pod-kill
+  mode: one
+  selector:
+    namespaces:
+      - platform
+    labelSelectors:
+      app: self-healing
+  gracePeriod: 0
+  duration: "60s"
+  scheduler:
+    cron: "@once"
+---
+# Verifier: after the kill, self-healing must be healthy AND report fail_closed=true.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: self-healing-recovery-verifier
+  namespace: platform
+  labels:
+    chaos-scenario: pod-kill
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: verifier
+          image: curlimages/curl:8.5.0
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for self-healing to recover after pod-kill..."
+              for i in $(seq 1 30); do
+                BODY=$(curl -s http://self-healing:8000/health || true)
+                echo "attempt $i: $BODY"
+                echo "$BODY" | grep -q '"status":"ok"' && \
+                echo "$BODY" | grep -q '"fail_closed":true' && {
+                  echo "PASS: self-healing recovered and is still fail-closed"
+                  exit 0
+                }
+                sleep 5
+              done
+              echo "FAIL: self-healing did not recover to a fail-closed healthy state"
+              exit 1
+---
+# Litmus alternative: pod-delete experiment (works without Chaos Mesh installed).
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: self-healing-litmus
+  namespace: platform
+  labels:
+    app.kubernetes.io/part-of: observable-mlops-platform
+    chaos-scenario: pod-delete
+    uc: UC6
+spec:
+  appinfo:
+    appns: platform
+    applabel: "app=self-healing"
+    appkind: deployment
+  chaosServiceAccount: litmus-admin
+  experiments:
+    - name: pod-delete
+      spec:
+        components:
+          env:
+            - name: TOTAL_CHAOS_DURATION
+              value: "60"
+            - name: CHAOS_INTERVAL
+              value: "10"
+            - name: FORCE
+              value: "true"

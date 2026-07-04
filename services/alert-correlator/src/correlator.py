@@ -23,11 +23,11 @@ logger = logging.getLogger(__name__)
 
 # Feature weights in the DBSCAN distance space
 # Tune: higher TIME_WEIGHT = cluster more aggressively by time proximity
-TIME_WEIGHT = 0.6       # Temporal proximity is the strongest signal
+TIME_WEIGHT = 0.6  # Temporal proximity is the strongest signal
 NAMESPACE_WEIGHT = 0.3  # Same namespace = likely same blast radius
-ALERT_WEIGHT = 0.1      # Same alert type matters but less than time+namespace
+ALERT_WEIGHT = 0.1  # Same alert type matters but less than time+namespace
 
-MIN_SAMPLES = 2         # Minimum cluster size — single alerts remain as outliers
+MIN_SAMPLES = 2  # Minimum cluster size — single alerts remain as outliers
 
 
 @dataclass
@@ -62,11 +62,13 @@ def _build_feature_matrix(alerts_df: pd.DataFrame) -> np.ndarray:
     ns_norm = ns_encoded.astype(float) / max(float(ns_encoded.max()), 1.0)
     alert_norm = alert_encoded.astype(float) / max(float(alert_encoded.max()), 1.0)
 
-    X = np.column_stack([
-        TIME_WEIGHT * time_norm,
-        NAMESPACE_WEIGHT * ns_norm,
-        ALERT_WEIGHT * alert_norm,
-    ])
+    X = np.column_stack(
+        [
+            TIME_WEIGHT * time_norm,
+            NAMESPACE_WEIGHT * ns_norm,
+            ALERT_WEIGHT * alert_norm,
+        ]
+    )
     return X
 
 
@@ -159,16 +161,20 @@ def correlate_alerts(
                 - pd.to_datetime(cluster_alerts["timestamp"]).min()
             ).total_seconds()
         )
-        groups.append({
-            "cluster_id": int(cluster_id),
-            "n_alerts": int(len(cluster_alerts)),
-            "alertnames": cluster_alerts["alertname"].unique().tolist(),
-            "namespaces": cluster_alerts["namespace"].unique().tolist(),
-            "time_span_seconds": time_span,
-            "severity": cluster_alerts["severity"].mode()[0]
-            if "severity" in cluster_alerts.columns
-            else "unknown",
-        })
+        groups.append(
+            {
+                "cluster_id": int(cluster_id),
+                "n_alerts": int(len(cluster_alerts)),
+                "alertnames": cluster_alerts["alertname"].unique().tolist(),
+                "namespaces": cluster_alerts["namespace"].unique().tolist(),
+                "time_span_seconds": time_span,
+                "severity": (
+                    cluster_alerts["severity"].mode()[0]
+                    if "severity" in cluster_alerts.columns
+                    else "unknown"
+                ),
+            }
+        )
 
     logger.info(
         "Alert correlation: %d input → %d clusters (%d outliers), "
