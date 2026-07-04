@@ -56,8 +56,7 @@ jobs:
       - name: Aggregate all UC results
         run: |
           python3 - <<'PYEOF'
-          import sys, json
-          sys.path.insert(0, '.')
+          import sys, json          sys.path.insert(0, '.')
           from pathlib import Path
           from eval.scorer import aggregate_all_results
           from eval.metrics import THRESHOLDS
@@ -95,6 +94,8 @@ jobs:
               print(f"\n  Overall pass rate: {pass_rate:.0%}")
               if pass_rate < 1.0:
                   print(f"  WARNING: {summary['failed']} UC(s) failing")
+                  # Exit 1 when any evaluated UC fails (not just when missing)
+                  sys.exit(1)
           else:
               print("  No eval results found — run individual UC workflows first")
           PYEOF

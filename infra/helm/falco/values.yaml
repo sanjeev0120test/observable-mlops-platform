@@ -1,0 +1,160 @@
+# Falco Helm values for observable-mlops-platform (UC7)
+# Install: helm upgrade --install falco falcosecurity/falco \
+#   --namespace falco --create-namespace \
+#   -f infra/helm/falco/values.yaml
+#
+# Reference: https://github.com/falcosecurity/charts/tree/master/charts/falco
+
+image:
+  registry: docker.io
+  repository: falcosecurity/falco-no-driver
+  tag: "0.38.0"
+
+driver:
+  enabled: true
+  kind: ebpf  # Use eBPF driver (no kernel module required — works on EKS Bottlerocket)
+  ebpf:
+    path: "${HOME}/.falco/falco-bpf.o"
+    hostNetwork: false
+
+falco:
+  # Log JSON to stdout for Loki/Fluent Bit ingestion
+  json_output: true
+  json_include_output_property: true
+  log_stderr: true
+  log_syslog: false
+  log_level: warning
+  priority: warning
+
+  # Custom rules from this repo (UC7)
+  rules_file:
+    - /etc/falco/falco_rules.yaml
+    - /etc/falco/falco_rules.local.yaml
+    - /etc/falco/k8s_audit_rules.yaml
+    - /etc/falco/rules.d
+
+customRules:
+  platform_rules.yaml: |
+    # Loaded from aiops/falco/custom_rules.yml
+    # Fix: Use fd.rip.name (resolved IP name) instead of fd.sip.name for DNS-based matching
+    # fd.sip.name was unreliable — use net.dns.name or fd.rip.name for container DNS resolution
+
+    - rule: Suspicious kubectl exec in production
+      desc: Alert on kubectl exec into pods in production namespaces
+      condition: >
+        spawned_process and
+        proc.name in (kubectl, kubectl.exe) and
+        proc.args contains "exec" and
+        k8s.ns.name in (ml-serving, platform, production)
+      output: >
+        Suspicious kubectl exec in production (user=%user.name pod=%k8s.pod.name
+        namespace=%k8s.ns.name args=%proc.args container=%container.id)
+      priority: WARNING
+      tags: [UC7, security, kubectl]
+
+    - rule: Write below /etc in container
+      desc: Detect writes to /etc in containers (possible credential injection)
+      condition: >
+        open_write and
+        container.id != host and
+        fd.name startswith /etc and
+        not proc.name in (cp, mv, dpkg, apt-get, sed, passwd, nginx, openssl)
+      output: >
+        File below /etc opened for writing (user=%user.name proc=%proc.name
+        file=%fd.name container=%container.id image=%container.image.repository)
+      priority: CRITICAL
+      tags: [UC7, security, filesystem]
+
+    - rule: Outbound connection to unexpected destination
+      desc: Detect unexpected outbound connections from ML serving pods
+      condition: >
+        outbound and
+        container.label.app in (ml-serving-api, anomaly-detector, drift-monitor) and
+        not fd.rip.name in (prometheus.platform, mlflow.platform, qdrant.platform,
+                            redis.platform, postgres.platform, opa.platform,
+                            otelcol.platform, airflow-webserver.platform) and
+        not fd.rip in (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
+      output: >
+        Unexpected outbound from ML service (proc=%proc.name dest=%fd.rip.name
+        container=%container.id image=%container.image.repository)
+      priority: WARNING
+      tags: [UC7, security, network]
+
+    - rule: Model artifact tampered at runtime
+      desc: Detect modification to /models directory (potential supply chain attack)
+      condition: >
+        open_write and
+        container.id != host and
+        fd.name startswith /models and
+        not proc.name in (python, python3, mlflow)
+      output: >
+        Model artifact written at runtime (file=%fd.name proc=%proc.name
+        container=%container.id image=%container.image.repository)
+      priority: CRITICAL
+      tags: [UC7, UC9, security, mlops]
+
+    - rule: Container running as root in platform namespaces
+      desc: Alert when container runs as UID 0 outside whitelisted system namespaces
+      condition: >
+        container and
+        container.id != host and
+        user.uid = 0 and
+        not k8s.ns.name in (kube-system, cert-manager, kyverno, keda,
+                            falco, monitoring, istio-system)
+      output: >
+        Container running as root (image=%container.image.repository
+        pod=%k8s.pod.name namespace=%k8s.ns.name user=%user.name)
+      priority: WARNING
+      tags: [UC7, security, privilege]
+
+    - rule: Crypto mining process detected
+      desc: Detect known crypto mining process names in containers
+      condition: >
+        spawned_process and
+        container.id != host and
+        proc.name in (xmrig, minerd, cpuminer, cgminer, bfgminer, ethminer)
+      output: >
+        Crypto mining process in container (proc=%proc.name container=%container.id
+        image=%container.image.repository namespace=%k8s.ns.name)
+      priority: CRITICAL
+      tags: [UC7, security, cryptomining]
+
+falcoctl:
+  artifact:
+    install:
+      enabled: true
+    follow:
+      enabled: true
+
+# Falcosidekick: forward alerts to Alertmanager + Slack
+falcosidekick:
+  enabled: true
+  config:
+    alertmanager:
+      hostport: "http://alertmanager.monitoring:9093"
+      minimumpriority: "warning"
+      checkcerts: false
+    slack:
+      webhookurl: ""  # Set via: kubectl create secret ...
+      minimumpriority: "critical"
+      messageformat: "long"
+    customfields:
+      platform: "observable-mlops"
+      env: "production"
+
+# Resource limits for EKS t3/m5 nodes
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+tolerations:
+  - effect: NoSchedule
+    key: node-role.kubernetes.io/master
+  - effect: NoSchedule
+    key: node-role.kubernetes.io/control-plane
+
+priorityClassName: system-node-critical
