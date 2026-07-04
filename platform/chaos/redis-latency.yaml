@@ -1,0 +1,82 @@
+---
+# Chaos Mesh: Redis Latency Injection Scenario
+# Tests predictive rate limiter (UC18) and alert correlator (UC3) under Redis degradation.
+#
+# Expected behavior:
+#   - Services degrade gracefully (circuit breaker or fallback)
+#   - Prometheus metric redis_operation_latency_seconds increases
+#   - SLO error budget not exceeded (< 2% error rate)
+#
+# Run: kubectl apply -f platform/chaos/redis-latency.yaml -n platform
+
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: redis-network-delay
+  namespace: platform
+  labels:
+    app.kubernetes.io/part-of: observable-mlops-platform
+    chaos-scenario: redis-latency
+    uc: UC18
+spec:
+  action: delay
+  mode: one
+  selector:
+    namespaces:
+      - platform
+    labelSelectors:
+      app: redis
+  delay:
+    latency: "200ms"
+    correlation: "25"
+    jitter: "50ms"
+  direction: both
+  duration: "180s"
+---
+# Chaos Mesh: Pod Kill — Anomaly Detector Resilience
+# Tests that UC2 gracefully handles pod restarts (health checks, readiness probes).
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: anomaly-detector-pod-kill
+  namespace: platform
+  labels:
+    app.kubernetes.io/part-of: observable-mlops-platform
+    chaos-scenario: pod-kill
+    uc: UC2
+spec:
+  action: pod-kill
+  mode: one
+  selector:
+    namespaces:
+      - platform
+    labelSelectors:
+      app: anomaly-detector
+  gracePeriod: 0
+  duration: "60s"
+  scheduler:
+    cron: "@once"
+---
+# Chaos Mesh: CPU Stress — Predictive Scaler Trigger Test
+# Validates that UC4 predictive scaler correctly predicts and triggers KEDA scale-out.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: cpu-stress-scaler-test
+  namespace: platform
+  labels:
+    app.kubernetes.io/part-of: observable-mlops-platform
+    chaos-scenario: cpu-hog
+    uc: UC4
+spec:
+  mode: one
+  selector:
+    namespaces:
+      - platform
+    labelSelectors:
+      app: predictive-scaler
+  stressors:
+    cpu:
+      workers: 2
+      load: 80
+  duration: "300s"

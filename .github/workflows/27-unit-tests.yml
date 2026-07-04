@@ -1,0 +1,79 @@
+name: "27 · Platform Unit Tests (drift_engine + correlator + scorer + self_healing)"
+
+on:
+  push:
+    branches: [main, "feature/**", "fix/**"]
+    paths:
+      - "eval/**"
+      - "services/**"
+      - "tests/unit/**"
+      - "aiops/policies/opa/**"
+      - "pyproject.toml"
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: "unit-tests-${{ github.ref }}"
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  unit-tests:
+    name: "Python Unit Tests"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pytest pytest-cov numpy pandas scipy scikit-learn \
+                      httpx fastapi "starlette[full]" pydantic prometheus-client \
+                      httpx evidently nannyml
+
+      - name: Run unit tests with coverage
+        run: |
+          python -m pytest tests/unit/ \
+            -v --tb=short \
+            --cov=eval --cov=services \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing \
+            -q
+
+      - name: Upload coverage to CI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+          retention-days: 7
+
+  opa-unit-tests:
+    name: "OPA Rego Policy Unit Tests"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install OPA
+        run: |
+          curl -L -o /usr/local/bin/opa \
+            https://openpolicyagent.org/downloads/v0.65.0/opa_linux_amd64_static
+          chmod 755 /usr/local/bin/opa
+          opa version
+
+      - name: Run self_healing policy tests
+        run: |
+          opa test aiops/policies/opa/ -v --ignore "*.gitkeep"
+          echo "All OPA policy unit tests passed"
+
+      - name: Validate OPA bundle structure
+        run: |
+          opa check aiops/policies/opa/ --ignore "*.gitkeep"
+          echo "OPA bundle syntax check passed"

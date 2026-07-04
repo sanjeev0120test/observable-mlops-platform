@@ -1,0 +1,74 @@
+---
+# Chaos Mesh: OPA Unavailability Scenario
+# Tests that self-healing service is fail-closed when OPA is unreachable.
+#
+# Expected behavior:
+#   - All /api/v1/remediate requests return HTTP 503
+#   - self_healing_opa_unavailable_total counter increments
+#   - Alert fires: SelfHealingOPAUnavailable
+#   - No remediation actions are executed
+#
+# Run: kubectl apply -f platform/chaos/opa-unavailable.yaml -n chaos-testing
+# Prerequisite: Chaos Mesh installed (helm install chaos-mesh chaos-mesh/chaos-mesh)
+
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: opa-network-partition
+  namespace: platform
+  labels:
+    app.kubernetes.io/part-of: observable-mlops-platform
+    chaos-scenario: opa-unavailable
+    uc: UC6
+spec:
+  action: partition
+  mode: one
+  selector:
+    namespaces:
+      - platform
+    labelSelectors:
+      app: opa
+  direction: both
+  target:
+    mode: all
+    selector:
+      namespaces:
+        - platform
+      labelSelectors:
+        app: self-healing
+  duration: "120s"
+  scheduler:
+    cron: "@once"
+---
+# Verification job: confirm self-healing returns 503 during OPA outage
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: opa-chaos-verifier
+  namespace: platform
+  labels:
+    chaos-scenario: opa-unavailable
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: verifier
+          image: curlimages/curl:8.5.0
+          command:
+            - sh
+            - -c
+            - |
+              echo "Testing self-healing fail-closed behavior during OPA partition..."
+              HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+                -X POST http://self-healing:8000/api/v1/remediate \
+                -H "Content-Type: application/json" \
+                -d '{"action":"restart_pod","target":{"namespace":"default","pod":"test"},"trigger":{"alert_name":"PodCrashLoopBackOff"}}')
+              echo "HTTP response code: $HTTP_CODE"
+              if [ "$HTTP_CODE" = "503" ]; then
+                echo "PASS: Self-healing returned 503 (fail-closed) when OPA is down"
+                exit 0
+              else
+                echo "FAIL: Expected 503, got $HTTP_CODE — service is NOT fail-closed!"
+                exit 1
+              fi

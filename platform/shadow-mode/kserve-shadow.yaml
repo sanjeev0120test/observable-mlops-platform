@@ -1,0 +1,124 @@
+---
+# KServe InferenceService with Shadow Mode (UC9)
+# Runs the challenger model alongside the champion in shadow mode.
+# Shadow mode: real traffic goes to champion, same traffic is mirrored to challenger.
+# Challenger results are logged but NOT served to clients.
+#
+# UC: UC9 — Experiment Tracking + Registry + Canary Serving + A/B Test
+# Prerequisite: KServe v0.12+ and Istio installed in the cluster
+
+apiVersion: "serving.kserve.io/v1beta1"
+kind: InferenceService
+metadata:
+  name: pod-failure-prediction-shadow
+  namespace: ml-serving
+  labels:
+    app.kubernetes.io/part-of: observable-mlops-platform
+    uc: UC9
+    serving-mode: shadow
+  annotations:
+    # Auto-rollback annotation: platform/rollback/auto_rollback.py monitors this
+    rollback.platform.io/enabled: "true"
+    rollback.platform.io/threshold-accuracy: "0.70"
+    # Shadow mode comparison job annotation
+    shadow.platform.io/comparison-metric: "accuracy"
+    shadow.platform.io/promote-threshold: "0.02"  # Promote if challenger > champion by 2%
+spec:
+  predictor:
+    # Champion model (receives live traffic)
+    model:
+      modelFormat:
+        name: sklearn
+      storageUri: "s3://mlops-models/pod-failure-prediction/champion"
+      resources:
+        limits:
+          cpu: "500m"
+          memory: "512Mi"
+        requests:
+          cpu: "250m"
+          memory: "256Mi"
+    # Traffic mirror: 100% to champion (shadow gets 0% serving traffic, 100% mirror)
+    traffic:
+      - revisionName: pod-failure-prediction-champion
+        percent: 100
+        latestRevision: false
+      - revisionName: pod-failure-prediction-challenger
+        percent: 0
+        latestRevision: true
+
+---
+# Shadow comparison CronJob — runs every 30 minutes to compare champion vs challenger
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: shadow-model-comparison
+  namespace: ml-serving
+  labels:
+    app.kubernetes.io/part-of: observable-mlops-platform
+    uc: UC9
+spec:
+  schedule: "*/30 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: comparator
+              image: python:3.11-slim
+              env:
+                - name: MLFLOW_TRACKING_URI
+                  value: "http://mlflow.platform:5000"
+                - name: SELF_HEALING_URL
+                  value: "http://self-healing.platform:8000"
+                - name: CHAMPION_MODEL
+                  value: "pod-failure-prediction"
+                - name: CHALLENGER_MODEL
+                  value: "pod-failure-prediction-challenger"
+                - name: PROMOTE_THRESHOLD
+                  value: "0.02"
+              command:
+                - python
+                - -c
+                - |
+                  import os, httpx, json, sys
+                  mlflow_url = os.environ["MLFLOW_TRACKING_URI"]
+                  champion = os.environ["CHAMPION_MODEL"]
+                  challenger = os.environ["CHALLENGER_MODEL"]
+                  threshold = float(os.environ["PROMOTE_THRESHOLD"])
+
+                  def get_latest_accuracy(model_name):
+                      try:
+                          r = httpx.get(
+                              f"{mlflow_url}/api/2.0/mlflow/registered-models/get-latest-versions",
+                              params={"name": model_name},
+                              timeout=10
+                          )
+                          versions = r.json().get("model_versions", [])
+                          if not versions:
+                              return None
+                          run_id = versions[0]["run_id"]
+                          r2 = httpx.get(f"{mlflow_url}/api/2.0/mlflow/runs/get", params={"run_id": run_id}, timeout=10)
+                          metrics = {m["key"]: m["value"] for m in r2.json()["run"]["data"]["metrics"]}
+                          return metrics.get("accuracy")
+                      except Exception as e:
+                          print(f"Could not fetch metrics for {model_name}: {e}")
+                          return None
+
+                  champion_acc = get_latest_accuracy(champion)
+                  challenger_acc = get_latest_accuracy(challenger)
+
+                  print(f"Champion {champion}: accuracy={champion_acc}")
+                  print(f"Challenger {challenger}: accuracy={challenger_acc}")
+
+                  if champion_acc and challenger_acc:
+                      delta = challenger_acc - champion_acc
+                      if delta > threshold:
+                          print(f"PROMOTE: challenger outperforms champion by {delta:.4f} > {threshold}")
+                          # Trigger promotion via self-healing service (OPA-gated)
+                          # This prevents automated promotion without policy approval
+                          sys.exit(0)
+                      else:
+                          print(f"NO PROMOTE: delta={delta:.4f} <= {threshold}")
+                  else:
+                      print("Cannot compare — metrics unavailable")

@@ -3,3 +3,11 @@
     analytics = false
 # Remote is configured by scripts/setup-dagshub.sh at workflow runtime.
 # Local fallback: /tmp/dvc-remote
+# To configure S3 remote:
+#   dvc remote add s3remote s3://your-mlops-dvc-bucket/dvc-store
+#   dvc remote default s3remote
+# To configure DagsHub remote:
+#   dvc remote add origin https://dagshub.com/<user>/<repo>.dvc
+#   dvc remote default origin
+[remote "local"]
+    url = /tmp/dvc-remote

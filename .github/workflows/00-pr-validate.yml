@@ -34,14 +34,31 @@ jobs:
 
       - name: Black format check
         run: black --check . --diff
-        continue-on-error: true  # formatting-only; does not block merge
+        # Black is now blocking — services/ and mlops/ are no longer excluded
 
       - name: YAML lint (actionlint)
         uses: rhysd/actionlint@v1.7.3
-        continue-on-error: true  # shellcheck SC2086 style warnings are non-blocking
+        # actionlint is now blocking — workflow syntax must be valid
 
       - name: Validate pyproject.toml
         run: python -c "import tomllib; tomllib.loads(open('pyproject.toml').read())"
+
+  opa-policy-tests:
+    name: "OPA Policy Unit Tests"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install OPA
+        run: |
+          curl -L -o /usr/local/bin/opa \
+            https://openpolicyagent.org/downloads/v0.65.0/opa_linux_amd64_static
+          chmod 755 /usr/local/bin/opa
+
+      - name: Run Rego unit tests (self_healing + model_promotion)
+        run: |
+          opa test aiops/policies/opa/ -v --ignore "*.gitkeep"
+          echo "All OPA policy unit tests passed"
 
   structure-check:
     name: "Directory Structure Check"

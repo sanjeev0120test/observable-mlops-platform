@@ -3,12 +3,14 @@ groups:
     interval: 30s
     rules:
       # UC21 — SLO / Error Budget
+      # Recording rule: 5-minute error rate ratio per job
       - record: job:http_error_rate:ratio5m
         expr: |
           sum(rate(http_requests_total{status=~"5.."}[5m])) by (job)
           /
-          sum(rate(http_requests_total[5m])) by (job)
+          clamp_min(sum(rate(http_requests_total[5m])) by (job), 0.001)
 
+      # Fast burn: consuming 1% error budget in 1 hour (14.4× rate for 99.9% SLO)
       - alert: SLOFastBurnRate
         expr: job:http_error_rate:ratio5m > 0.02
         for: 2m
@@ -17,8 +19,10 @@ groups:
           uc: UC21
         annotations:
           summary: "Fast SLO burn rate detected for {{ $labels.job }}"
-          description: "Error rate {{ $value | humanizePercentage }} > 2% SLO burn threshold"
+          description: "Error rate {{ $value | humanizePercentage }} > 2% — exhausting error budget at 14.4× rate"
+          runbook: "https://observable-mlops.github.io/runbooks/slo-burn-rate"
 
+      # Slow burn: consuming error budget at 6× rate (detectable in 6h window)
       - alert: SLOSlowBurnRate
         expr: job:http_error_rate:ratio5m > 0.005
         for: 15m
@@ -27,41 +31,80 @@ groups:
           uc: UC21
         annotations:
           summary: "Slow SLO burn rate for {{ $labels.job }}"
+          description: "Error rate {{ $value | humanizePercentage }} sustained for 15m — monitor carefully"
 
   - name: platform.pods
     rules:
       # UC4 — Predictive Scaling trigger
+      # FIXED: use rate() of CPU counter / resource limits for utilization ratio
       - alert: HighCPUPreScale
-        expr: avg(container_cpu_usage_seconds_total) by (namespace) > 0.70
+        expr: |
+          sum(rate(container_cpu_usage_seconds_total{container!="",container!="POD"}[5m])) by (namespace)
+          /
+          clamp_min(
+            sum(kube_pod_container_resource_limits{resource="cpu",container!=""}) by (namespace),
+            0.001
+          ) > 0.70
         for: 5m
         labels:
           severity: warning
           uc: UC4
         annotations:
-          summary: "High CPU — pre-scale KEDA trigger for {{ $labels.namespace }}"
+          summary: "High CPU utilisation — pre-scale KEDA trigger for {{ $labels.namespace }}"
+          description: "CPU utilisation {{ $value | humanizePercentage }} > 70% of requested limits"
+          runbook: "https://observable-mlops.github.io/runbooks/high-cpu-scaling"
 
-      # UC2 — Log anomaly
+      # UC2 — Log anomaly / CrashLoopBackOff
+      # FIXED: explicitly check waiting reason = CrashLoopBackOff instead of restart counter
       - alert: PodCrashLoopBackOff
-        expr: kube_pod_container_status_restarts_total > 5
-        for: 5m
+        expr: |
+          kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff"} == 1
+        for: 2m
         labels:
           severity: critical
           uc: UC2
+          alert_name: PodCrashLoopBackOff
         annotations:
-          summary: "Pod {{ $labels.pod }} in CrashLoopBackOff"
+          summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is in CrashLoopBackOff"
+          description: "Container {{ $labels.container }} has been in CrashLoopBackOff for 2+ minutes"
+          runbook: "https://observable-mlops.github.io/runbooks/pod-crashloop"
+
+      # Supplemental: high restart rate (not CrashLoop but concerning)
+      - alert: PodHighRestartRate
+        expr: |
+          increase(kube_pod_container_status_restarts_total[1h]) > 5
+        for: 5m
+        labels:
+          severity: warning
+          uc: UC2
+        annotations:
+          summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} restarted {{ $value | humanize }} times in 1h"
 
   - name: platform.drift
     rules:
       # UC1 — Drift detection alert
+      # FIXED: metric name now matches drift-monitor service export (ml_model_psi_score)
       - alert: MLModelDriftDetected
-        expr: ml_model_psi_score > 0.2
+        expr: ml_model_psi_score > 0.20
         for: 5m
         labels:
           severity: warning
           uc: UC1
+          alert_name: MLModelDriftDetected
         annotations:
-          summary: "Model drift detected: PSI {{ $value }} > 0.2"
-          description: "Model {{ $labels.model_name }} requires retraining"
+          summary: "Model drift detected: PSI {{ $value | humanize }} > 0.20"
+          description: "Model {{ $labels.model }} on feature {{ $labels.feature }} — retraining may be required"
+          runbook: "https://observable-mlops.github.io/runbooks/drift-detected"
+
+      # UC1 — Retrain trigger (lower threshold PSI > 0.10)
+      - alert: MLModelRetrainSuggested
+        expr: ml_model_psi_score > 0.10
+        for: 10m
+        labels:
+          severity: info
+          uc: UC1
+        annotations:
+          summary: "Model retraining suggested: PSI {{ $value | humanize }} > 0.10"
 
   - name: platform.cost
     rules:
@@ -74,3 +117,19 @@ groups:
           uc: UC10
         annotations:
           summary: "Idle resource waste {{ $value | humanizePercentage }} in {{ $labels.namespace }}"
+          description: "Over 50% of provisioned resources idle — review right-sizing (UC10)"
+
+  - name: platform.selfhealing
+    rules:
+      # UC6 — OPA unavailable (self-healing now fail-closed — this surfaces the risk)
+      - alert: SelfHealingOPAUnavailable
+        expr: increase(self_healing_opa_unavailable_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          uc: UC6
+          alert_name: OPAUnavailable
+        annotations:
+          summary: "OPA policy engine unreachable — self-healing is BLOCKED (fail-closed)"
+          description: "All remediation requests are being rejected until OPA recovers"
+          runbook: "https://observable-mlops.github.io/runbooks/opa-recovery"

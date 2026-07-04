@@ -1,0 +1,68 @@
+{
+  "name": "observable-mlops-platform",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11-bullseye",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {
+      "version": "latest",
+      "helm": "latest",
+      "minikube": "none"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    }
+  },
+  "postCreateCommand": "pip install -r requirements.txt && pip install pre-commit && pre-commit install && cp .env.example .env",
+  "postStartCommand": "docker network create platform-net 2>/dev/null || true",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.linting.enabled": true,
+        "python.linting.ruffEnabled": true,
+        "python.formatting.provider": "black",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+          "source.organizeImports": "explicit"
+        },
+        "[python]": {
+          "editor.defaultFormatter": "ms-python.black-formatter"
+        },
+        "files.exclude": {
+          "**/__pycache__": true,
+          "**/*.pyc": true,
+          "**/.pytest_cache": true
+        }
+      },
+      "extensions": [
+        "ms-python.python",
+        "ms-python.black-formatter",
+        "charliermarsh.ruff",
+        "ms-python.mypy-type-checker",
+        "redhat.vscode-yaml",
+        "ms-azuretools.vscode-docker",
+        "hashicorp.terraform",
+        "github.vscode-github-actions",
+        "grafana.vscode-jsonnet",
+        "open-policy-agent.opa",
+        "eamodio.gitlens"
+      ]
+    }
+  },
+  "remoteEnv": {
+    "ENVIRONMENT": "devcontainer",
+    "LOG_LEVEL": "DEBUG"
+  },
+  "forwardPorts": [3000, 5000, 8001, 8002, 8003, 8004, 8005, 8006, 8007, 8080, 8181, 9090],
+  "portsAttributes": {
+    "3000": {"label": "Grafana"},
+    "5000": {"label": "MLflow"},
+    "8001": {"label": "Anomaly Detector"},
+    "8002": {"label": "Drift Monitor"},
+    "8003": {"label": "Alert Correlator"},
+    "8005": {"label": "Self-Healing"},
+    "8181": {"label": "OPA"},
+    "9090": {"label": "Prometheus"}
+  }
+}

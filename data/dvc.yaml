@@ -61,3 +61,16 @@ stages:
       - data/synthetic/http_traffic.parquet
     outs:
       - data/synthetic/validation_report.json
+
+  # DVC push stage: runs after validation, pushes data to configured remote
+  # In CI (02-data-pipeline.yml): uses DagsHub remote via setup-dagshub.sh
+  # Locally: pushes to /tmp/dvc-remote (config above)
+  push_to_remote:
+    cmd: >-
+      dvc push
+      --remote ${DVC_REMOTE:-local}
+      --jobs 4
+      && echo "DVC push complete"
+    deps:
+      - data/synthetic/validation_report.json
+    always_changed: true

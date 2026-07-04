@@ -30,7 +30,7 @@ metadata:
   tags: [mlops, drift, evidently, nannyml, uc1]
 spec:
   type: service
-  lifecycle: production
+  lifecycle: experimental
   owner: team-ml
   system: observable-mlops-platform
   dependsOn:
@@ -47,7 +47,7 @@ metadata:
   tags: [aiops, anomaly, pytorch, qdrant, uc2]
 spec:
   type: service
-  lifecycle: production
+  lifecycle: experimental
   owner: team-ml
   system: observable-mlops-platform
   dependsOn:
@@ -63,7 +63,7 @@ metadata:
   tags: [aiops, alerts, sklearn, prometheus, uc3]
 spec:
   type: service
-  lifecycle: production
+  lifecycle: experimental
   owner: team-platform
   system: observable-mlops-platform
 ---
@@ -77,7 +77,7 @@ metadata:
   tags: [aiops, scaling, prophet, keda, uc4]
 spec:
   type: service
-  lifecycle: production
+  lifecycle: experimental
   owner: team-infra
   system: observable-mlops-platform
 ---
@@ -91,7 +91,7 @@ metadata:
   tags: [mlops, feast, features, uc5]
 spec:
   type: service
-  lifecycle: production
+  lifecycle: experimental
   owner: team-ml
   system: observable-mlops-platform
 ---
@@ -105,7 +105,7 @@ metadata:
   tags: [aiops, remediation, n8n, opa, uc6]
 spec:
   type: service
-  lifecycle: production
+  lifecycle: experimental
   owner: team-platform
   system: observable-mlops-platform
 ---
@@ -119,7 +119,7 @@ metadata:
   tags: [security, trivy, falco, kyverno, uc7]
 spec:
   type: service
-  lifecycle: production
+  lifecycle: experimental
   owner: team-platform
   system: observable-mlops-platform
 ---
@@ -133,7 +133,7 @@ metadata:
   tags: [aiops, rag, llm, qdrant, langchain, uc8]
 spec:
   type: service
-  lifecycle: production
+  lifecycle: experimental
   owner: team-platform
   system: observable-mlops-platform
 ---
@@ -147,7 +147,7 @@ metadata:
   tags: [mlops, mlflow, kserve, uc9]
 spec:
   type: service
-  lifecycle: production
+  lifecycle: experimental
   owner: team-ml
   system: observable-mlops-platform
 ---
@@ -161,7 +161,7 @@ metadata:
   tags: [finops, cost, sklearn, uc10]
 spec:
   type: service
-  lifecycle: production
+  lifecycle: experimental
   owner: team-finance
   system: observable-mlops-platform
 ---
@@ -174,7 +174,7 @@ metadata:
   tags: [observability, otel, tempo, uc11]
 spec:
   type: service
-  lifecycle: production
+  lifecycle: experimental
   owner: team-platform
   system: observable-mlops-platform
 ---
@@ -186,7 +186,7 @@ metadata:
   tags: [gitops, kyverno, opa, uc12]
 spec:
   type: service
-  lifecycle: production
+  lifecycle: experimental
   owner: team-platform
   system: observable-mlops-platform
 ---
@@ -198,7 +198,7 @@ metadata:
   tags: [data, great-expectations, airflow, uc13]
 spec:
   type: service
-  lifecycle: production
+  lifecycle: experimental
   owner: team-data
   system: observable-mlops-platform
 ---
@@ -210,7 +210,7 @@ metadata:
   tags: [mlops, optuna, mlflow, uc14]
 spec:
   type: service
-  lifecycle: production
+  lifecycle: experimental
   owner: team-ml
   system: observable-mlops-platform
 ---
@@ -222,7 +222,7 @@ metadata:
   tags: [dora, devops, grafana, uc15]
 spec:
   type: service
-  lifecycle: production
+  lifecycle: experimental
   owner: team-platform
   system: observable-mlops-platform
 ---
@@ -234,7 +234,7 @@ metadata:
   tags: [aiops, nlp, sklearn, uc16]
 spec:
   type: service
-  lifecycle: production
+  lifecycle: experimental
   owner: team-platform
   system: observable-mlops-platform
 ---
@@ -246,7 +246,7 @@ metadata:
   tags: [mlops, shap, explainability, uc17]
 spec:
   type: service
-  lifecycle: production
+  lifecycle: experimental
   owner: team-ml
   system: observable-mlops-platform
 ---
@@ -258,7 +258,7 @@ metadata:
   tags: [aiops, redis, sklearn, uc18]
 spec:
   type: service
-  lifecycle: production
+  lifecycle: experimental
   owner: team-platform
   system: observable-mlops-platform
 ---
@@ -270,7 +270,7 @@ metadata:
   tags: [mlops, whylogs, monitoring, uc19]
 spec:
   type: service
-  lifecycle: production
+  lifecycle: experimental
   owner: team-ml
   system: observable-mlops-platform
 ---
@@ -282,7 +282,7 @@ metadata:
   tags: [dx, backstage, catalog, uc20]
 spec:
   type: service
-  lifecycle: production
+  lifecycle: experimental
   owner: team-platform
   system: observable-mlops-platform
 ---
@@ -294,7 +294,7 @@ metadata:
   tags: [slo, prometheus, grafana, uc21]
 spec:
   type: service
-  lifecycle: production
+  lifecycle: experimental
   owner: team-platform
   system: observable-mlops-platform
 ---
@@ -306,7 +306,7 @@ metadata:
   tags: [mlops, kserve, ab-testing, uc22]
 spec:
   type: service
-  lifecycle: production
+  lifecycle: experimental
   owner: team-ml
   system: observable-mlops-platform
 ---
@@ -318,7 +318,7 @@ metadata:
   tags: [aiops, n8n, llm, uc23]
 spec:
   type: service
-  lifecycle: production
+  lifecycle: experimental
   owner: team-platform
   system: observable-mlops-platform
 ---

@@ -39,7 +39,7 @@ target-version = ["py311"]
 exclude = '''
 /(
     \.git | \.venv | venv | build | dist |
-    data/synthetic | mlops | services | scripts
+    data/synthetic
 )/
 '''
 

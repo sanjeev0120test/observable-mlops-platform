@@ -1,0 +1,73 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    ":separatePatchReleases"
+  ],
+  "description": "Automated dependency updates for observable-mlops-platform",
+  "timezone": "UTC",
+  "schedule": ["before 6am on Monday"],
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "labels": ["dependencies", "renovate"],
+  "assignees": ["@platform-team"],
+  "packageRules": [
+    {
+      "description": "Group all minor and patch Python updates together",
+      "matchManagers": ["pip_requirements", "pyproject"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Python dependencies (minor/patch)",
+      "automerge": false
+    },
+    {
+      "description": "Security-critical packages: immediate PRs",
+      "matchPackageNames": ["cryptography", "pydantic", "fastapi", "httpx", "starlette"],
+      "matchUpdateTypes": ["patch"],
+      "labels": ["security", "dependencies", "renovate"],
+      "automerge": false,
+      "prPriority": 5
+    },
+    {
+      "description": "ML framework major updates: require manual review",
+      "matchPackageNames": ["torch", "scikit-learn", "mlflow", "evidently", "nannyml"],
+      "matchUpdateTypes": ["major"],
+      "enabled": true,
+      "labels": ["ml-framework-major", "dependencies"],
+      "prPriority": 1
+    },
+    {
+      "description": "OPA image updates: require policy test validation",
+      "matchManagers": ["docker-compose"],
+      "matchPackageNames": ["openpolicyagent/opa"],
+      "labels": ["opa", "policy", "dependencies"],
+      "prPriority": 3
+    },
+    {
+      "description": "GitHub Actions: auto-update to latest",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "GitHub Actions",
+      "automerge": false
+    },
+    {
+      "description": "Docker base images: weekly batch",
+      "matchManagers": ["dockerfile"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Docker base images",
+      "schedule": ["before 6am on Monday"]
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["security", "vulnerability"],
+    "prPriority": 10
+  },
+  "pip_requirements": {
+    "fileMatch": ["requirements.txt", "requirements-*.txt"]
+  },
+  "pyproject": {
+    "fileMatch": ["pyproject.toml"]
+  }
+}

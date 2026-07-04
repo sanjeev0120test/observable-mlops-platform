@@ -1,0 +1,153 @@
+---
+# OpenSLO Service Level Objectives — UC21
+# Spec: https://github.com/OpenSLO/OpenSLO
+# Tools: slogen (for Prometheus rules), nobl9, dynatrace
+#
+# These SLOs gate error budget management, alerting, and rollback decisions.
+# Generated Prometheus recording rules from these specs via:
+#   slogen generate --openslo platform/slo-definitions/platform-slos.yaml
+
+apiVersion: openslo/v1
+kind: SLO
+metadata:
+  name: drift-monitor-availability
+  displayName: Drift Monitor Availability SLO
+  labels:
+    uc: UC1
+    team: ml
+spec:
+  description: >
+    Drift Monitor /api/v1/check-drift must be available 99.5% of the time.
+    Downtime prevents early drift detection and delayed retraining triggers.
+  service: drift-monitor
+  indicator:
+    metadata:
+      name: availability
+    spec:
+      ratioMetric:
+        counter: true
+        good:
+          metricSource:
+            type: Prometheus
+            spec:
+              query: sum(rate(http_requests_total{job="drift-monitor",status!~"5.."}[5m]))
+        total:
+          metricSource:
+            type: Prometheus
+            spec:
+              query: sum(rate(http_requests_total{job="drift-monitor"}[5m]))
+  timeWindow:
+    - duration: 1d
+      isRolling: true
+  budgetingMethod: Occurrences
+  objectives:
+    - displayName: Excellent
+      target: 0.995
+      op: gte
+  alertPolicies:
+    - slo-fast-burn-policy
+---
+apiVersion: openslo/v1
+kind: SLO
+metadata:
+  name: self-healing-latency
+  displayName: Self-Healing P99 Latency SLO
+  labels:
+    uc: UC6
+    team: platform
+spec:
+  description: >
+    Self-Healing /api/v1/remediate P99 latency must be < 3000ms.
+    Slow remediation extends MTTR for active incidents.
+  service: self-healing
+  indicator:
+    metadata:
+      name: latency_p99
+    spec:
+      ratioMetric:
+        counter: true
+        good:
+          metricSource:
+            type: Prometheus
+            spec:
+              query: >
+                sum(rate(self_healing_remediation_duration_seconds_bucket{le="3"}[5m]))
+        total:
+          metricSource:
+            type: Prometheus
+            spec:
+              query: sum(rate(self_healing_remediation_duration_seconds_count[5m]))
+  timeWindow:
+    - duration: 7d
+      isRolling: true
+  budgetingMethod: Timeslices
+  objectives:
+    - displayName: Fast
+      value: 3000
+      target: 0.99
+      op: lte
+---
+apiVersion: openslo/v1
+kind: SLO
+metadata:
+  name: rag-agent-query-success
+  displayName: RAG Runbook Agent Query Success Rate SLO
+  labels:
+    uc: UC8
+    team: platform
+spec:
+  description: >
+    RAG Agent /api/v1/query must succeed (HTTP 200 with context) for 95% of queries.
+    Failures mean runbook answers are unavailable during incidents.
+  service: runbook-agent
+  indicator:
+    metadata:
+      name: query_success_rate
+    spec:
+      ratioMetric:
+        counter: true
+        good:
+          metricSource:
+            type: Prometheus
+            spec:
+              query: sum(rate(runbook_agent_queries_total{status="success"}[5m]))
+        total:
+          metricSource:
+            type: Prometheus
+            spec:
+              query: sum(rate(runbook_agent_queries_total[5m]))
+  timeWindow:
+    - duration: 7d
+      isRolling: true
+  budgetingMethod: Occurrences
+  objectives:
+    - displayName: Good
+      target: 0.95
+      op: gte
+---
+apiVersion: openslo/v1
+kind: AlertPolicy
+metadata:
+  name: slo-fast-burn-policy
+  displayName: SLO Fast Burn Alert Policy
+spec:
+  description: Alert when burning error budget faster than 14.4× (1% budget in 1h)
+  alertWhenBreaching: true
+  alertWhenResolved: false
+  conditions:
+    - conditionRef: fast-burn-condition
+  notificationTargets:
+    - targetRef: pagerduty-team-platform
+---
+apiVersion: openslo/v1
+kind: AlertCondition
+metadata:
+  name: fast-burn-condition
+spec:
+  description: Fast burn threshold — 1h/6h dual burn rate detection
+  severity: critical
+  condition:
+    kind: burnrate
+    threshold: 14.4
+    lookbackWindow: 1h
+    alertAfter: 2m
