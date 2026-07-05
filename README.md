@@ -820,16 +820,6 @@ THRESHOLDS["UC3"] = 50  # composite must reach 50/100
 
 ---
 
-## 13. Contributing
-
-1. Branch from `main`: `git checkout -b fix/<area>` or `feature/<area>`.
-2. Run `make lint && make test-unit` locally — both must pass cleanly.
-3. For any behavior change, add or update the corresponding test in `tests/unit/`.
-4. Open a PR — `00-pr-validate` and the per-UC gates that cover your change must pass.
-5. Human-readable commit messages: `<type>(<scope>): <what and why>` — no AI boilerplate.
-
----
-
 ## License
 
 [Apache 2.0](LICENSE)
