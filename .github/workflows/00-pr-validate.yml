@@ -218,7 +218,10 @@ jobs:
           cache: "pip"
 
       - name: Install data dependencies
-        run: pip install numpy pandas pyarrow
+        # Pinned to the same known-good stack as 14-dora-metrics: unpinned pyarrow
+        # has aborted at interpreter shutdown ("terminate called without an
+        # active exception") after every assertion already passed.
+        run: pip install numpy==1.26.4 pandas==2.2.2 pyarrow==15.0.2
 
       - name: Run all generators
         run: |
@@ -231,7 +234,8 @@ jobs:
       - name: Validate generator outputs
         run: |
           python -c "
-          import pandas as pd, json
+          import os, sys, json
+          import pandas as pd
           from pathlib import Path
 
           df = pd.read_parquet('/tmp/pod_metrics.parquet')
@@ -261,6 +265,10 @@ jobs:
           print(f'http_traffic: {len(df)} rows OK')
           print()
           print('=== DATA GENERATOR VALIDATION COMPLETE ===')
+          sys.stdout.flush()
+          # Hard-exit: every check above passed; skip interpreter teardown so a
+          # native thread-pool abort in pyarrow cannot flip the result to 134.
+          os._exit(0)
           "
 
   workflow-count-check:
