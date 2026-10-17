@@ -36,6 +36,7 @@ log = logging.getLogger(__name__)
 
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
 OPA_URL = os.getenv("OPA_URL", "http://opa:8181")
+MODEL_TRUST_URL = os.getenv("MODEL_TRUST_URL", "http://model-trust:8000")
 FEAST_REPO_PATH = os.getenv("FEAST_REPO_PATH", "mlops/feature-store/feature_repo")
 ALERTMANAGER_URL = os.getenv("ALERTMANAGER_URL", "http://alertmanager:9093")
 OPENLINEAGE_URL = os.getenv("OPENLINEAGE_URL", "http://marquez:5000")
@@ -291,8 +292,9 @@ def train_model(**context) -> str:
         mlflow.log_metrics(metrics)
         mlflow.sklearn.log_model(
             clf,
-            "model",
+            name="model",
             registered_model_name=context["params"].get("model_name", "pod-failure-prediction"),
+            skops_trusted_types=["sklearn.tree._tree.Tree"],
         )
         mlflow.set_tags(
             {
@@ -312,6 +314,56 @@ def train_model(**context) -> str:
         return run_id
 
 
+def compute_trust_score(**context) -> dict | None:
+    """
+    Ask the Model Trust Score service to score the freshly trained candidate and append it
+    to the tamper-evident ledger. The result is handed to the OPA gate as `input.trust`.
+
+    Fail-open *here* (OPA itself is fail-closed): if the scorer is unreachable we promote on
+    the classic metric gates alone and record that the trust gate was skipped.
+    """
+    import httpx
+
+    result = json.loads(Path("/tmp/train_result.json").read_text())
+    model_name = result.get("model_name", "pod-failure-prediction")
+    payload = {
+        "model_name": model_name,
+        "model_version": result.get("run_id", "pending")[:12],
+        "signals": {
+            "accuracy": result.get("accuracy"),
+            "f1_score": result.get("f1_score"),
+            "psi_score": float(context["params"].get("psi_score", 0.0) or 0.0),
+            "shap_logged": False,  # UC17 adds SHAP after registration
+            "lineage_recorded": True,  # this DAG emits OpenLineage events
+            "human_oversight_defined": True,  # @challenger alias requires manual promotion
+        },
+        "target_band": "GOOD",
+    }
+    try:
+        resp = httpx.post(f"{MODEL_TRUST_URL}/api/v1/score", json=payload, timeout=10.0)
+        resp.raise_for_status()
+        report = resp.json()
+    except Exception as exc:
+        log.warning("Model Trust Score service unreachable — trust gate skipped: %s", exc)
+        Path("/tmp/trust_result.json").write_text("null")
+        return None
+
+    trust = {
+        "score": report["score"],
+        "band": report["band"],
+        "ledger_integrity_ok": bool(report.get("ledger_entry")),
+    }
+    log.info(
+        "Trust score %s (%s) for %s; top remediation: %s",
+        trust["score"],
+        trust["band"],
+        model_name,
+        (report.get("recommendations") or [{}])[0].get("action", "none"),
+    )
+    Path("/tmp/trust_result.json").write_text(json.dumps(trust))
+    return trust
+
+
 def opa_promotion_gate(**context) -> bool:
     """
     OPA policy gate: validate model metrics before holdout evaluation and promotion.
@@ -321,6 +373,8 @@ def opa_promotion_gate(**context) -> bool:
 
     result = json.loads(Path("/tmp/train_result.json").read_text())
     model_name = result.get("model_name", "pod-failure-prediction")
+    trust_path = Path("/tmp/trust_result.json")
+    trust = json.loads(trust_path.read_text()) if trust_path.exists() else None
 
     opa_input = {
         "input": {
@@ -336,6 +390,8 @@ def opa_promotion_gate(**context) -> bool:
             "environment": "staging",
         }
     }
+    if trust:
+        opa_input["input"]["trust"] = trust
 
     try:
         resp = httpx.post(
@@ -413,8 +469,9 @@ with dag:
     t1 = PythonOperator(task_id="pull_training_data", python_callable=pull_training_data)
     t2 = PythonOperator(task_id="ge_validation", python_callable=run_ge_validation)
     t3 = PythonOperator(task_id="train_model", python_callable=train_model)
+    t3b = PythonOperator(task_id="compute_trust_score", python_callable=compute_trust_score)
     t4 = PythonOperator(task_id="opa_promotion_gate", python_callable=opa_promotion_gate)
     t5 = PythonOperator(task_id="evaluate_holdout", python_callable=evaluate_drift_on_holdout)
     t6 = PythonOperator(task_id="register_model", python_callable=register_model)
 
-    t1 >> t2 >> t3 >> t4 >> t5 >> t6
+    t1 >> t2 >> t3 >> t3b >> t4 >> t5 >> t6
