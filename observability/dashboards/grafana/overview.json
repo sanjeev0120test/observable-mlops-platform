@@ -1,11 +1,23 @@
 {
   "__inputs": [],
   "__requires": [
-    {"type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.4.0"},
-    {"type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0"}
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "10.4.0"
+    },
+    {
+      "type": "datasource",
+      "id": "prometheus",
+      "name": "Prometheus",
+      "version": "1.0.0"
+    }
   ],
-  "annotations": {"list": []},
-  "description": "Observable MLOps Platform — 23 UC Overview Dashboard",
+  "annotations": {
+    "list": []
+  },
+  "description": "Observable MLOps Platform \u2014 23 UC Overview Dashboard",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -16,74 +28,409 @@
       "id": 1,
       "title": "Platform Health Score",
       "type": "stat",
-      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0},
-      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "fieldConfig": {
         "defaults": {
           "thresholds": {
             "mode": "absolute",
-            "steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 70}, {"color": "green", "value": 90}]
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "green",
+                "value": 90
+              }
+            ]
           },
           "unit": "percent"
         }
       },
-      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "auto", "textMode": "auto", "colorMode": "background"},
-      "targets": [{"expr": "100", "legendFormat": "Health Score", "refId": "A"}]
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background"
+      },
+      "targets": [
+        {
+          "expr": "100",
+          "legendFormat": "Health Score",
+          "refId": "A"
+        }
+      ]
     },
     {
       "id": 2,
       "title": "HTTP Error Rate (SLO UC21)",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
-      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "fieldConfig": {
-        "defaults": {"unit": "percentunit", "custom": {"lineWidth": 2}},
-        "overrides": [{"matcher": {"id": "byName", "options": "SLO Target"}, "properties": [{"id": "custom.lineStyle", "value": {"dash": [5, 5]}}]}]
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "lineWidth": 2
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "SLO Target"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    5,
+                    5
+                  ]
+                }
+              }
+            ]
+          }
+        ]
       },
       "targets": [
-        {"expr": "job:http_error_rate:ratio5m", "legendFormat": "Error Rate", "refId": "A"},
-        {"expr": "vector(0.001)", "legendFormat": "SLO Target (99.9%)", "refId": "B"}
+        {
+          "expr": "job:http_error_rate:ratio5m",
+          "legendFormat": "Error Rate",
+          "refId": "A"
+        },
+        {
+          "expr": "vector(0.001)",
+          "legendFormat": "SLO Target (99.9%)",
+          "refId": "B"
+        }
       ]
     },
     {
       "id": 3,
       "title": "Model PSI Score (UC1 Drift)",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
-      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "fieldConfig": {
-        "defaults": {"unit": "short"},
-        "overrides": [{"matcher": {"id": "byName", "options": "Drift Threshold"}, "properties": [{"id": "custom.lineStyle", "value": {"dash": [5, 5]}}]}]
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Drift Threshold"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    5,
+                    5
+                  ]
+                }
+              }
+            ]
+          }
+        ]
       },
       "targets": [
-        {"expr": "ml_model_psi_score", "legendFormat": "PSI - {{model_name}}", "refId": "A"},
-        {"expr": "vector(0.2)", "legendFormat": "Drift Threshold", "refId": "B"}
+        {
+          "expr": "ml_model_psi_score",
+          "legendFormat": "PSI - {{model_name}}",
+          "refId": "A"
+        },
+        {
+          "expr": "vector(0.2)",
+          "legendFormat": "Drift Threshold",
+          "refId": "B"
+        }
       ]
     },
     {
       "id": 4,
       "title": "Cost by Namespace (UC10)",
       "type": "bargauge",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
-      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
-      "fieldConfig": {"defaults": {"unit": "currencyUSD"}},
-      "targets": [{"expr": "cloud_cost_waste_ratio * 100", "legendFormat": "{{namespace}}", "refId": "A"}]
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        }
+      },
+      "targets": [
+        {
+          "expr": "cloud_cost_waste_ratio * 100",
+          "legendFormat": "{{namespace}}",
+          "refId": "A"
+        }
+      ]
     },
     {
       "id": 5,
       "title": "Active Alerts (UC3 Fatigue)",
       "type": "stat",
-      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0},
-      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
-      "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 5}, {"color": "red", "value": 20}]}}},
-      "targets": [{"expr": "count(ALERTS{alertstate='firing'})", "legendFormat": "Active Alerts", "refId": "A"}]
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 20
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "count(ALERTS{alertstate='firing'})",
+          "legendFormat": "Active Alerts",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Lowest Model Trust Score (UC9 Trust)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "min(model_trust_score)",
+          "legendFormat": "min trust",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 300,
+          "max": 1000,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 600
+              },
+              {
+                "color": "yellow",
+                "value": 700
+              },
+              {
+                "color": "green",
+                "value": 850
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Trust Ledger Integrity",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "model_trust_ledger_integrity_ok",
+          "legendFormat": "chain ok",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "BROKEN",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "VERIFIED",
+                  "color": "green"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "bargauge",
+      "title": "Model Trust Score by Version (UC9)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "targets": [
+        {
+          "expr": "max by (model, version, band) (model_trust_score)",
+          "legendFormat": "{{model}} v{{version}} ({{band}})",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 300,
+          "max": 1000,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 600
+              },
+              {
+                "color": "yellow",
+                "value": 700
+              },
+              {
+                "color": "green",
+                "value": 850
+              }
+            ]
+          }
+        }
+      }
     }
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "tags": ["platform", "aiops", "mlops"],
-  "templating": {"list": [{"name": "DS_PROMETHEUS", "type": "datasource", "pluginId": "prometheus"}]},
-  "time": {"from": "now-6h", "to": "now"},
+  "tags": [
+    "platform",
+    "aiops",
+    "mlops"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "type": "datasource",
+        "pluginId": "prometheus"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "utc",
   "title": "Observable MLOps Platform Overview",
