@@ -10,8 +10,9 @@ alert correlation to self-healing, RAG runbooks, and cost optimization — each 
 - **MLflow / DVC remote:** <https://dagshub.com/sanjeev0120test/observable-mlops-platform>
 - **Eval portal:** published by `91-publish-portal.yml` after every CI run
 
-> **CI status:** all 29 workflows green — 23 UC eval gates + lint/structure (ruff, black,
-> actionlint), 101 unit tests, 30 OPA policy tests, chaos/k8s manifest validation, SBOM
+> **CI status:** 30 workflows — 23 UC eval gates + lint/structure (ruff, black,
+> actionlint), 154 unit tests, OPA policy tests, the Model Trust rehearsal
+> (checker → score → ledger → promotion gate), chaos/k8s manifest validation, SBOM
 > signing, and end-to-end score aggregation. Every use case must clear its numeric threshold
 > before a commit lands on `main`.
 

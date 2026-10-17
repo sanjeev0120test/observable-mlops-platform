@@ -160,6 +160,16 @@ groups:
           description: "Trust band FAIR: shadow/canary traffic only until the remediation plan is applied."
 
       # A broken hash chain means the audit trail can no longer be relied upon.
+      - alert: ModelTrustRegression
+        expr: increase(model_trust_regressions_total[30m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          uc: UC9
+        annotations:
+          summary: "Trust score for {{ $labels.model }} fell a band or at least 50 points"
+          description: "A recorded rescore crossed a band or dropped 50+ points. Open the operator console and the remediation plan before the next promotion."
+
       - alert: ModelTrustLedgerIntegrityFailed
         expr: model_trust_ledger_integrity_ok == 0
         for: 1m

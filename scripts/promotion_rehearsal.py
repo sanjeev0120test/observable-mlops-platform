@@ -18,7 +18,11 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO / "services" / "model-trust" / "src"))
+# Append, do not prepend. Prepending shadows `import main` for every other
+# service test that runs afterwards in the same pytest process.
+_TRUST_SRC = str(REPO / "services" / "model-trust" / "src")
+if _TRUST_SRC not in sys.path:
+    sys.path.append(_TRUST_SRC)
 
 from assemble import assemble_signals  # noqa: E402
 from trust_engine import TrustLedger, compute_trust_score  # noqa: E402
