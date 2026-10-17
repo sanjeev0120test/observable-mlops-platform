@@ -6,6 +6,7 @@ on:
     paths:
       - "services/model-trust/**"
       - "scripts/trust_score_demo.py"
+      - "scripts/promotion_rehearsal.py"
       - "tests/unit/test_model_trust.py"
       - "tests/unit/test_assemble_signals.py"
       - "tests/unit/test_eu_ai_act_trust.py"
@@ -42,7 +43,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
       - run: pip install --quiet pytest fastapi httpx pydantic prometheus-client
-      - run: python -m pytest tests/unit/test_model_trust.py tests/unit/test_assemble_signals.py tests/unit/test_eu_ai_act_trust.py -v --tb=short
+      - run: python -m pytest tests/unit/test_model_trust.py tests/unit/test_assemble_signals.py tests/unit/test_eu_ai_act_trust.py tests/unit/test_promotion_rehearsal.py -v --tb=short
 
   end-to-end-demo:
     name: "Score 3 model versions → ledger → tamper proof → OPA gate"
@@ -65,6 +66,15 @@ jobs:
         run: opa test aiops/policies/opa/ -v --ignore "*.gitkeep"
       - name: Run demo
         run: python scripts/trust_score_demo.py --out trust-results --summary "$GITHUB_STEP_SUMMARY"
+      - name: Promotion rehearsal (checker → score → ledger → OPA)
+        run: python scripts/promotion_rehearsal.py --out rehearsal-results --require-opa
+      - name: Upload rehearsal
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: promotion-rehearsal
+          path: rehearsal-results/
+          retention-days: 14
       - name: Upload attestation + reports
         if: always()
         uses: actions/upload-artifact@v7

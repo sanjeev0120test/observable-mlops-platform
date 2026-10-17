@@ -14,6 +14,10 @@ All notable changes to this project are documented here. Format follows
   and attaches `to_trust_evidence()` to that bundle, so a real compliance failure
   applies the PRIME cap. A model card for `pod-failure-prediction` documents the
   remaining SHAP gap.
+- `scripts/promotion_rehearsal.py` runs three candidates through the real checker,
+  the evidence assembler, the ledger (including a tamper check), and the OPA
+  promotion policy using each candidate's own accuracy, drift, and SHAP flag.
+  Workflow 30 runs it with `--require-opa`.
 
 ## [0.3.0] - 2026-10-17
 
