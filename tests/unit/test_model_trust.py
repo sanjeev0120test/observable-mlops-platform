@@ -332,3 +332,39 @@ class TestService:
         assert client.post("/api/v1/score", json={"model_name": "x"}).status_code == 422
         bad = {"model_name": "x", "model_version": "1", "target_band": "GOLD"}
         assert client.post("/api/v1/score", json=bad).status_code == 422
+
+    def test_from_evidence_scores_and_echoes_signals(self, client):
+        body = {
+            "model_name": "pod-failure-prediction",
+            "model_version": "9",
+            "evidence": {
+                "metrics": {"accuracy": 0.93, "drift_psi": 0.05},
+                "security": {
+                    "trivy": {
+                        "Results": [
+                            {"Vulnerabilities": [{"Severity": "CRITICAL"}, {"Severity": "HIGH"}]}
+                        ]
+                    },
+                    "image_signed": True,
+                },
+            },
+        }
+        response = client.post("/api/v1/score/from-evidence", json=body)
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["signals_used"]["critical_cves"] == 1
+        assert payload["signals_used"]["psi_score"] == 0.05
+        assert "eu_ai_act_compliant" not in payload["signals_used"]
+        assert payload["ledger_entry"]["seq"] == 1
+        assert payload["score"] <= 699
+
+    def test_from_evidence_rejects_bad_payload(self, client):
+        response = client.post(
+            "/api/v1/score/from-evidence",
+            json={
+                "model_name": "m",
+                "model_version": "1",
+                "evidence": {"security": {"critical_cves": "many"}},
+            },
+        )
+        assert response.status_code == 422

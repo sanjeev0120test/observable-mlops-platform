@@ -3,6 +3,14 @@
 All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer.
 
+## [Unreleased]
+
+### Added
+- `POST /api/v1/score/from-evidence` assembles Model Trust signals from MLflow metrics
+  and tags, a Trivy report, a Kyverno policy report, and an EU AI Act compliance
+  report. A source that did not run is left unobserved rather than scored as clean.
+  The retrain DAG sends that evidence bundle instead of a hand-built signal dict.
+
 ## [0.3.0] - 2026-10-17
 
 ### Added

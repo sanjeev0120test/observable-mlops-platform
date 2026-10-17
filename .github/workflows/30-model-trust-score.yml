@@ -7,6 +7,8 @@ on:
       - "services/model-trust/**"
       - "scripts/trust_score_demo.py"
       - "tests/unit/test_model_trust.py"
+      - "tests/unit/test_assemble_signals.py"
+      - "mlops/pipelines/airflow/dags/pod_failure_prediction_retrain.py"
       - "aiops/policies/opa/model_promotion*.rego"
       - ".github/workflows/30-model-trust-score.yml"
   pull_request:
