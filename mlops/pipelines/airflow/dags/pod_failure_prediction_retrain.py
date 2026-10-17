@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -314,6 +315,56 @@ def train_model(**context) -> str:
         return run_id
 
 
+def _eu_ai_act_evidence(result: dict) -> dict | None:
+    """Run the EU AI Act checker when the repo (or the Airflow mount) has it.
+
+    Returns the ``compliance`` object the trust service understands, or None
+    when the checker is not on this worker. Import stays inside the task so a
+    missing mount cannot break DAG parsing.
+    """
+    candidates = [
+        Path("/opt/airflow/eu_ai_act"),
+        Path(__file__).resolve().parents[4] / "governance" / "eu-ai-act",
+    ]
+    checker_dir = next((c for c in candidates if (c / "compliance_check.py").exists()), None)
+    if checker_dir is None:
+        return None
+    if str(checker_dir) not in sys.path:
+        sys.path.insert(0, str(checker_dir))
+    try:
+        from compliance_check import check_eu_ai_act_compliance, to_trust_evidence
+    except Exception as exc:  # noqa: BLE001 — checker is optional on the worker
+        log.warning("EU AI Act checker unavailable: %s", exc)
+        return None
+
+    model_name = result.get("model_name", "pod-failure-prediction")
+    card_candidates = [
+        Path("/opt/airflow/model_cards") / model_name / "model_card.md",
+        Path(__file__).resolve().parents[4] / "mlops" / "models" / model_name / "model_card.md",
+    ]
+    card = next((p for p in card_candidates if p.exists()), None)
+    tags = {
+        "eu_ai_act_risk_level": "high",
+        "risk_assessment": "retrain holdout metrics plus UC1 drift trigger",
+        "training_dataset": "feast/pod_metrics_features",
+        "shap_values_logged": "false",
+        "requestor": "airflow-retrain-dag",
+    }
+    metrics = {
+        "accuracy": float(result.get("accuracy") or 0.0),
+        "f1_score": float(result.get("f1_score") or 0.0),
+        "drift_psi": float(result.get("drift_psi") or 0.0),
+    }
+    report = check_eu_ai_act_compliance(model_name, "pending", tags, metrics, card)
+    log.info(
+        "EU AI Act %s for %s (%d failing error checks)",
+        "PASS" if report.is_compliant else "FAIL",
+        model_name,
+        len(report.errors),
+    )
+    return to_trust_evidence(report)
+
+
 def compute_trust_score(**context) -> dict | None:
     """
     Ask the Model Trust Score service to score the freshly trained candidate and append it
@@ -326,8 +377,8 @@ def compute_trust_score(**context) -> dict | None:
 
     result = json.loads(Path("/tmp/train_result.json").read_text())
     model_name = result.get("model_name", "pod-failure-prediction")
-    # Evidence only. The service assembles signals and leaves unobserved anything
-    # this DAG did not measure (CVEs, signature, human approval, EU AI Act).
+    # Evidence only. CVE scan and image signature stay unobserved here.
+    # EU AI Act compliance is attached when the checker is mounted on the worker.
     payload = {
         "model_name": model_name,
         "model_version": result.get("run_id", "pending")[:12],
@@ -346,6 +397,9 @@ def compute_trust_score(**context) -> dict | None:
         },
         "target_band": "GOOD",
     }
+    compliance = _eu_ai_act_evidence(result)
+    if compliance is not None:
+        payload["evidence"]["compliance"] = compliance
     try:
         resp = httpx.post(
             f"{MODEL_TRUST_URL}/api/v1/score/from-evidence", json=payload, timeout=10.0

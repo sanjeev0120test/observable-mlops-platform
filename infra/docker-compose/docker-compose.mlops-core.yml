@@ -110,6 +110,8 @@ services:
       - "8080:8080"
     volumes:
       - ../../mlops/pipelines/airflow/dags:/opt/airflow/dags:ro
+      - ../../governance/eu-ai-act:/opt/airflow/eu_ai_act:ro
+      - ../../mlops/models:/opt/airflow/model_cards:ro
       - airflow_logs:/opt/airflow/logs
     depends_on:
       airflow-init:
@@ -131,6 +133,8 @@ services:
     environment: *airflow-env
     volumes:
       - ../../mlops/pipelines/airflow/dags:/opt/airflow/dags:ro
+      - ../../governance/eu-ai-act:/opt/airflow/eu_ai_act:ro
+      - ../../mlops/models:/opt/airflow/model_cards:ro
       - airflow_logs:/opt/airflow/logs
     depends_on:
       airflow-init:
