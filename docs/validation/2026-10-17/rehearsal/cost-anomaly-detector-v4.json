@@ -1,0 +1,196 @@
+{
+  "model_name": "cost-anomaly-detector",
+  "model_version": "4",
+  "score": 599,
+  "band": "SUBPRIME",
+  "band_meaning": "Blocked from production; rollback candidate",
+  "score_uncapped": 878,
+  "caps_applied": [
+    {
+      "rule": "critical_cves>=3",
+      "cap": 599,
+      "pillar": "security",
+      "binding": true
+    },
+    {
+      "rule": "image_unsigned",
+      "cap": 849,
+      "pillar": "security",
+      "binding": true
+    },
+    {
+      "rule": "policy_violations>=1",
+      "cap": 699,
+      "pillar": "security",
+      "binding": true
+    },
+    {
+      "rule": "eu_ai_act_non_compliant",
+      "cap": 849,
+      "pillar": "governance",
+      "binding": true
+    }
+  ],
+  "pillars": [
+    {
+      "pillar": "performance",
+      "weight": 0.25,
+      "health": 1.0,
+      "points_available": 175.0,
+      "points_earned": 175.0,
+      "points_lost": 0.0,
+      "observed": true,
+      "signals": {
+        "accuracy": 1.0,
+        "f1_score": 1.0
+      }
+    },
+    {
+      "pillar": "drift",
+      "weight": 0.2,
+      "health": 1.0,
+      "points_available": 140.0,
+      "points_earned": 140.0,
+      "points_lost": 0.0,
+      "observed": true,
+      "signals": {
+        "psi_score": 1.0
+      }
+    },
+    {
+      "pillar": "reliability",
+      "weight": 0.2,
+      "health": 1.0,
+      "points_available": 140.0,
+      "points_earned": 140.0,
+      "points_lost": 0.0,
+      "observed": true,
+      "signals": {
+        "error_budget_remaining": 1.0,
+        "p99_latency_ms": 1.0
+      }
+    },
+    {
+      "pillar": "security",
+      "weight": 0.15,
+      "health": 0.375,
+      "points_available": 105.0,
+      "points_earned": 39.4,
+      "points_lost": 65.6,
+      "observed": true,
+      "signals": {
+        "critical_cves": 0.0,
+        "high_cves": 1.0,
+        "policy_violations": 0.5,
+        "image_signed": 0.0
+      }
+    },
+    {
+      "pillar": "governance",
+      "weight": 0.1,
+      "health": 0.2,
+      "points_available": 70.0,
+      "points_earned": 14.0,
+      "points_lost": 56.0,
+      "observed": true,
+      "signals": {
+        "shap_logged": 0.0,
+        "model_card_present": 0.0,
+        "lineage_recorded": 0.0,
+        "eu_ai_act_compliant": 0.0,
+        "human_oversight_defined": 1.0
+      }
+    },
+    {
+      "pillar": "cost",
+      "weight": 0.1,
+      "health": 1.0,
+      "points_available": 70.0,
+      "points_earned": 70.0,
+      "points_lost": 0.0,
+      "observed": true,
+      "signals": {
+        "cost_per_1k_predictions_usd": 1.0
+      }
+    }
+  ],
+  "recommendations": [
+    {
+      "pillar": "security",
+      "action": "[LIFTS CAP] Rebuild image on patched base and re-sign (Cosign)",
+      "effort_hours": 1.5,
+      "points_recoverable": 259.0,
+      "points_per_hour": 172.7,
+      "automation": "workflow 28-sbom-signing",
+      "lifts_cap": true,
+      "blocked_by_cap": false
+    },
+    {
+      "pillar": "security",
+      "action": "[LIFTS CAP] Fix Kyverno / OPA policy violations in deployment manifest",
+      "effort_hours": 1.0,
+      "points_recoverable": 52.5,
+      "points_per_hour": 52.5,
+      "automation": "UC7 / UC12 policy gates",
+      "lifts_cap": true,
+      "blocked_by_cap": false
+    },
+    {
+      "pillar": "governance",
+      "action": "[LIFTS CAP] Publish model card and OpenLineage lineage for the version",
+      "effort_hours": 2.0,
+      "points_recoverable": 30.8,
+      "points_per_hour": 15.4,
+      "automation": "MLflow model version tags + OpenLineage",
+      "lifts_cap": true,
+      "blocked_by_cap": false
+    },
+    {
+      "pillar": "governance",
+      "action": "Log SHAP global + local explanations to the model version",
+      "effort_hours": 1.0,
+      "points_recoverable": 25.2,
+      "points_per_hour": 25.2,
+      "automation": "UC17 explainability workflow",
+      "lifts_cap": false,
+      "blocked_by_cap": true
+    }
+  ],
+  "target_band": "GOOD",
+  "plan_to_target": [
+    {
+      "pillar": "security",
+      "action": "[LIFTS CAP] Rebuild image on patched base and re-sign (Cosign)",
+      "effort_hours": 1.5,
+      "points_recoverable": 259.0,
+      "points_per_hour": 172.7,
+      "automation": "workflow 28-sbom-signing",
+      "lifts_cap": true,
+      "blocked_by_cap": false
+    }
+  ],
+  "plan_to_target_hours": 1.5,
+  "plan_reaches_target": true,
+  "inputs_hash": "234306a78811f0ce13a0e0b063927eb9f7aba168e91ad2c34c4b1f60431088ce",
+  "engine_version": "1.0.0",
+  "computed_at": "2026-10-17T15:00:56.525896+00:00",
+  "signals_used": {
+    "psi_score": 0.05,
+    "accuracy": 0.93,
+    "f1_score": 0.91,
+    "error_budget_remaining": 0.8,
+    "p99_latency_ms": 90.0,
+    "cost_per_1k_predictions_usd": 0.01,
+    "critical_cves": 3,
+    "high_cves": 0,
+    "policy_violations": 2.0,
+    "image_signed": false,
+    "eu_ai_act_compliant": false,
+    "lineage_recorded": false,
+    "shap_logged": false,
+    "human_oversight_defined": true,
+    "model_card_present": false
+  },
+  "opa_staging": false,
+  "opa_production": false
+}

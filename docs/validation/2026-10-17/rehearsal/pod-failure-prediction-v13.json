@@ -1,0 +1,202 @@
+{
+  "model_name": "pod-failure-prediction",
+  "model_version": "13",
+  "score": 817,
+  "band": "GOOD",
+  "band_meaning": "Promotable with reviewer sign-off",
+  "score_uncapped": 817,
+  "caps_applied": [],
+  "pillars": [
+    {
+      "pillar": "performance",
+      "weight": 0.25,
+      "health": 0.5481,
+      "points_available": 175.0,
+      "points_earned": 95.9,
+      "points_lost": 79.1,
+      "observed": true,
+      "signals": {
+        "accuracy": 0.68,
+        "f1_score": 0.52,
+        "estimated_performance_drop": 0.4444
+      }
+    },
+    {
+      "pillar": "drift",
+      "weight": 0.2,
+      "health": 0.375,
+      "points_available": 140.0,
+      "points_earned": 52.5,
+      "points_lost": 87.5,
+      "observed": true,
+      "signals": {
+        "psi_score": 0.375
+      }
+    },
+    {
+      "pillar": "reliability",
+      "weight": 0.2,
+      "health": 0.9,
+      "points_available": 140.0,
+      "points_earned": 126.0,
+      "points_lost": 14.0,
+      "observed": true,
+      "signals": {
+        "error_budget_remaining": 0.8,
+        "p99_latency_ms": 1.0
+      }
+    },
+    {
+      "pillar": "security",
+      "weight": 0.15,
+      "health": 0.975,
+      "points_available": 105.0,
+      "points_earned": 102.4,
+      "points_lost": 2.6,
+      "observed": true,
+      "signals": {
+        "critical_cves": 1.0,
+        "high_cves": 0.9,
+        "policy_violations": 1.0,
+        "image_signed": 1.0
+      }
+    },
+    {
+      "pillar": "governance",
+      "weight": 0.1,
+      "health": 1.0,
+      "points_available": 70.0,
+      "points_earned": 70.0,
+      "points_lost": 0.0,
+      "observed": true,
+      "signals": {
+        "shap_logged": 1.0,
+        "model_card_present": 1.0,
+        "lineage_recorded": 1.0,
+        "eu_ai_act_compliant": 1.0,
+        "human_oversight_defined": 1.0
+      }
+    },
+    {
+      "pillar": "cost",
+      "weight": 0.1,
+      "health": 1.0,
+      "points_available": 70.0,
+      "points_earned": 70.0,
+      "points_lost": 0.0,
+      "observed": true,
+      "signals": {
+        "cost_per_1k_predictions_usd": 1.0
+      }
+    }
+  ],
+  "recommendations": [
+    {
+      "pillar": "drift",
+      "action": "Refresh reference window to post-deployment baseline",
+      "effort_hours": 0.5,
+      "points_recoverable": 35.0,
+      "points_per_hour": 70.0,
+      "automation": "drift-monitor /api/v1/reference",
+      "lifts_cap": false,
+      "blocked_by_cap": false
+    },
+    {
+      "pillar": "performance",
+      "action": "Promote the champion/challenger that won shadow evaluation",
+      "effort_hours": 1.0,
+      "points_recoverable": 63.3,
+      "points_per_hour": 63.3,
+      "automation": "UC22 shadow_evaluator PromotionGate",
+      "lifts_cap": false,
+      "blocked_by_cap": false
+    },
+    {
+      "pillar": "drift",
+      "action": "Trigger retraining on the last 7 days (Airflow pod_failure_prediction_retrain)",
+      "effort_hours": 2.0,
+      "points_recoverable": 74.4,
+      "points_per_hour": 37.2,
+      "automation": "UC1 drift gate -> Airflow DAG",
+      "lifts_cap": false,
+      "blocked_by_cap": false
+    },
+    {
+      "pillar": "reliability",
+      "action": "Scale replicas ahead of forecast load (KEDA ScaledObject)",
+      "effort_hours": 0.5,
+      "points_recoverable": 8.4,
+      "points_per_hour": 16.8,
+      "automation": "UC4 predictive-scaler",
+      "lifts_cap": false,
+      "blocked_by_cap": false
+    },
+    {
+      "pillar": "performance",
+      "action": "Run Optuna HPO sweep and register best trial",
+      "effort_hours": 6.0,
+      "points_recoverable": 71.2,
+      "points_per_hour": 11.9,
+      "automation": "UC14 HPO workflow",
+      "lifts_cap": false,
+      "blocked_by_cap": false
+    },
+    {
+      "pillar": "reliability",
+      "action": "Enable request hedging + circuit breaker on inference path",
+      "effort_hours": 4.0,
+      "points_recoverable": 11.2,
+      "points_per_hour": 2.8,
+      "automation": "services/self-healing resilience.py",
+      "lifts_cap": false,
+      "blocked_by_cap": false
+    },
+    {
+      "pillar": "security",
+      "action": "Fix Kyverno / OPA policy violations in deployment manifest",
+      "effort_hours": 1.0,
+      "points_recoverable": 2.1,
+      "points_per_hour": 2.1,
+      "automation": "UC7 / UC12 policy gates",
+      "lifts_cap": false,
+      "blocked_by_cap": false
+    },
+    {
+      "pillar": "security",
+      "action": "Rebuild image on patched base and re-sign (Cosign)",
+      "effort_hours": 1.5,
+      "points_recoverable": 2.3,
+      "points_per_hour": 1.5,
+      "automation": "workflow 28-sbom-signing",
+      "lifts_cap": false,
+      "blocked_by_cap": false
+    }
+  ],
+  "target_band": "GOOD",
+  "plan_to_target": [],
+  "plan_to_target_hours": 0.0,
+  "plan_reaches_target": true,
+  "inputs_hash": "52af185defecfafe4ede01cffaf5245035bc500a8a89afc2bd1eea6fb8c561b8",
+  "engine_version": "1.0.0",
+  "computed_at": "2026-10-17T15:00:56.325619+00:00",
+  "signals_used": {
+    "psi_score": 0.35,
+    "accuracy": 0.72,
+    "f1_score": 0.68,
+    "estimated_performance_drop": 0.12,
+    "error_budget_remaining": 0.4,
+    "p99_latency_ms": 260.0,
+    "cost_per_1k_predictions_usd": 0.03,
+    "shap_logged": true,
+    "lineage_recorded": true,
+    "human_oversight_defined": true,
+    "critical_cves": 0.0,
+    "high_cves": 1.0,
+    "policy_violations": 0.0,
+    "image_signed": true,
+    "eu_ai_act_compliant": true,
+    "model_card_present": true
+  },
+  "opa_staging": false,
+  "opa_production": false
+}

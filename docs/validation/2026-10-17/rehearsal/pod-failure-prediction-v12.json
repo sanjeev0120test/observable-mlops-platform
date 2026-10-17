@@ -1,0 +1,125 @@
+{
+  "model_name": "pod-failure-prediction",
+  "model_version": "12",
+  "score": 1000,
+  "band": "PRIME",
+  "band_meaning": "Auto-promotion eligible; no human gate required",
+  "score_uncapped": 1000,
+  "caps_applied": [],
+  "pillars": [
+    {
+      "pillar": "performance",
+      "weight": 0.25,
+      "health": 1.0,
+      "points_available": 175.0,
+      "points_earned": 175.0,
+      "points_lost": 0.0,
+      "observed": true,
+      "signals": {
+        "accuracy": 1.0,
+        "f1_score": 1.0,
+        "roc_auc": 1.0,
+        "estimated_performance_drop": 1.0
+      }
+    },
+    {
+      "pillar": "drift",
+      "weight": 0.2,
+      "health": 1.0,
+      "points_available": 140.0,
+      "points_earned": 140.0,
+      "points_lost": 0.0,
+      "observed": true,
+      "signals": {
+        "psi_score": 1.0,
+        "ks_statistic": 1.0
+      }
+    },
+    {
+      "pillar": "reliability",
+      "weight": 0.2,
+      "health": 1.0,
+      "points_available": 140.0,
+      "points_earned": 140.0,
+      "points_lost": 0.0,
+      "observed": true,
+      "signals": {
+        "error_budget_remaining": 1.0,
+        "p99_latency_ms": 1.0
+      }
+    },
+    {
+      "pillar": "security",
+      "weight": 0.15,
+      "health": 1.0,
+      "points_available": 105.0,
+      "points_earned": 105.0,
+      "points_lost": 0.0,
+      "observed": true,
+      "signals": {
+        "critical_cves": 1.0,
+        "high_cves": 1.0,
+        "policy_violations": 1.0,
+        "image_signed": 1.0
+      }
+    },
+    {
+      "pillar": "governance",
+      "weight": 0.1,
+      "health": 1.0,
+      "points_available": 70.0,
+      "points_earned": 70.0,
+      "points_lost": 0.0,
+      "observed": true,
+      "signals": {
+        "shap_logged": 1.0,
+        "model_card_present": 1.0,
+        "lineage_recorded": 1.0,
+        "eu_ai_act_compliant": 1.0,
+        "human_oversight_defined": 1.0
+      }
+    },
+    {
+      "pillar": "cost",
+      "weight": 0.1,
+      "health": 1.0,
+      "points_available": 70.0,
+      "points_earned": 70.0,
+      "points_lost": 0.0,
+      "observed": true,
+      "signals": {
+        "cost_per_1k_predictions_usd": 1.0
+      }
+    }
+  ],
+  "recommendations": [],
+  "target_band": "GOOD",
+  "plan_to_target": [],
+  "plan_to_target_hours": 0.0,
+  "plan_reaches_target": true,
+  "inputs_hash": "5bdd948fe3bd6f39f2ba108f99ac75ded386c421fb884eff697dd438f601b532",
+  "engine_version": "1.0.0",
+  "computed_at": "2026-10-17T15:00:56.180743+00:00",
+  "signals_used": {
+    "psi_score": 0.04,
+    "ks_statistic": 0.03,
+    "accuracy": 0.91,
+    "f1_score": 0.88,
+    "roc_auc": 0.94,
+    "estimated_performance_drop": 0.0,
+    "error_budget_remaining": 0.8,
+    "p99_latency_ms": 120.0,
+    "cost_per_1k_predictions_usd": 0.02,
+    "shap_logged": true,
+    "lineage_recorded": true,
+    "human_oversight_defined": true,
+    "critical_cves": 0.0,
+    "high_cves": 0.0,
+    "policy_violations": 0.0,
+    "image_signed": true,
+    "eu_ai_act_compliant": true,
+    "model_card_present": true
+  },
+  "opa_staging": true,
+  "opa_production": true
+}

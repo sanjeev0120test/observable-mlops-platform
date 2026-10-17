@@ -11,10 +11,88 @@ alert correlation to self-healing, RAG runbooks, and cost optimization — each 
 - **Eval portal:** published by `91-publish-portal.yml` after every CI run
 
 > **CI status:** 30 workflows — 23 UC eval gates + lint/structure (ruff, black,
-> actionlint), 154 unit tests, OPA policy tests, the Model Trust rehearsal
+> actionlint), 154 unit tests, 36 OPA policy tests, the Model Trust rehearsal
 > (checker → score → ledger → promotion gate), chaos/k8s manifest validation, SBOM
 > signing, and end-to-end score aggregation. Every use case must clear its numeric threshold
 > before a commit lands on `main`.
+
+The numbers above were re-checked on this machine on **17 October 2026**. What was
+actually run, what was only seen in GitHub Actions, and what was **not** run are in
+the next section, with the screenshots from that session.
+
+---
+
+## Validation record — 17 October 2026
+
+Checked on Windows against the tree at `40401ab` (same file tree as `origin/main` at
+`f8e738c`). Screenshots live in
+[`docs/images/validation-2026-10-17/`](docs/images/validation-2026-10-17/).
+Command transcripts live in
+[`docs/validation/2026-10-17/`](docs/validation/2026-10-17/).
+
+### Ran locally and passed
+
+| Check | Result | Evidence |
+|---|---|---|
+| `pytest tests/unit` | **154 passed**, 1 warning (Starlette deprecation on the FastAPI test client; not a failure), 14.46s | transcript `pytest.txt`, image below |
+| `opa test` (OPA 1.21.2) | **36/36** | transcript `opa.txt` |
+| `scripts/promotion_rehearsal.py --require-opa` | v12 **1000 PRIME, production allow**; v13 **817 GOOD, production deny**; v4 **599 SUBPRIME, production deny**; ledger verifies; a tampered copy fails at sequence 2 | transcript `rehearsal.txt` |
+| Terraform 1.16.6 `fmt -check` and `validate` (`init -backend=false`) | **valid**. AWS provider v5.100.0. **Not applied.** No AWS credentials were used. | transcript `terraform.txt` |
+| Model Trust operator console `GET /` on `127.0.0.1:8018` | Form submitted in a browser. Clean defaults scored **874 PRIME** (submitted twice, sequences 1 and 2). Unsigned image and EU AI Act = no, version 4, scored **752 GOOD**. | images 03, 04, 05 |
+
+The 752 is under the 849 knockout cap, so the page correctly says **no knockout cap is binding**. The drop from 874 is the unsigned image and the failed EU AI Act flag lowering the security and governance pillars. Reliability and cost were not filled in on the form, so the advisor still suggests a scaling action for the unobserved reliability pillar.
+
+![Local command results: 154 tests, 36 OPA tests, rehearsal](docs/images/validation-2026-10-17/01-local-checks.png)
+
+*Top of the session log: unit tests, OPA, and the start of the rehearsal.*
+
+![Terraform validate, and the checks that were not run](docs/images/validation-2026-10-17/02-not-run.png)
+
+*Terraform validate succeeded. The red section is the list of checks that were not run, and why there is no screenshot of them.*
+
+![Operator console before any score](docs/images/validation-2026-10-17/03-console-before-score.png)
+
+*Console loaded. Engine 1.0.0, ledger verified, no entries yet.*
+
+![Console score 874 PRIME](docs/images/validation-2026-10-17/04-console-prime.png)
+
+*Same form submitted with the defaults (signed image, EU AI Act compliant, accuracy 0.91, PSI 0.04, zero critical CVEs). Score 874, band PRIME. The ledger shows two identical submissions.*
+
+![Console score 752 GOOD for an unsigned, non-compliant version](docs/images/validation-2026-10-17/05-console-good.png)
+
+*Version 4, image signed = no, EU AI Act compliant = no. Score 752, band GOOD.*
+
+![Ledger after the 752 score](docs/images/validation-2026-10-17/05-console-capped.png)
+
+*Ledger order: seq 3 is version 4 at 752 GOOD; seq 1 and 2 are version 1 at 874 PRIME.*
+
+### Seen on GitHub Actions, not re-executed locally
+
+Public Actions page for `branch:main`, filtered in the browser. These runs are green on commit `40401ab` (merge of PR #11):
+
+- **27 · Platform Unit Tests** — success in 2m 45s
+- **30 · Model Trust Score** — success in 1m 14s
+
+Workflow 27 had **failed** on the earlier merge of PR #9 (the rehearsal prepended its import path and the self-healing tests loaded the wrong `main`). PR #11 fixed that. The green run below is the fix.
+
+![GitHub Actions: workflow 30 and workflow 27 green on 40401ab](docs/images/validation-2026-10-17/07-github-actions-pr11.png)
+
+Other workflows on that same commit (00, 01, 14, 15, 28, 29, 90, 91, GitHub Pages) were also reported successful by the Actions page. They were not re-run on this machine.
+
+### Not run on 17 October 2026
+
+No screenshot was taken of these, because they were not started:
+
+| Not run | Why |
+|---|---|
+| Docker Compose stacks A, B, and C | Docker Desktop's daemon is not running (`dockerDesktopLinuxEngine` pipe missing). |
+| Grafana, Prometheus, Loki, Tempo, Alertmanager, Qdrant | Those UIs only exist once Compose is up. |
+| Kind clusters | Needs Docker. |
+| `terraform apply` and any EKS cluster | Validate only. No AWS account was used. |
+| DagsHub and a live MLflow UI | Not opened. |
+| Airflow scheduler executing the retrain DAG | The DAG file is unit-tested (it parses, and the EU AI Act helper is covered). The scheduler was not started. |
+
+The 51 images in [section 11](#11-local-observability-lab--runbook--lessons-learned) are from **11 June 2026**. They were not recaptured in this session.
 
 ---
 
@@ -153,8 +231,9 @@ observable-mlops-platform/
 │
 ├── docs/
 │   └── images/
-│       └── local-observability-lab/       # 51 validation screenshots from 2026-06-11 local session
-│           └── 01.png … 51.png            # See "Local Observability Lab" section below for full index
+│       ├── local-observability-lab/       # 51 screenshots from 2026-06-11 (not recaptured 2026-10-17)
+│       │   └── 01.png … 51.png            # See "Local Observability Lab" section below for full index
+│       └── validation-2026-10-17/         # Screenshots from the 17 Oct 2026 validation record
 │
 ├── eval/                                  # Unified eval framework used by all 23 UC workflows
 │   ├── metrics.py                         # MetricSpec per UC: direction (higher/lower/bool), weight, threshold
@@ -480,6 +559,7 @@ Run all workflows locally with `make ci-local` (lint + unit tests + data generat
 ## 11. Local Observability Lab — Runbook & Lessons Learned
 
 **Last validated locally:** 2026-06-11 (Docker Desktop on Windows; Stack B + metrics hub + OTEL seed).
+**Not repeated on 2026-10-17.** Docker was not running in that later session, so the screenshots below are the June record only. The October record (tests, OPA, rehearsal, Terraform validate, trust console) is in [Validation record — 17 October 2026](#validation-record--17-october-2026).
 
 **Purpose:** Run Prometheus, Grafana, Loki, Tempo, and OTEL locally with **real data in every UI** — not just empty
 infrastructure. Documents every setup failure encountered and the exact fix applied.
