@@ -1,9 +1,12 @@
-import sys, re, collections
-sys.stdout.reconfigure(encoding='utf-8')
-text = open('README.md', encoding='utf-8').read()
+import collections
+import re
+import sys
 
-imgs = re.findall(r'local-observability-lab/(\d+)[.]png', text)
-nums = sorted(set(int(n) for n in imgs))
+sys.stdout.reconfigure(encoding="utf-8")
+text = open("README.md", encoding="utf-8").read()
+
+imgs = re.findall(r"local-observability-lab/(\d+)[.]png", text)
+nums = sorted({int(n) for n in imgs})
 missing = [i for i in range(1, 52) if i not in nums]
 print("=== SCREENSHOT AUDIT ===")
 print("Total refs:", len(imgs), "| Unique:", len(nums), "| Range:", min(nums), "-", max(nums))
@@ -36,6 +39,6 @@ for k, v in checks.items():
 
 print()
 print("Lines:", text.count("\n"))
-hdrs = re.findall(r'^#{1,4} .+', text, re.MULTILINE)
+hdrs = re.findall(r"^#{1,4} .+", text, re.MULTILINE)
 dup_hdrs = [h for h, c in collections.Counter(hdrs).items() if c > 1]
 print("Dup headings:", dup_hdrs if dup_hdrs else "NONE")
