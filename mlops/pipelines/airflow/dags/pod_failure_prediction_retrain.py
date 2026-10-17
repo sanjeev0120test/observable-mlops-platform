@@ -326,21 +326,30 @@ def compute_trust_score(**context) -> dict | None:
 
     result = json.loads(Path("/tmp/train_result.json").read_text())
     model_name = result.get("model_name", "pod-failure-prediction")
+    # Evidence only. The service assembles signals and leaves unobserved anything
+    # this DAG did not measure (CVEs, signature, human approval, EU AI Act).
     payload = {
         "model_name": model_name,
         "model_version": result.get("run_id", "pending")[:12],
-        "signals": {
-            "accuracy": result.get("accuracy"),
-            "f1_score": result.get("f1_score"),
-            "psi_score": float(context["params"].get("psi_score", 0.0) or 0.0),
-            "shap_logged": False,  # UC17 adds SHAP after registration
-            "lineage_recorded": True,  # this DAG emits OpenLineage events
-            "human_oversight_defined": True,  # @challenger alias requires manual promotion
+        "evidence": {
+            "metrics": {
+                "accuracy": result.get("accuracy"),
+                "f1_score": result.get("f1_score"),
+                "roc_auc": result.get("roc_auc"),
+                "psi_score": float(context["params"].get("psi_score", 0.0) or 0.0),
+            },
+            "tags": {
+                "training_dataset": "feast/pod_metrics_features",
+                "openlineage_run_id": result.get("run_id", ""),
+                "shap_values_logged": "false",  # UC17 adds SHAP after registration
+            },
         },
         "target_band": "GOOD",
     }
     try:
-        resp = httpx.post(f"{MODEL_TRUST_URL}/api/v1/score", json=payload, timeout=10.0)
+        resp = httpx.post(
+            f"{MODEL_TRUST_URL}/api/v1/score/from-evidence", json=payload, timeout=10.0
+        )
         resp.raise_for_status()
         report = resp.json()
     except Exception as exc:

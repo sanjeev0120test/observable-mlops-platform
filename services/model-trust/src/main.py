@@ -3,6 +3,7 @@ Model Trust Score service.
 
 Endpoints:
   POST /api/v1/score                      — score a model version, append to ledger, advise
+  POST /api/v1/score/from-evidence        — same, but signals are assembled from raw evidence
   GET  /api/v1/models/{name}/history      — ledger history for one model
   GET  /api/v1/ledger/verify              — walk the hash chain
   GET  /api/v1/ledger/attestation         — regulator-facing attestation document
@@ -23,6 +24,7 @@ from pydantic import BaseModel, Field
 
 try:
     # When src/ is on sys.path (unit tests, PYTHONPATH=src)
+    from assemble import assemble_signals
     from trust_engine import (
         BANDS,
         ENGINE_VERSION,
@@ -32,6 +34,7 @@ try:
         default_ledger_path,
     )
 except ImportError:  # pragma: no cover — container runs `uvicorn src.main:app`
+    from .assemble import assemble_signals
     from .trust_engine import (
         BANDS,
         ENGINE_VERSION,
@@ -72,6 +75,15 @@ class ScoreRequest(BaseModel):
     model_name: str = Field(..., min_length=1, max_length=128)
     model_version: str = Field(..., min_length=1, max_length=64)
     signals: dict[str, Any] = Field(default_factory=dict)
+    targets: dict[str, float] = Field(default_factory=dict)
+    target_band: str = Field("GOOD", pattern="^(PRIME|GOOD|FAIR|SUBPRIME)$")
+    record: bool = True
+
+
+class EvidenceRequest(BaseModel):
+    model_name: str = Field(..., min_length=1, max_length=128)
+    model_version: str = Field(..., min_length=1, max_length=64)
+    evidence: dict[str, Any] = Field(default_factory=dict)
     targets: dict[str, float] = Field(default_factory=dict)
     target_band: str = Field("GOOD", pattern="^(PRIME|GOOD|FAIR|SUBPRIME)$")
     record: bool = True
@@ -151,6 +163,27 @@ def score(req: ScoreRequest) -> dict[str, Any]:
     body["previous_score"] = previous
     body["score_delta"] = (report.score - previous) if previous is not None else None
     body["ledger_entry"] = entry
+    body["signals_used"] = dict(req.signals)
+    return body
+
+
+@app.post("/api/v1/score/from-evidence")
+def score_from_evidence(req: EvidenceRequest) -> dict[str, Any]:
+    """Score from raw platform evidence. Missing sources stay unobserved."""
+    try:
+        signals = assemble_signals(req.evidence)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    body = score(
+        ScoreRequest(
+            model_name=req.model_name,
+            model_version=req.model_version,
+            signals=signals,
+            targets=req.targets,
+            target_band=req.target_band,
+            record=req.record,
+        )
+    )
     return body
 
 
