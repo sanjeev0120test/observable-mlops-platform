@@ -1,0 +1,107 @@
+name: "30 · Model Trust Score — FICO-style model credit score + tamper-evident ledger"
+
+on:
+  push:
+    branches: [main, "feature/**", "fix/**", "chore/**"]
+    paths:
+      - "services/model-trust/**"
+      - "scripts/trust_score_demo.py"
+      - "tests/unit/test_model_trust.py"
+      - "aiops/policies/opa/model_promotion*.rego"
+      - ".github/workflows/30-model-trust-score.yml"
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "30 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "model-trust-${{ github.ref }}"
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+  OPA_VERSION: v1.21.2
+
+jobs:
+  unit-tests:
+    name: "Engine + ledger + API unit tests"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install --quiet pytest fastapi httpx pydantic prometheus-client
+      - run: python -m pytest tests/unit/test_model_trust.py -v --tb=short
+
+  end-to-end-demo:
+    name: "Score 3 model versions → ledger → tamper proof → OPA gate"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: unit-tests
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Install OPA
+        run: |
+          curl -fsSL -o /usr/local/bin/opa \
+            "https://github.com/open-policy-agent/opa/releases/download/${OPA_VERSION}/opa_linux_amd64_static"
+          chmod 755 /usr/local/bin/opa
+          opa version
+      - name: Policy tests (trust gate rules)
+        run: opa test aiops/policies/opa/ -v --ignore "*.gitkeep"
+      - name: Run demo
+        run: python scripts/trust_score_demo.py --out trust-results --summary "$GITHUB_STEP_SUMMARY"
+      - name: Upload attestation + reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: model-trust-attestation
+          path: trust-results/
+          retention-days: 30
+
+  container-smoke:
+    name: "Build image, boot service, score via HTTP"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: unit-tests
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build
+        run: docker build -t model-trust:ci services/model-trust
+      - name: Run (non-root, read-only rootfs like the k8s manifest)
+        run: |
+          docker run -d --name mt -p 8008:8000 --read-only \
+            --tmpfs /tmp --tmpfs /app/data:uid=10001,gid=10001 \
+            -e MLFLOW_TRACKING_URI= model-trust:ci
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:8008/health && break
+            sleep 1
+          done
+      - name: Score + verify over HTTP
+        run: |
+          set -euo pipefail
+          curl -fsS -X POST http://localhost:8008/api/v1/score \
+            -H 'content-type: application/json' \
+            -d '{"model_name":"pod-failure-prediction","model_version":"12","signals":{"psi_score":0.04,"accuracy":0.89,"error_budget_remaining":0.7,"p99_latency_ms":180,"cost_per_1k_predictions_usd":0.02,"critical_cves":0,"image_signed":true,"shap_logged":true,"eu_ai_act_compliant":true}}' \
+            | python3 -c 'import json,sys; r=json.load(sys.stdin); print("score", r["score"], r["band"]); assert r["band"] in ("GOOD","PRIME")'
+          curl -fsS -X POST http://localhost:8008/api/v1/score \
+            -H 'content-type: application/json' \
+            -d '{"model_name":"cost-anomaly-detector","model_version":"4","signals":{"accuracy":0.93,"critical_cves":3,"image_signed":false,"policy_violations":2}}' \
+            | python3 -c 'import json,sys; r=json.load(sys.stdin); print("score", r["score"], r["band"]); assert r["band"]=="SUBPRIME"; assert r["recommendations"][0]["action"].startswith("[LIFTS CAP]")'
+          curl -fsS http://localhost:8008/api/v1/ledger/verify | python3 -c 'import json,sys; v=json.load(sys.stdin); print(v); assert v["ok"] and v["entries"]==2'
+          curl -fsS http://localhost:8008/metrics | grep -E '^model_trust_score\{' 
+          echo "whoami in container: $(docker exec mt whoami)"
+          [ "$(docker exec mt id -u)" = "10001" ]
+      - name: Logs on failure
+        if: failure()
+        run: docker logs mt

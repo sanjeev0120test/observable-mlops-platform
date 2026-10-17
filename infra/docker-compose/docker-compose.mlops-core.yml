@@ -46,7 +46,10 @@ services:
     mem_limit: 300m
 
   mlflow:
-    image: ghcr.io/mlflow/mlflow:v2.13.0
+    build:
+      context: ./mlflow
+      dockerfile: Dockerfile
+    image: observable-mlops-platform/mlflow:3.17.1
     container_name: platform-mlflow
     command: >
       mlflow server
@@ -67,7 +70,7 @@ services:
       postgresql:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=8)"]
       interval: 15s
       timeout: 10s
       retries: 8

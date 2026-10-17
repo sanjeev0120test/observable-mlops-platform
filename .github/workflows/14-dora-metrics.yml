@@ -33,7 +33,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install --quiet numpy pandas pyarrow mlflow
+        run: pip install --quiet numpy==1.26.4 pandas==2.2.2 pyarrow==15.0.2 mlflow==3.17.1
 
       - name: Compute DORA metrics from GHA context
         env:

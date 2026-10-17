@@ -75,7 +75,7 @@ jobs:
       security-events: write  # Required by upload-sarif to write to the code-scanning API
     strategy:
       matrix:
-        service: [anomaly-detector, drift-monitor, alert-correlator, self-healing, runbook-agent, cost-optimizer]
+        service: [anomaly-detector, drift-monitor, alert-correlator, self-healing, runbook-agent, cost-optimizer, predictive-scaler, model-trust]
     steps:
       - uses: actions/checkout@v7
 

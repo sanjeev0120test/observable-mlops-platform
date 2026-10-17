@@ -77,10 +77,13 @@ def train_and_log(
         )
         mlflow.set_tags({"uc": "UC4,UC9", "feature_cols": ",".join(FEATURE_COLS)})
 
+        # MLflow 3: models are first-class entities; `name=` replaces the positional artifact_path.
         model_info = mlflow.sklearn.log_model(
             clf,
-            "model",
+            name="model",
             registered_model_name=MODEL_NAME if register_model else None,
+            # MLflow 3 serialises sklearn models with skops (no pickle); tree ensembles need this type trusted.
+            skops_trusted_types=["sklearn.tree._tree.Tree"],
         )
 
         # Compute feature importances

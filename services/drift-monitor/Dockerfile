@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir \
     evidently==0.4.30 \
     nannyml==0.12.3 \
     alibi-detect==0.12.0 \
-    mlflow==2.13.0 \
+    mlflow==3.17.1 \
     prometheus-client==0.20.0 \
     httpx==0.27.0
 

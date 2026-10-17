@@ -32,7 +32,7 @@ jobs:
           pip install --quiet \
             qdrant-client==1.9.1 \
             sentence-transformers==3.0.1 \
-            mlflow==2.13.0
+            mlflow==3.17.1
 
       - name: Setup MLflow
         env:

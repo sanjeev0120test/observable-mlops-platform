@@ -11,7 +11,7 @@ RUN pip install --no-cache-dir \
     numpy==1.26.4 \
     pandas==2.2.2 \
     prophet==1.1.5 \
-    mlflow==2.13.0 \
+    mlflow==3.17.1 \
     prometheus-client==0.20.0 \
     httpx==0.27.0
 

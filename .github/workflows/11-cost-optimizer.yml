@@ -35,7 +35,7 @@ jobs:
             numpy==1.26.4 \
             pandas==2.2.2 \
             pyarrow==15.0.2 \
-            mlflow==2.13.0
+            mlflow==3.17.1
 
       - name: Generate cost data
         run: |
@@ -88,7 +88,10 @@ jobs:
               mlflow.log_params({"contamination": 0.04, "n_estimators": 100})
               mlflow.log_metrics({"f1_score": f1, "precision": prec, "recall": rec})
               mlflow.set_tags({"uc": "UC10", "algorithm": "IsolationForest"})
-              mlflow.sklearn.log_model(clf, "model", registered_model_name="cost-anomaly-detector")
+              mlflow.sklearn.log_model(
+                  clf, name="model", registered_model_name="cost-anomaly-detector",
+                  skops_trusted_types=["sklearn.tree._tree.Tree"],  # MLflow 3 secure skops format
+              )
 
           # Attribution: what % of cost is attributed to a team?
           df["predicted_anomaly"] = y_pred
