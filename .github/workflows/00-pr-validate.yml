@@ -2,7 +2,7 @@ name: "00 · PR Validate (lint + structure + eval framework)"
 
 on:
   push:
-    branches: [main, "feature/**", "fix/**"]
+    branches: [main, "feature/**", "fix/**", "chore/**"]
   pull_request:
     branches: [main]
 
@@ -13,21 +13,24 @@ concurrency:
 env:
   PYTHON_VERSION: "3.11"
 
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: "Lint (Ruff + Black + YAML)"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: "pip"
 
       - name: Install lint tools
-        run: pip install ruff black pre-commit
+        run: pip install ruff==0.17.1 black==26.10.1
 
       - name: Ruff check
         run: ruff check . --output-format=github
@@ -37,7 +40,7 @@ jobs:
         # Black is now blocking — services/ and mlops/ are no longer excluded
 
       - name: YAML lint (actionlint)
-        uses: rhysd/actionlint@v1.7.3
+        uses: rhysd/actionlint@v1.7.12
         # actionlint is now blocking — workflow syntax must be valid
 
       - name: Validate pyproject.toml
@@ -47,12 +50,12 @@ jobs:
     name: "OPA Policy Unit Tests"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install OPA
         run: |
-          curl -L -o /usr/local/bin/opa \
-            https://openpolicyagent.org/downloads/v0.65.0/opa_linux_amd64_static
+          curl -fsSL -o /usr/local/bin/opa \
+            https://github.com/open-policy-agent/opa/releases/download/v1.21.2/opa_linux_amd64_static
           chmod 755 /usr/local/bin/opa
 
       - name: Run Rego unit tests (self_healing + model_promotion)
@@ -64,7 +67,7 @@ jobs:
     name: "Directory Structure Check"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Verify required directories
         run: |
@@ -138,10 +141,10 @@ jobs:
     name: "Eval Framework Unit Tests"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: "pip"
@@ -203,10 +206,10 @@ jobs:
     name: "Synthetic Data Generator Smoke Tests"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: "pip"
@@ -261,7 +264,7 @@ jobs:
     name: "Workflow File Inventory"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Count and list workflows
         run: |
           echo "=== GitHub Actions Workflows ==="
@@ -275,7 +278,7 @@ jobs:
     name: "Observability UC Coverage (static)"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: pip install pyyaml --quiet
       - name: Verify alert rules, OTEL pipelines, and Grafana UC panels
         run: |

@@ -20,22 +20,22 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Download eval summary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: eval-summary
           path: eval-results/
         continue-on-error: true
 
       - name: Download all UC eval results
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: eval-results/
           merge-multiple: true
@@ -45,7 +45,7 @@ jobs:
         run: bash scripts/publish-portal.sh
 
       - name: Upload portal artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: portal-dist
           path: portal/dist/
@@ -58,10 +58,10 @@ jobs:
     if: github.ref == 'refs/heads/main'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Download portal
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: portal-dist
           path: portal/dist/
@@ -80,10 +80,10 @@ jobs:
     if: github.ref == 'refs/heads/main'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Download portal
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: portal-dist
           path: portal/dist/

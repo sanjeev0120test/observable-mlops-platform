@@ -14,6 +14,9 @@ env:
   COMPOSE_FILE: infra/docker-compose/docker-compose.observability.yml
   COMPOSE_PROJECT_NAME: platform-obs
 
+permissions:
+  contents: read
+
 jobs:
   observability-stack:
     name: "Start Observability Stack + Health Check"
@@ -21,7 +24,7 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Create external Docker network
         run: docker network create platform-net || true

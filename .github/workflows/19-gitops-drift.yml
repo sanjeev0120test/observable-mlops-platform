@@ -11,6 +11,9 @@ on:
 env:
   UC: UC12
 
+permissions:
+  contents: read
+
 jobs:
   gitops-drift:
     name: "GitOps Config Drift Detection + Policy Check"
@@ -18,7 +21,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Simulate config drift detection
         run: |
@@ -59,7 +62,7 @@ jobs:
           run_eval_gate("UC12", metrics, Path("eval-results"))
           PYEOF
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: eval-uc12

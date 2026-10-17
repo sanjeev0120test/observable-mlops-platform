@@ -50,6 +50,7 @@ python-jose>=3.3
 # Dev / test
 pytest>=8.2
 pytest-asyncio>=0.23
-ruff>=0.4
-black>=24.4
+pytest-cov>=5.0
+ruff==0.17.1
+black==26.10.1
 pre-commit>=3.7

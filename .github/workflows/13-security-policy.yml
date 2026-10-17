@@ -13,6 +13,9 @@ on:
 env:
   UC: UC7
 
+permissions:
+  contents: read
+
 jobs:
   trivy-scan:
     name: "Trivy CVE Scan (all service images)"
@@ -22,7 +25,7 @@ jobs:
       critical_cves: ${{ steps.trivy.outputs.critical_cves }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Trivy
         run: |
@@ -104,7 +107,7 @@ jobs:
           " || true
 
       - name: Upload scan results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: trivy-reports
           path: /tmp/trivy_*.json
@@ -116,7 +119,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install kyverno CLI
         run: |
@@ -178,7 +181,7 @@ jobs:
     name: "Falco Rules Syntax Validation"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Validate Falco custom rules YAML syntax
         run: |
@@ -202,7 +205,7 @@ jobs:
     needs: [trivy-scan, kyverno-policy-test, falco-rules-validate]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Collect security metrics
         run: |
@@ -238,7 +241,7 @@ jobs:
           run_eval_gate("UC7", metrics, Path("eval-results"))
           PYEOF
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: eval-uc7

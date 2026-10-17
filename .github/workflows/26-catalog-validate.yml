@@ -11,6 +11,9 @@ on:
 env:
   UC: UC20
 
+permissions:
+  contents: read
+
 jobs:
   catalog-validate:
     name: "Backstage Entity Lint + Count Validation"
@@ -18,7 +21,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Validate catalog-info.yaml entities
         run: |
@@ -89,7 +92,7 @@ jobs:
           run_eval_gate("UC20", metrics, Path("eval-results"))
           PYEOF
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: eval-uc20

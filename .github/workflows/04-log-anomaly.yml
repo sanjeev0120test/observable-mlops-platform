@@ -13,13 +13,16 @@ env:
   PYTHON_VERSION: "3.11"
   UC: UC2
 
+permissions:
+  contents: read
+
 jobs:
   generate-logs:
     name: "Generate Log Dataset"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -30,7 +33,7 @@ jobs:
             --hours 24 \
             --logs-per-second 10.0 \
             --output /tmp/container_logs.ndjson
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: logs-uc2
           path: /tmp/container_logs.ndjson
@@ -41,8 +44,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: generate-logs
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -57,7 +60,7 @@ jobs:
             mlflow==2.13.0
           pip install --quiet "protobuf>=3.20,<4.0" --force-reinstall
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: logs-uc2
           path: /tmp/
@@ -207,7 +210,7 @@ jobs:
           run_eval_gate("UC2", metrics, Path("eval-results"))
           PYEOF
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: eval-uc2

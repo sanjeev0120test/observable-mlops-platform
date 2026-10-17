@@ -2,7 +2,7 @@ name: "27 · Platform Unit Tests (drift_engine + correlator + scorer + self_heal
 
 on:
   push:
-    branches: [main, "feature/**", "fix/**"]
+    branches: [main, "feature/**", "fix/**", "chore/**"]
     paths:
       - "eval/**"
       - "services/**"
@@ -20,17 +20,25 @@ concurrency:
 env:
   PYTHON_VERSION: "3.11"
 
+permissions:
+  contents: read
+
 jobs:
   unit-tests:
-    name: "Python Unit Tests"
+    name: "Python Unit Tests (py${{ matrix.python-version }})"
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - name: Set up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v7
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: ${{ matrix.python-version }}
           cache: "pip"
 
       - name: Install dependencies
@@ -50,9 +58,9 @@ jobs:
             -q
 
       - name: Upload coverage to CI artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: coverage-report
+          name: coverage-report-py${{ matrix.python-version }}
           path: coverage.xml
           retention-days: 7
 
@@ -60,12 +68,12 @@ jobs:
     name: "OPA Rego Policy Unit Tests"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install OPA
         run: |
-          curl -L -o /usr/local/bin/opa \
-            https://openpolicyagent.org/downloads/v0.65.0/opa_linux_amd64_static
+          curl -fsSL -o /usr/local/bin/opa \
+            https://github.com/open-policy-agent/opa/releases/download/v1.21.2/opa_linux_amd64_static
           chmod 755 /usr/local/bin/opa
           opa version
 

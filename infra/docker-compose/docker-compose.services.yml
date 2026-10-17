@@ -19,7 +19,7 @@ services:
     depends_on:
       - qdrant
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=4)"]
       interval: 20s
       timeout: 5s
       retries: 5
@@ -38,11 +38,11 @@ services:
     ports:
       - "8002:8000"
     volumes:
-      - ../../services/drift-monitor/reports:/app/reports
+      - drift-reports:/app/reports
     depends_on:
       - mlflow
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=4)"]
       interval: 20s
       timeout: 5s
       retries: 5
@@ -64,7 +64,7 @@ services:
       - prometheus
       - redis
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=4)"]
       interval: 20s
       timeout: 5s
       retries: 5
@@ -85,7 +85,7 @@ services:
       - prometheus
       - mlflow
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=4)"]
       interval: 20s
       timeout: 5s
       retries: 5
@@ -111,7 +111,7 @@ services:
       n8n:
         condition: service_started
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=4)"]
       interval: 20s
       timeout: 5s
       retries: 5
@@ -133,7 +133,7 @@ services:
       - qdrant
       - ollama
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=4)"]
       interval: 20s
       timeout: 5s
       retries: 5
@@ -154,7 +154,7 @@ services:
       - prometheus
       - mlflow
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=4)"]
       interval: 20s
       timeout: 5s
       retries: 5
@@ -162,7 +162,8 @@ services:
     mem_limit: 256m
 
   opa:
-    image: openpolicyagent/opa:0.65.0-rootless
+    # -debug variant ships busybox wget for the healthcheck; the plain image is distroless (no curl/wget).
+    image: openpolicyagent/opa:1.21.2-debug
     container_name: platform-opa
     command:
       - "run"
@@ -174,12 +175,15 @@ services:
     ports:
       - "8181:8181"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8181/health"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8181/health"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
     mem_limit: 128m
+
+volumes:
+  drift-reports:
 
 networks:
   default:

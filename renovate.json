@@ -12,7 +12,6 @@
   "prConcurrentLimit": 5,
   "prHourlyLimit": 2,
   "labels": ["dependencies", "renovate"],
-  "assignees": ["@platform-team"],
   "packageRules": [
     {
       "description": "Group all minor and patch Python updates together",
@@ -63,11 +62,5 @@
     "enabled": true,
     "labels": ["security", "vulnerability"],
     "prPriority": 10
-  },
-  "pip_requirements": {
-    "fileMatch": ["requirements.txt", "requirements-*.txt"]
-  },
-  "pyproject": {
-    "fileMatch": ["pyproject.toml"]
   }
 }

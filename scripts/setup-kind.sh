@@ -16,19 +16,19 @@ set -euo pipefail
 
 PROFILE="${1:-policy}"
 CLUSTER_NAME="platform-${PROFILE}"
-KUBECTL_VERSION="${KUBECTL_VERSION:-1.30.0}"
-HELM_VERSION="${HELM_VERSION:-3.15.0}"
+KUBECTL_VERSION="${KUBECTL_VERSION:-1.37.1}"
+HELM_VERSION="${HELM_VERSION:-3.22.1}"
 
 echo "[setup-kind] Profile: ${PROFILE}, cluster: ${CLUSTER_NAME}"
 
 install_dependencies() {
     echo "[setup-kind] Installing kubectl v${KUBECTL_VERSION} ..."
-    curl -Lo /usr/local/bin/kubectl \
+    curl -fsSLo /usr/local/bin/kubectl \
         "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
     chmod +x /usr/local/bin/kubectl
 
     echo "[setup-kind] Installing Helm v${HELM_VERSION} ..."
-    curl -Lo /tmp/helm.tar.gz \
+    curl -fsSLo /tmp/helm.tar.gz \
         "https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz"
     tar xzf /tmp/helm.tar.gz -C /tmp
     mv /tmp/linux-amd64/helm /usr/local/bin/helm
