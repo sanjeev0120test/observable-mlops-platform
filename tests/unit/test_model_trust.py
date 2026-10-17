@@ -335,6 +335,38 @@ class TestService:
         assert 'model_trust_score{band="PRIME",model="x",version="1"} 1000.0' in text
         assert "model_trust_ledger_integrity_ok 1.0" in text
 
+    def test_regression_fires_on_a_band_drop_and_stays_quiet_for_noise(self, client):
+        first = client.post(
+            "/api/v1/score",
+            json={"model_name": "reg", "model_version": "1", "signals": PERFECT},
+        ).json()
+        assert first["regression"] is None and first["band"] == "PRIME"
+
+        # Same band, a few points: PSI 0.12 is worse than 0.02 but not a band change
+        # and not a 50-point collapse on its own. Use a dry score of a near-perfect
+        # input recorded as a second version only if the drop stays under the bar.
+        mild = client.post(
+            "/api/v1/score",
+            json={
+                "model_name": "reg",
+                "model_version": "2",
+                "signals": {**PERFECT, "high_cves": 1},
+            },
+        ).json()
+        assert mild["band"] == "PRIME"
+        assert mild["score_delta"] > -50
+        assert mild["regression"] is None
+
+        crashed = client.post(
+            "/api/v1/score",
+            json={"model_name": "reg", "model_version": "3", "signals": TERRIBLE},
+        ).json()
+        assert crashed["regression"]["band_dropped"] is True
+        assert crashed["regression"]["previous_band"] == "PRIME"
+        assert crashed["regression"]["delta"] <= -50
+        text = client.get("/metrics").text
+        assert 'model_trust_regressions_total{model="reg"} 1.0' in text
+
     def test_validation(self, client):
         assert client.post("/api/v1/score", json={"model_name": "x"}).status_code == 422
         bad = {"model_name": "x", "model_version": "1", "target_band": "GOLD"}

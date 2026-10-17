@@ -61,6 +61,15 @@ PILLAR_HEALTH = Gauge(
 SCORES_TOTAL = Counter("model_trust_scores_total", "Scoring events", ["band"])
 LEDGER_ENTRIES = Gauge("model_trust_ledger_entries", "Entries in the trust ledger")
 LEDGER_OK = Gauge("model_trust_ledger_integrity_ok", "1 if the hash chain verifies, else 0")
+REGRESSIONS = Counter(
+    "model_trust_regressions_total",
+    "Recorded scores that fell a band or at least 50 points",
+    ["model"],
+)
+# A 50-point drop is one band boundary wide (SUBPRIME/FAIR/GOOD are 100 apart,
+# PRIME starts 150 above GOOD). Smaller noise should not page anyone.
+REGRESSION_POINTS = 50
+_BAND_RANK = {band: rank for rank, (_, band, _) in enumerate(reversed(BANDS))}
 MLFLOW_WRITEBACKS = Counter(
     "model_trust_mlflow_writebacks_total", "MLflow tag write-backs", ["status"]
 )
@@ -106,6 +115,22 @@ def _writeback_to_mlflow(model_name: str, version: str, score: int, band: str) -
     except Exception as exc:  # noqa: BLE001 — write-back is best-effort
         MLFLOW_WRITEBACKS.labels(status="error").inc()
         logger.warning("MLflow write-back skipped for %s v%s: %s", model_name, version, exc)
+
+
+def _regression(
+    score: int,
+    band: str,
+    previous: int | None,
+    previous_band: str | None,
+) -> dict[str, Any] | None:
+    """Flag a drop that is large enough to change an on-call decision."""
+    if previous is None or previous_band is None:
+        return None
+    delta = score - previous
+    dropped = _BAND_RANK[band] < _BAND_RANK[previous_band]
+    if delta > -REGRESSION_POINTS and not dropped:
+        return None
+    return {"delta": delta, "previous_band": previous_band, "band_dropped": dropped}
 
 
 def _refresh_ledger_metrics() -> None:
@@ -158,8 +183,13 @@ def score(req: ScoreRequest) -> dict[str, Any]:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    previous = ledger.previous_score(req.model_name)
+    history = ledger.history(req.model_name)
+    previous = history[-1]["score"] if history else None
+    previous_band = history[-1]["band"] if history else None
     entry = ledger.append(report) if req.record else None
+    regression = _regression(report.score, report.band, previous, previous_band)
+    if regression is not None and req.record:
+        REGRESSIONS.labels(req.model_name).inc()
 
     TRUST_SCORE.labels(req.model_name, req.model_version, report.band).set(report.score)
     for p in report.pillars:
@@ -175,6 +205,7 @@ def score(req: ScoreRequest) -> dict[str, Any]:
     body["score_delta"] = (report.score - previous) if previous is not None else None
     body["ledger_entry"] = entry
     body["signals_used"] = dict(req.signals)
+    body["regression"] = regression
     return body
 
 

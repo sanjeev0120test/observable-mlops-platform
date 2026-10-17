@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer.
 
-## [Unreleased]
+## [0.4.0] - 2026-10-17
 
 ### Added
 - `POST /api/v1/score/from-evidence` assembles Model Trust signals from MLflow metrics
@@ -20,6 +20,9 @@ All notable changes to this project are documented here. Format follows
   Workflow 30 runs it with `--require-opa`.
 - Model Trust serves an operator console at `GET /` (also `http://localhost:8008`
   in Compose) that scores a version from evidence and shows the ledger.
+- A recorded rescore that falls a band or at least 50 points sets `regression` on
+  the score response, increments `model_trust_regressions_total`, and fires
+  `ModelTrustRegression`.
 
 ## [0.3.0] - 2026-10-17
 
