@@ -377,6 +377,24 @@ chains all incidents together) and one-hot namespace encoding. FPR measures cros
 a root alert correctly grouped with its own cascade alerts is not a false positive. Result: silhouette ≥ 0.87,
 FPR ≤ 0.10 on the 24h synthetic dataset, composite score 99.8.
 
+**Model Trust Score — a credit score for models** (`services/model-trust/`, workflow `30`)
+Every monitoring product reports signals in silos: drift here, SLO burn there, CVEs in a third tool, SHAP in
+MLflow. None of them answers the question the on-call engineer, the product owner and the auditor all ask —
+*"can I trust this model version in production right now, and if not, what is the cheapest fix?"* The Trust
+Score does, with three properties no single tool combines:
+
+| Property | How |
+|---|---|
+| **One 300–1000 number, fully attributable** | Six weighted pillars (performance 25%, drift 20%, reliability 20%, security 15%, governance 10%, cost 10%); every point traces to a pillar and a signal. Unmeasured pillars are *penalised* (health 0.4): you get no credit for what you do not measure. |
+| **Knockout caps** | Like a bankruptcy on a credit file: ≥1 critical CVE caps at FAIR, ≥3 at SUBPRIME; unsigned image or EU-AI-Act non-compliance can never be PRIME; exhausted error budget caps below GOOD. A 93%-accurate model in an unsigned image with 3 critical CVEs scores **599 / SUBPRIME**, not "fine". |
+| **Remediation-ROI advisor** | Each lost point maps to the platform action that recovers it (retrain via UC1, promote shadow winner via UC22, rebuild+re-sign via workflow 28, …) with an effort estimate. Output is ranked by points-per-hour plus the minimal action set to reach a target band. |
+| **Tamper-evident ledger** | Every score appends to a SHA-256 hash-chained JSONL ledger. Edit, delete or reorder one historic entry and `/api/v1/ledger/verify` fails at that exact sequence number. `/api/v1/ledger/attestation` is the EU AI Act Art. 12 record-keeping evidence, produced by operating the platform rather than by a quarterly spreadsheet. |
+| **Wired into the control plane** | OPA `model_promotion` denies production below 700 and denies everything while SUBPRIME or when the ledger is broken; the Airflow retrain DAG scores every candidate before the gate; the score is written back to the MLflow 3 model version as tags; Prometheus alerts + Grafana panels ship in `observability/`. |
+
+Bands: **PRIME ≥ 850** auto-promotion eligible · **GOOD ≥ 700** promotable with sign-off · **FAIR ≥ 600**
+shadow/canary only · **SUBPRIME < 600** blocked everywhere, rollback candidate.
+`make trust-demo` reproduces the CI demo locally (3 model versions → ledger → tamper proof → OPA decisions).
+
 **Container + cluster hardening** (`services/*/Dockerfile`, `infra/kubernetes/base/self-healing/`)
 All service images run as uid 10001 (non-root), expose no unnecessary ports, and include a `HEALTHCHECK`.
 The Kubernetes base overlay adds: `readOnlyRootFilesystem`, all capabilities dropped (`ALL`), resource
@@ -430,7 +448,8 @@ docker compose -f infra/docker-compose/docker-compose.observability.yml -p platf
 | Workflow | Purpose | Key gate |
 |---|---|---|
 | `00-pr-validate` | Lint (ruff, black), actionlint, OPA tests, structure | All must pass — blocks merge |
-| `27-unit-tests` | 101 pytest unit tests + OPA policy tests | 0 failures |
+| `27-unit-tests` | 130 pytest unit tests (py3.11 + 3.12) + OPA policy tests | 0 failures |
+| `30-model-trust-score` | Trust engine tests → 3-model demo → ledger tamper proof → OPA gate → container smoke (non-root, read-only rootfs) | Demo assertions + HTTP smoke |
 | `29-resilience-chaos` | Chaos + k8s manifest validation + resilience/shadow/RAG tests | All valid |
 | `28-sbom-signing` | Syft SBOM + Grype scan + Cosign signing + Trivy SARIF | Informational (SARIF to Security tab) |
 | `90-e2e-integration` | Aggregate all UC scores; exit 1 if any UC fails | 100% UC pass rate |
@@ -451,6 +470,8 @@ Run all workflows locally with `make ci-local` (lint + unit tests + data generat
 | **Least privilege** | Non-root containers, dropped capabilities, read-only root filesystem | `services/*/Dockerfile`, `infra/kubernetes/` |
 | **Network isolation** | Default-deny NetworkPolicy; explicit allow-lists per service | `infra/kubernetes/base/self-healing/networkpolicy.yaml` |
 | **Compliance** | EU AI Act: model card presence, bias metric logging, audit trail | `governance/eu-ai-act/compliance_check.py` |
+| **Model trust + record-keeping** | 300–1000 trust score with knockout caps, OPA promotion gate, SHA-256 hash-chained ledger + attestation | `services/model-trust/`, `aiops/policies/opa/model_promotion.rego` |
+| **Cloud footprint as code** | EKS (IRSA, KMS secrets, IMDSv2, spot inference pool), S3 artifacts (SSE-KMS, versioned), VPC flow logs; `fmt`+`validate` in CI | `infra/terraform/aws-eks/` |
 | **Dependency hygiene** | Renovate bot auto-PRs for outdated deps weekly | `renovate.json` |
 
 ---
