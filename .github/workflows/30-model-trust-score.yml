@@ -112,6 +112,7 @@ jobs:
             -H 'content-type: application/json' \
             -d '{"model_name":"cost-anomaly-detector","model_version":"4","signals":{"accuracy":0.93,"critical_cves":3,"image_signed":false,"policy_violations":2}}' \
             | python3 -c 'import json,sys; r=json.load(sys.stdin); print("score", r["score"], r["band"]); assert r["band"]=="SUBPRIME"; assert r["recommendations"][0]["action"].startswith("[LIFTS CAP]")'
+          curl -fsS http://localhost:8008/ | grep -q "Model Trust Score"
           curl -fsS http://localhost:8008/api/v1/ledger/verify | python3 -c 'import json,sys; v=json.load(sys.stdin); print(v); assert v["ok"] and v["entries"]==2'
           curl -fsS http://localhost:8008/metrics | grep -E '^model_trust_score\{' 
           echo "whoami in container: $(docker exec mt whoami)"

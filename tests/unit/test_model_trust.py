@@ -292,6 +292,13 @@ class TestService:
         trust_app.ledger = TrustLedger(tmp_path / "svc.jsonl")  # fresh ledger per test
         return TestClient(trust_app.app)
 
+    def test_console_page(self, client):
+        page = client.get("/")
+        assert page.status_code == 200
+        assert "Model Trust Score" in page.text
+        assert "/api/v1/score/from-evidence" in page.text
+        assert 'id="score-form"' in page.text
+
     def test_health_and_bands(self, client):
         assert client.get("/health").json()["status"] == "ok"
         b = client.get("/api/v1/bands").json()

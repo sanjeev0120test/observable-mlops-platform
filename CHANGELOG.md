@@ -18,6 +18,8 @@ All notable changes to this project are documented here. Format follows
   the evidence assembler, the ledger (including a tamper check), and the OPA
   promotion policy using each candidate's own accuracy, drift, and SHAP flag.
   Workflow 30 runs it with `--require-opa`.
+- Model Trust serves an operator console at `GET /` (also `http://localhost:8008`
+  in Compose) that scores a version from evidence and shows the ledger.
 
 ## [0.3.0] - 2026-10-17
 
