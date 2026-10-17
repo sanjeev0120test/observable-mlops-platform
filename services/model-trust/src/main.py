@@ -8,6 +8,7 @@ Endpoints:
   GET  /api/v1/ledger/verify              — walk the hash chain
   GET  /api/v1/ledger/attestation         — regulator-facing attestation document
   GET  /api/v1/bands                      — band thresholds + meanings
+  GET  /                               — operator console
   GET  /health, /metrics
 """
 
@@ -15,10 +16,11 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, generate_latest
 from pydantic import BaseModel, Field
 
@@ -69,6 +71,7 @@ app = FastAPI(
     description="FICO-style trust score for ML model versions with a tamper-evident ledger",
 )
 ledger = TrustLedger(default_ledger_path())
+_CONSOLE_HTML = Path(__file__).with_name("console.html")
 
 
 class ScoreRequest(BaseModel):
@@ -109,6 +112,14 @@ def _refresh_ledger_metrics() -> None:
     v = ledger.verify()
     LEDGER_ENTRIES.set(v.entries)
     LEDGER_OK.set(1 if v.ok else 0)
+
+
+@app.get("/", response_class=HTMLResponse)
+def console() -> HTMLResponse:
+    """Operator page: score a version from the evidence the service actually accepts."""
+    if not _CONSOLE_HTML.exists():
+        raise HTTPException(status_code=404, detail="console.html is not installed")
+    return HTMLResponse(_CONSOLE_HTML.read_text(encoding="utf-8"))
 
 
 @app.get("/health")
