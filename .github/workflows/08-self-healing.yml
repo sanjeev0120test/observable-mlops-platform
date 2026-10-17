@@ -14,17 +14,20 @@ env:
   PYTHON_VERSION: "3.11"
   UC: UC6
 
+permissions:
+  contents: read
+
 jobs:
   opa-policy-test:
     name: "OPA Policy Unit Tests"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install OPA
         uses: open-policy-agent/setup-opa@v2
         with:
-          version: v0.65.0
+          version: v1.21.2
 
       - name: Test model_promotion policy
         run: |
@@ -95,8 +98,8 @@ jobs:
     timeout-minutes: 20
     needs: opa-policy-test
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -106,8 +109,8 @@ jobs:
 
       - name: Start OPA server
         run: |
-          curl -L -o /usr/local/bin/opa \
-            https://github.com/open-policy-agent/opa/releases/download/v0.65.0/opa_linux_amd64_static
+          curl -fsSL -o /usr/local/bin/opa \
+            https://github.com/open-policy-agent/opa/releases/download/v1.21.2/opa_linux_amd64_static
           chmod +x /usr/local/bin/opa
           opa run --server --log-level=error \
             --bundle aiops/policies/opa/ &
@@ -213,7 +216,7 @@ jobs:
           run_eval_gate("UC6", metrics, Path("eval-results"))
           PYEOF
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: eval-uc6
