@@ -1,0 +1,57 @@
+{
+  "ledger_path": "c:\\dev\\observable-mlops-platform\\docs\\validation\\2026-10-17\\rehearsal\\trust_ledger.jsonl",
+  "entries": 3,
+  "integrity_ok": true,
+  "first_bad_seq": null,
+  "head_hash": "b3dbb3e6afcd2f017e06fab306ccf7fdffeb1004b811ae13902a5e53843b8b7f",
+  "genesis_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "hash_algorithm": "sha256(canonical_json(entry - hash))",
+  "models_covered": [
+    "cost-anomaly-detector",
+    "pod-failure-prediction"
+  ],
+  "latest_by_model": {
+    "cost-anomaly-detector": {
+      "band": "SUBPRIME",
+      "engine_version": "1.0.0",
+      "hash": "b3dbb3e6afcd2f017e06fab306ccf7fdffeb1004b811ae13902a5e53843b8b7f",
+      "inputs_hash": "234306a78811f0ce13a0e0b063927eb9f7aba168e91ad2c34c4b1f60431088ce",
+      "model_name": "cost-anomaly-detector",
+      "model_version": "4",
+      "pillar_health": {
+        "cost": 1.0,
+        "drift": 1.0,
+        "governance": 0.2,
+        "performance": 1.0,
+        "reliability": 1.0,
+        "security": 0.375
+      },
+      "prev_hash": "d8cd394602cdd49d39ec997558b4baa13063c9443eb70c43a6638e85bb9f6d2a",
+      "recorded_at": "2026-10-17T15:00:56.525896+00:00",
+      "score": 599,
+      "seq": 3
+    },
+    "pod-failure-prediction": {
+      "band": "GOOD",
+      "engine_version": "1.0.0",
+      "hash": "d8cd394602cdd49d39ec997558b4baa13063c9443eb70c43a6638e85bb9f6d2a",
+      "inputs_hash": "52af185defecfafe4ede01cffaf5245035bc500a8a89afc2bd1eea6fb8c561b8",
+      "model_name": "pod-failure-prediction",
+      "model_version": "13",
+      "pillar_health": {
+        "cost": 1.0,
+        "drift": 0.375,
+        "governance": 1.0,
+        "performance": 0.5481,
+        "reliability": 0.9,
+        "security": 0.975
+      },
+      "prev_hash": "53273d1c522cf2ac02613e7afa500e2097952d6167235f9f11055ad2bf9ee629",
+      "recorded_at": "2026-10-17T15:00:56.325619+00:00",
+      "score": 817,
+      "seq": 2
+    }
+  },
+  "engine_version": "1.0.0",
+  "generated_at": "2026-10-17T15:00:56.748041+00:00"
+}

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Validation 2026-10-17</title>
+  <style>
+    body { font: 14px/1.4 Consolas, "Segoe UI", sans-serif; background: #0c0a09; color: #fafaf9; margin: 0; }
+    header, section { padding: 20px 28px; }
+    h1 { font-family: "Segoe UI", sans-serif; font-size: 22px; margin: 0 0 6px; }
+    h2 { font-family: "Segoe UI", sans-serif; font-size: 16px; margin: 0 0 8px; }
+    .ok { color: #86efac; } .no { color: #fca5a5; }
+    pre { white-space: pre-wrap; background: #1c1917; border: 1px solid #44403c; border-radius: 8px; padding: 12px; }
+    table { border-collapse: collapse; width: 100%; }
+    td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid #44403c; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Local validation — 17 Oct 2026 — Windows, no Docker daemon</h1>
+    <p>Machine: observable-mlops-platform @ 40401ab. These panels are the command output from this session.</p>
+  </header>
+  <section id="pytest">
+    <h2 class="ok">1. Unit tests — PASSED, 154</h2>
+    <pre>pytest tests/unit -q --tb=line
+154 passed, 1 warning in 14.46s
+(StarletteDeprecationWarning: httpx test client; not a failure)</pre>
+  </section>
+  <section id="opa">
+    <h2 class="ok">2. OPA 1.21.2 — PASSED, 36/36</h2>
+    <pre>opa test aiops/policies/opa/ -v
+PASS: 36/36
+Includes model_promotion trust gates and self_healing.</pre>
+  </section>
+  <section id="rehearsal">
+    <h2 class="ok">3. Promotion rehearsal — PASSED</h2>
+    <pre>python scripts/promotion_rehearsal.py --require-opa
+pod-failure-prediction v12: score=1000 band=PRIME prod=True
+pod-failure-prediction v13: score=817 band=GOOD prod=False
+cost-anomaly-detector v4: score=599 band=SUBPRIME prod=False
+ledger ok, tamper caught at seq 2
+promotion rehearsal passed</pre>
+  </section>
+  <section id="terraform">
+    <h2 class="ok">4. Terraform 1.16.6 — fmt + validate PASSED. Not applied.</h2>
+    <pre>terraform fmt -check -recursive   exit 0
+terraform init -backend=false
+terraform validate
+Success! The configuration is valid.
+aws provider v5.100.0
+No AWS credentials were used. No plan, no apply.</pre>
+  </section>
+  <section id="not-run">
+    <h2 class="no">5. Not run on this machine today</h2>
+    <table>
+      <tr><th>Check</th><th>Why there is no screenshot of it</th></tr>
+      <tr><td>Docker Compose stacks A/B/C</td><td>Docker Desktop daemon is not running (npipe dockerDesktopLinuxEngine missing).</td></tr>
+      <tr><td>Grafana, Prometheus, Loki, Tempo, Alertmanager, Qdrant UIs</td><td>Those UIs come up only with the Compose stack. The 2026-06-11 images in this README are from that earlier session and were not recaptured.</td></tr>
+      <tr><td>Kind clusters</td><td>Needs a running Docker daemon.</td></tr>
+      <tr><td>Terraform apply / EKS</td><td>Validate only. No AWS account was used.</td></tr>
+      <tr><td>DagsHub / live MLflow UI</td><td>Not opened in this session.</td></tr>
+      <tr><td>Airflow DAG execution</td><td>DAG file parses and its helper is unit-tested. The scheduler was not started.</td></tr>
+    </table>
+  </section>
+</body>
+</html>
