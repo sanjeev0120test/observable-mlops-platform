@@ -1,7 +1,8 @@
 ---
 # Observable MLOps Platform — Backstage Service Catalog
 # Validated by workflow 26-catalog-validate.yml using backstage-cli entity-descriptor lint.
-# UC20: Exactly 27 entities expected (23 catalog components + 3 ML model resources + 1 system)
+# UC20: Exactly 29 entities expected (23 UC components + model-trust component + its API + 3 ML model resources + 1 system)
+# If you add an entity, update eval/metrics.py UC20 n_entities_correct.
 
 # ---------- Platform System ----------
 apiVersion: backstage.io/v1alpha1
