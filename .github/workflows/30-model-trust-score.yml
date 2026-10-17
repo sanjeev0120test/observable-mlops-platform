@@ -83,7 +83,7 @@ jobs:
           docker run -d --name mt -p 8008:8000 --read-only \
             --tmpfs /tmp --tmpfs /app/data:uid=10001,gid=10001 \
             -e MLFLOW_TRACKING_URI= model-trust:ci
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             curl -fsS http://localhost:8008/health && break
             sleep 1
           done

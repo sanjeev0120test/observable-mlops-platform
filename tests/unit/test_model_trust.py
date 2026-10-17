@@ -154,6 +154,24 @@ class TestKnockoutCaps:
         r = compute_trust_score("m", "1", {**PERFECT, "eu_ai_act_compliant": False})
         assert r.band == "GOOD"
 
+    def test_cap_lift_outranks_cheap_actions_when_pillars_unobserved(self):
+        # Sparse signals: most pillars unobserved, so cheap actions (e.g. 0.5h KEDA scale)
+        # have huge raw ROI. The cap lift must still come first; the rest are flagged blocked.
+        r = compute_trust_score(
+            "m",
+            "1",
+            {"accuracy": 0.93, "critical_cves": 3, "image_signed": False, "policy_violations": 2},
+        )
+        assert r.band == "SUBPRIME"
+        assert r.recommendations[0].lifts_cap
+        assert r.recommendations[0].action.startswith("[LIFTS CAP]")
+        assert all(p.blocked_by_cap for p in r.recommendations if not p.lifts_cap)
+        assert any(p.blocked_by_cap for p in r.recommendations)
+
+    def test_nothing_blocked_without_caps(self):
+        r = compute_trust_score("m", "1", {**PERFECT, "psi_score": 0.4})
+        assert r.recommendations and not any(p.blocked_by_cap for p in r.recommendations)
+
     def test_no_caps_when_signals_absent(self):
         r = compute_trust_score("m", "1", {"accuracy": 0.9})
         assert r.caps_applied == []

@@ -389,9 +389,9 @@ UC_METRICS: dict[str, list[MetricSpec]] = {
         MetricSpec(
             "n_entities_correct",
             "exact",
-            27,
+            29,
             2.0,
-            "Exactly 27 entities (23 services + 3 ML models + 1 system)",
+            "Exactly 29 entities (23 UC services + model-trust + its API + 3 ML models + 1 system)",
         ),
         MetricSpec("schema_lint_pass", "bool_true", True, 2.0, "catalog-info.yaml schema valid"),
     ],

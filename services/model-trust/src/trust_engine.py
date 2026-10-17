@@ -416,6 +416,10 @@ class RemediationPlan:
     points_recoverable: float
     points_per_hour: float
     automation: str
+    lifts_cap: bool = False
+    # True when a knockout cap is binding and this action does NOT lift it: its points are
+    # real but cannot materialise until the cap is lifted first.
+    blocked_by_cap: bool = False
 
 
 @dataclass
@@ -559,20 +563,22 @@ def _advise(
         pts = round(pts, 1)
         if pts < 1.0:
             continue
-        label = r.action
-        if r.action in cap_bonus:
-            label = f"[LIFTS CAP] {r.action}"
+        lifts = r.action in cap_bonus
         plans.append(
             RemediationPlan(
                 pillar=r.pillar,
-                action=label,
+                action=f"[LIFTS CAP] {r.action}" if lifts else r.action,
                 effort_hours=r.effort_hours,
                 points_recoverable=pts,
                 points_per_hour=round(pts / r.effort_hours, 1),
                 automation=by_action[r.action].automation,
+                lifts_cap=lifts,
+                blocked_by_cap=bool(binding_caps) and not lifts,
             )
         )
-    plans.sort(key=lambda p: (-p.points_per_hour, -p.points_recoverable, p.action))
+    # While a cap binds, nothing else can move the score: cap lifts always come first,
+    # then everything by ROI.
+    plans.sort(key=lambda p: (not p.lifts_cap, -p.points_per_hour, -p.points_recoverable, p.action))
     return plans
 
 
