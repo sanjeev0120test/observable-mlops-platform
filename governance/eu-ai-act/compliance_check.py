@@ -24,8 +24,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import httpx
-
 logger = logging.getLogger("eu-ai-act-checker")
 
 MLFLOW_URL = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
@@ -78,6 +76,8 @@ class ComplianceReport:
 def _get_run_tags_and_metrics(run_id: str) -> tuple[dict, dict]:
     """Fetch tags and metrics from an MLflow run."""
     try:
+        import httpx
+
         resp = httpx.get(
             f"{MLFLOW_URL}/api/2.0/mlflow/runs/get",
             params={"run_id": run_id},
@@ -278,6 +278,27 @@ def check_eu_ai_act_compliance(
         warning_count,
     )
     return report
+
+
+def to_trust_evidence(report: ComplianceReport) -> dict[str, Any]:
+    """Shape a compliance report for POST /api/v1/score/from-evidence.
+
+    The trust service maps ``is_compliant`` onto ``eu_ai_act_compliant`` and
+    each check onto a governance signal. Keeping that translation next to the
+    checker means the DAG and CI call one function instead of rebuilding the dict.
+    """
+    return {
+        "is_compliant": report.is_compliant,
+        "checks": [
+            {
+                "name": check.name,
+                "article": check.article,
+                "passed": check.passed,
+                "severity": check.severity,
+            }
+            for check in report.checks
+        ],
+    }
 
 
 def generate_model_card(

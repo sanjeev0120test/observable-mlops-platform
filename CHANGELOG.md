@@ -10,6 +10,10 @@ All notable changes to this project are documented here. Format follows
   and tags, a Trivy report, a Kyverno policy report, and an EU AI Act compliance
   report. A source that did not run is left unobserved rather than scored as clean.
   The retrain DAG sends that evidence bundle instead of a hand-built signal dict.
+- The retrain DAG runs the EU AI Act checker (mounted into the Airflow workers)
+  and attaches `to_trust_evidence()` to that bundle, so a real compliance failure
+  applies the PRIME cap. A model card for `pod-failure-prediction` documents the
+  remaining SHAP gap.
 
 ## [0.3.0] - 2026-10-17
 

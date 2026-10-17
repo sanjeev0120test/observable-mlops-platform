@@ -8,6 +8,8 @@ on:
       - "scripts/trust_score_demo.py"
       - "tests/unit/test_model_trust.py"
       - "tests/unit/test_assemble_signals.py"
+      - "tests/unit/test_eu_ai_act_trust.py"
+      - "governance/eu-ai-act/**"
       - "mlops/pipelines/airflow/dags/pod_failure_prediction_retrain.py"
       - "aiops/policies/opa/model_promotion*.rego"
       - ".github/workflows/30-model-trust-score.yml"
@@ -40,7 +42,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
       - run: pip install --quiet pytest fastapi httpx pydantic prometheus-client
-      - run: python -m pytest tests/unit/test_model_trust.py -v --tb=short
+      - run: python -m pytest tests/unit/test_model_trust.py tests/unit/test_assemble_signals.py tests/unit/test_eu_ai_act_trust.py -v --tb=short
 
   end-to-end-demo:
     name: "Score 3 model versions → ledger → tamper proof → OPA gate"
