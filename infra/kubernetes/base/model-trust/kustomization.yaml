@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Model Trust Score service: deployment + PVC-backed ledger + NetworkPolicy.
+# Apply with: kubectl apply -k infra/kubernetes/base/model-trust/
+resources:
+  - deployment.yaml
+  - networkpolicy.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: observable-mlops-platform

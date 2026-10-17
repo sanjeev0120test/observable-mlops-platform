@@ -1,5 +1,5 @@
 .PHONY: help dev down test test-unit test-opa test-ci test-self-healing install-opa \
-        lint format type-check pre-commit generate-data seed-qdrant ci-local clean \
+        lint format type-check pre-commit generate-data seed-qdrant trust-demo trust-score ci-local clean \
         logs ps compose-config kind-up kind-down network
 
 SHELL := /bin/bash
@@ -30,6 +30,7 @@ dev: .env ## Start all services locally (requires Docker + .env)
 	@echo "Drift Mon:   http://localhost:8002/docs"
 	@echo "Self Heal:   http://localhost:8005/docs"
 	@echo "OPA:         http://localhost:8181"
+	@echo "Trust Score: http://localhost:8008/docs"
 
 down: ## Stop all services
 	$(COMPOSE) down
@@ -97,6 +98,14 @@ generate-data: ## Generate all synthetic datasets
 	$(PYTHON) data/synthetic/generate_alerts.py --hours 24 --output data/synthetic/alerts.parquet
 	$(PYTHON) data/synthetic/generate_http_traffic.py --hours 24 --output data/synthetic/http_traffic.parquet
 	@echo "All synthetic datasets generated"
+
+trust-demo: ## Score 3 model versions, verify + tamper-test the ledger, run OPA gate (needs opa)
+	$(PYTHON) scripts/trust_score_demo.py --out /tmp/trust-results
+	@echo "Reports + attestation in /tmp/trust-results"
+
+trust-score: ## Score a model against the running service: make trust-score MODEL=name VERSION=3 SIGNALS='{"accuracy":0.9}'
+	curl -fsS -X POST http://localhost:8008/api/v1/score -H 'content-type: application/json' \
+		-d '{"model_name":"$(MODEL)","model_version":"$(VERSION)","signals":$(SIGNALS)}' | $(PYTHON) -m json.tool
 
 seed-qdrant: ## Seed Qdrant with runbook documents (requires `make dev`)
 	curl -fsS -X POST http://localhost:8006/api/v1/index-runbooks

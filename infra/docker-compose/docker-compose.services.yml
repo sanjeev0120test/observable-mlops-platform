@@ -161,6 +161,29 @@ services:
       start_period: 30s
     mem_limit: 256m
 
+  model-trust:
+    build:
+      context: ../../services/model-trust
+      dockerfile: Dockerfile
+    container_name: platform-model-trust
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_WRITEBACK: "true"
+      TRUST_LEDGER_PATH: /app/data/trust_ledger.jsonl
+    ports:
+      - "8008:8000"
+    volumes:
+      - trust-ledger:/app/data
+    depends_on:
+      - mlflow
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=4)"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    mem_limit: 256m
+
   opa:
     # -debug variant ships busybox wget for the healthcheck; the plain image is distroless (no curl/wget).
     image: openpolicyagent/opa:1.21.2-debug
@@ -184,6 +207,7 @@ services:
 
 volumes:
   drift-reports:
+  trust-ledger:
 
 networks:
   default:

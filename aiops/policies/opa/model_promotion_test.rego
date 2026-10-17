@@ -163,3 +163,80 @@ test_multiple_deny_reasons_accumulate if {
 	}
 	count(reasons) >= 4
 }
+
+# ─── TRUST SCORE GATE TESTS ───────────────────────────────────────────────────
+
+_good_metrics := {
+	"accuracy": 0.92,
+	"drift_score": 0.03,
+	"test_dataset_size": 1000,
+	"shap_values_logged": true,
+}
+
+test_allow_production_with_good_trust if {
+	allow with input as {
+		"model_name": "m",
+		"new_version": "9",
+		"metrics": _good_metrics,
+		"requestor": "mlops-engineer",
+		"environment": "production",
+		"trust": {"score": 812, "band": "GOOD", "ledger_integrity_ok": true},
+	}
+}
+
+test_deny_production_with_fair_trust if {
+	not allow with input as {
+		"model_name": "m",
+		"new_version": "9",
+		"metrics": _good_metrics,
+		"requestor": "mlops-engineer",
+		"environment": "production",
+		"trust": {"score": 650, "band": "FAIR", "ledger_integrity_ok": true},
+	}
+}
+
+test_allow_staging_with_fair_trust if {
+	allow with input as {
+		"model_name": "m",
+		"new_version": "9",
+		"metrics": _good_metrics,
+		"requestor": "mlops-engineer",
+		"environment": "staging",
+		"trust": {"score": 650, "band": "FAIR", "ledger_integrity_ok": true},
+	}
+}
+
+test_deny_staging_when_subprime if {
+	reasons := deny_reasons with input as {
+		"model_name": "m",
+		"new_version": "9",
+		"metrics": _good_metrics,
+		"requestor": "mlops-engineer",
+		"environment": "staging",
+		"trust": {"score": 540, "band": "SUBPRIME", "ledger_integrity_ok": true},
+	}
+	count(reasons) == 1
+	some r in reasons
+	contains(r, "SUBPRIME")
+}
+
+test_deny_when_ledger_integrity_failed if {
+	not allow with input as {
+		"model_name": "m",
+		"new_version": "9",
+		"metrics": _good_metrics,
+		"requestor": "mlops-engineer",
+		"environment": "production",
+		"trust": {"score": 950, "band": "PRIME", "ledger_integrity_ok": false},
+	}
+}
+
+test_trust_is_optional_for_backward_compatibility if {
+	allow with input as {
+		"model_name": "m",
+		"new_version": "9",
+		"metrics": _good_metrics,
+		"requestor": "mlops-engineer",
+		"environment": "production",
+	}
+}

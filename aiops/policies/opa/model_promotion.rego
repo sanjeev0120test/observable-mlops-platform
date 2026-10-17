@@ -53,3 +53,29 @@ deny_reasons contains reason if {
 	not input.metrics.shap_values_logged
 	reason := "production models must have SHAP explainability logged (UC17)"
 }
+
+# ─── Model Trust Score gate (services/model-trust) ───────────────────────────
+# Optional input.trust: {"score": int 300-1000, "band": "PRIME|GOOD|FAIR|SUBPRIME"}.
+# When supplied, production requires band GOOD or better (score >= 700) and nothing
+# may be promoted anywhere while SUBPRIME (score < 600, rollback candidate).
+
+production_min_trust_score := 700
+
+subprime_trust_score := 600
+
+deny_reasons contains reason if {
+	input.environment == "production"
+	input.trust.score < production_min_trust_score
+	reason := sprintf("trust score %d below production minimum %d (band %s)", [input.trust.score, production_min_trust_score, input.trust.band])
+}
+
+deny_reasons contains reason if {
+	input.trust.score < subprime_trust_score
+	reason := sprintf("trust score %d is SUBPRIME (< %d): blocked in every environment", [input.trust.score, subprime_trust_score])
+}
+
+# A stale ledger (integrity failure) invalidates the score entirely.
+deny_reasons contains reason if {
+	input.trust.ledger_integrity_ok == false
+	reason := "trust ledger integrity check failed: score cannot be relied upon"
+}

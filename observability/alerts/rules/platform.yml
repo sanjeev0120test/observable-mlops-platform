@@ -133,3 +133,39 @@ groups:
           summary: "OPA policy engine unreachable — self-healing is BLOCKED (fail-closed)"
           description: "All remediation requests are being rejected until OPA recovers"
           runbook: "https://observable-mlops.github.io/runbooks/opa-recovery"
+
+  - name: platform.modeltrust
+    rules:
+      # Model Trust Score (services/model-trust): one number per model version, 300-1000.
+      - alert: ModelTrustSubprime
+        expr: min by (model, version) (model_trust_score) < 600
+        for: 5m
+        labels:
+          severity: critical
+          uc: UC9
+          alert_name: ModelTrustSubprime
+        annotations:
+          summary: "Model {{ $labels.model }} v{{ $labels.version }} is SUBPRIME ({{ $value }})"
+          description: "Trust score below 600: blocked from promotion in every environment; rollback candidate. Query GET /api/v1/score for the ranked remediation plan."
+          runbook: "https://observable-mlops.github.io/runbooks/model-trust-subprime"
+
+      - alert: ModelTrustDegradedBelowProductionBar
+        expr: min by (model, version) (model_trust_score) < 700
+        for: 30m
+        labels:
+          severity: warning
+          uc: UC9
+        annotations:
+          summary: "Model {{ $labels.model }} v{{ $labels.version }} below production bar (700)"
+          description: "Trust band FAIR: shadow/canary traffic only until the remediation plan is applied."
+
+      # A broken hash chain means the audit trail can no longer be relied upon.
+      - alert: ModelTrustLedgerIntegrityFailed
+        expr: model_trust_ledger_integrity_ok == 0
+        for: 1m
+        labels:
+          severity: critical
+          uc: UC9
+        annotations:
+          summary: "Model trust ledger hash chain verification FAILED"
+          description: "An entry was modified, deleted or reordered. OPA now denies all promotions carrying this ledger. Investigate /api/v1/ledger/verify (first_bad_seq)."

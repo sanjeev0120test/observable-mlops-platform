@@ -7,6 +7,7 @@ on:
       - "aiops/policies/**"
       - "aiops/falco/**"
       - "services/*/Dockerfile"
+      - "infra/terraform/**"
       - ".github/workflows/13-security-policy.yml"
   workflow_dispatch:
 
@@ -199,10 +200,26 @@ jobs:
           print("Falco rules YAML syntax: OK")
           PYEOF
 
+  terraform-validate:
+    name: "Terraform fmt + validate (infra/terraform/aws-eks)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: infra/terraform/aws-eks
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "~1.16"
+      - run: terraform fmt -check -diff -recursive
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate -no-color
+
   eval-gate:
     name: "UC7 Eval Gate"
     runs-on: ubuntu-latest
-    needs: [trivy-scan, kyverno-policy-test, falco-rules-validate]
+    needs: [trivy-scan, kyverno-policy-test, falco-rules-validate, terraform-validate]
 
     steps:
       - uses: actions/checkout@v7

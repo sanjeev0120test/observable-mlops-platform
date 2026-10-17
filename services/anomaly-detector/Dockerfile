@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir \
     pandas==2.2.2 \
     torch==2.3.0 \
     qdrant-client==1.9.1 \
-    mlflow==2.13.0 \
+    mlflow==3.17.1 \
     prometheus-client==0.20.0 \
     opentelemetry-api==1.24.0 \
     opentelemetry-sdk==1.24.0 \

@@ -137,6 +137,51 @@ spec:
   owner: team-platform
   system: observable-mlops-platform
 ---
+# ---------- Model Trust Score (cross-cutting; gates UC9 promotion) ----------
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: model-trust
+  title: "Model Trust Score"
+  description: FICO-style 300-1000 trust score per model version (6 pillars + knockout caps), remediation-ROI advisor, SHA-256 hash-chained audit ledger; consumed by the OPA promotion gate and written back to MLflow 3 model versions
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+    github.com/project-slug: observable-mlops/observable-mlops-platform
+  tags: [mlops, governance, trust-score, eu-ai-act, mlflow, opa]
+  links:
+    - url: http://localhost:8008/docs
+      title: OpenAPI
+spec:
+  type: service
+  lifecycle: production
+  owner: team-platform
+  system: observable-mlops-platform
+  dependsOn:
+    - component:model-serving
+  providesApis:
+    - model-trust-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: model-trust-api
+  title: "Model Trust Score API"
+  description: Score, ledger verification and attestation endpoints
+  tags: [rest, openapi]
+spec:
+  type: openapi
+  lifecycle: production
+  owner: team-platform
+  system: observable-mlops-platform
+  definition: |
+    openapi: 3.0.3
+    info: { title: Model Trust Score, version: 1.0.0 }
+    paths:
+      /api/v1/score: { post: { summary: Score a model version and append to the ledger } }
+      /api/v1/models/{model_name}/history: { get: { summary: Ledger history for a model } }
+      /api/v1/ledger/verify: { get: { summary: Walk the SHA-256 hash chain } }
+      /api/v1/ledger/attestation: { get: { summary: Regulator-facing attestation document } }
+---
 # ---------- UC9: Model Serving ----------
 apiVersion: backstage.io/v1alpha1
 kind: Component

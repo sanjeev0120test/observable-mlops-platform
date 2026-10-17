@@ -1,0 +1,126 @@
+---
+# Model Trust Score service: FICO-style trust score + tamper-evident ledger.
+# Same hardening profile as self-healing (non-root, read-only rootfs, no caps, seccomp).
+# The ledger is append-only and must survive restarts, so it lives on a PVC.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-trust
+  namespace: platform
+  labels:
+    app: model-trust
+    app.kubernetes.io/name: model-trust
+    app.kubernetes.io/part-of: observable-mlops-platform
+spec:
+  # Single writer: the hash chain is serialised through one process. Scale reads via
+  # the MLflow tags / Prometheus metrics it publishes, not by adding replicas.
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: model-trust
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: model-trust
+        app.kubernetes.io/name: model-trust
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: model-trust
+          image: ghcr.io/observable-mlops-platform/model-trust:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: MLFLOW_TRACKING_URI
+              value: "http://mlflow:5000"
+            - name: MLFLOW_WRITEBACK
+              value: "true"
+            - name: TRUST_LEDGER_PATH
+              value: "/app/data/trust_ledger.jsonl"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            privileged: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            failureThreshold: 30
+            periodSeconds: 2
+          volumeMounts:
+            - name: ledger
+              mountPath: /app/data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: ledger
+          persistentVolumeClaim:
+            claimName: model-trust-ledger
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: model-trust-ledger
+  namespace: platform
+  labels:
+    app: model-trust
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: model-trust
+  namespace: platform
+  labels:
+    app: model-trust
+spec:
+  selector:
+    app: model-trust
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
