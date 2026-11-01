@@ -19,6 +19,7 @@ permissions:
 
 jobs:
   opa-policy-test:
+    timeout-minutes: 2
     name: "OPA Policy Unit Tests"
     runs-on: ubuntu-latest
     steps:
@@ -95,7 +96,7 @@ jobs:
   self-healing-integration:
     name: "Self-Healing Service Integration Test"
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 2
     needs: opa-policy-test
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

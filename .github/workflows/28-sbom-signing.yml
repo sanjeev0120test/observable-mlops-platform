@@ -19,6 +19,7 @@ permissions:
 
 jobs:
   sbom-and-sign:
+    timeout-minutes: 2
     name: "SBOM + Cosign Image Signing"
     runs-on: ubuntu-latest
     permissions:
@@ -68,6 +69,7 @@ jobs:
           artifact-name: platform-sbom-${{ github.sha }}.spdx.json
 
   trivy-image-scan:
+    timeout-minutes: 2
     name: "Trivy Container Security Scan"
     runs-on: ubuntu-latest
     permissions:

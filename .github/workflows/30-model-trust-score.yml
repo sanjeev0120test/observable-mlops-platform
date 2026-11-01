@@ -35,7 +35,7 @@ jobs:
   unit-tests:
     name: "Engine + ledger + API unit tests"
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
@@ -48,7 +48,7 @@ jobs:
   end-to-end-demo:
     name: "Score 3 model versions → ledger → tamper proof → OPA gate"
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 2
     needs: unit-tests
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -86,7 +86,7 @@ jobs:
   container-smoke:
     name: "Build image, boot service, score via HTTP"
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 2
     needs: unit-tests
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

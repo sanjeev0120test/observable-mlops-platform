@@ -23,6 +23,7 @@ permissions:
 
 jobs:
   resilience-shadow-tests:
+    timeout-minutes: 2
     name: "Resilience + Shadow-Mode + RAG hardening unit tests"
     runs-on: ubuntu-latest
     steps:
@@ -49,6 +50,7 @@ jobs:
             -v --tb=short
 
   chaos-manifest-validation:
+    timeout-minutes: 2
     name: "Chaos manifests + k6 scripts validation"
     runs-on: ubuntu-latest
     steps:
