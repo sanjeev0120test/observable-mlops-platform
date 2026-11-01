@@ -19,7 +19,7 @@ jobs:
   feature-skew:
     name: "Feast Materialize + Skew Detection"
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 2
 
     services:
       redis:
