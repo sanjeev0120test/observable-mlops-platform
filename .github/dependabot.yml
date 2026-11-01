@@ -1,0 +1,110 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      github_actions:
+        patterns:
+          - "*"
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      pip:
+        patterns:
+          - "*"
+  - package-ecosystem: terraform
+    directory: "/infra/terraform/aws-eks"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      terraform:
+        patterns:
+          - "*"
+  - package-ecosystem: docker
+    directory: "/infra/docker-compose/mlflow"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      docker:
+        patterns:
+          - "*"
+  - package-ecosystem: docker
+    directory: "/services/alert-correlator"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      docker:
+        patterns:
+          - "*"
+  - package-ecosystem: docker
+    directory: "/services/anomaly-detector"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      docker:
+        patterns:
+          - "*"
+  - package-ecosystem: docker
+    directory: "/services/cost-optimizer"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      docker:
+        patterns:
+          - "*"
+  - package-ecosystem: docker
+    directory: "/services/drift-monitor"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      docker:
+        patterns:
+          - "*"
+  - package-ecosystem: docker
+    directory: "/services/model-trust"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      docker:
+        patterns:
+          - "*"
+  - package-ecosystem: docker
+    directory: "/services/predictive-scaler"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      docker:
+        patterns:
+          - "*"
+  - package-ecosystem: docker
+    directory: "/services/runbook-agent"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      docker:
+        patterns:
+          - "*"
+  - package-ecosystem: docker
+    directory: "/services/self-healing"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      docker:
+        patterns:
+          - "*"
