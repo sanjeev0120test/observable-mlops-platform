@@ -48,7 +48,7 @@ locals {
 # ──────────────────────────────── Networking ────────────────────────────────
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
-  version = "~> 5.17"
+  version = "~> 6.7"
 
   name = "${var.cluster_name}-vpc"
   cidr = var.vpc_cidr
@@ -93,7 +93,7 @@ resource "aws_kms_alias" "platform" {
 # ──────────────────────────────── EKS ───────────────────────────────────────
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "~> 20.31"
+  version = "~> 21.29"
 
   cluster_name    = var.cluster_name
   cluster_version = var.cluster_version
@@ -197,7 +197,7 @@ module "eks" {
 # ──────────────────────────────── IRSA roles ────────────────────────────────
 module "ebs_csi_irsa" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
-  version = "~> 5.52"
+  version = "~> 6.8"
 
   role_name             = "${var.cluster_name}-ebs-csi"
   attach_ebs_csi_policy = true
@@ -233,7 +233,7 @@ resource "aws_iam_policy" "mlflow_artifacts" {
 
 module "mlflow_irsa" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
-  version = "~> 5.52"
+  version = "~> 6.8"
 
   role_name = "${var.cluster_name}-mlflow"
   role_policy_arns = {
