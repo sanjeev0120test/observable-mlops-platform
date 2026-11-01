@@ -15,6 +15,14 @@ RUN pip install --no-cache-dir \
     prometheus-client==0.20.0 \
     httpx==0.27.0
 
+RUN pip install --no-cache-dir \
+    opentelemetry-api==1.45.1 \
+    opentelemetry-sdk==1.45.1 \
+    opentelemetry-exporter-otlp-proto-http==1.45.1 \
+    opentelemetry-instrumentation-fastapi==0.66b1 \
+    opentelemetry-instrumentation-logging==0.66b1 \
+    opentelemetry-instrumentation-httpx==0.66b1
+
 COPY src/ /app/src/
 
 RUN useradd --uid 10001 --create-home --shell /usr/sbin/nologin appuser \

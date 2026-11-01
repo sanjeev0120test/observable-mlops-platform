@@ -1,67 +1,63 @@
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
 receivers:
   otlp:
     protocols:
       grpc:
-        endpoint: "0.0.0.0:4317"
+        endpoint: 0.0.0.0:4317
       http:
-        endpoint: "0.0.0.0:4318"
+        endpoint: 0.0.0.0:4318
   prometheus:
     config:
       scrape_configs:
-        - job_name: "otel-collector"
+        - job_name: otel-collector
           scrape_interval: 30s
           static_configs:
             - targets: ["localhost:8888"]
 
 processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 80
+    spike_limit_mib: 20
+  resource:
+    attributes:
+      - key: service.namespace
+        value: observable-mlops
+        action: insert
   batch:
     timeout: 1s
     send_batch_size: 1024
-  memory_limiter:
-    check_interval: 1s
-    limit_percentage: 75
-    spike_limit_percentage: 15
-  resource:
-    attributes:
-      - key: cluster
-        value: "platform-local"
-        action: upsert
-      - key: environment
-        value: "ci"
-        action: upsert
 
 exporters:
   otlp/tempo:
     endpoint: tempo:4317
     tls:
       insecure: true
-  loki:
-    endpoint: http://loki:3100/loki/api/v1/push
-    tls:
-      insecure: true
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
   prometheusremotewrite:
     endpoint: http://prometheus:9090/api/v1/write
-    tls:
-      insecure: true
-  logging:
+  debug:
     verbosity: basic
 
 service:
+  extensions: [health_check]
   telemetry:
-    metrics:
-      address: "0.0.0.0:8889"   # expose OTEL collector's own metrics on the mapped port
     logs:
       level: warn
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, batch, resource]
-      exporters: [otlp/tempo]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlp/tempo, debug]
     metrics:
       receivers: [otlp, prometheus]
-      processors: [memory_limiter, batch, resource]
+      processors: [memory_limiter, resource, batch]
       exporters: [prometheusremotewrite]
     logs:
       receivers: [otlp]
-      processors: [memory_limiter, batch, resource]
-      exporters: [loki]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlphttp/loki]

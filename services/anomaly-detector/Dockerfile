@@ -16,10 +16,15 @@ RUN pip install --no-cache-dir \
     qdrant-client==1.9.1 \
     mlflow==3.17.1 \
     prometheus-client==0.20.0 \
-    opentelemetry-api==1.24.0 \
-    opentelemetry-sdk==1.24.0 \
-    opentelemetry-exporter-otlp==1.24.0 \
     httpx==0.27.0
+
+RUN pip install --no-cache-dir \
+    opentelemetry-api==1.45.1 \
+    opentelemetry-sdk==1.45.1 \
+    opentelemetry-exporter-otlp-proto-http==1.45.1 \
+    opentelemetry-instrumentation-fastapi==0.66b1 \
+    opentelemetry-instrumentation-logging==0.66b1 \
+    opentelemetry-instrumentation-httpx==0.66b1
 
 COPY src/ /app/src/
 

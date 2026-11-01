@@ -20,6 +20,7 @@ services:
       - "--storage.tsdb.path=/prometheus"
       - "--storage.tsdb.retention.time=7d"
       - "--web.enable-lifecycle"
+      - "--web.enable-remote-write-receiver"
       - "--log.level=warn"
     ports:
       - "9090:9090"
@@ -108,12 +109,13 @@ services:
     mem_limit: 256m
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.102.0
+    image: otel/opentelemetry-collector-contrib:0.123.0
     container_name: platform-otel-collector
     command: ["--config=/etc/otelcol/otelcol.yml"]
     ports:
-      - "4319:4317"   # OTLP gRPC (offset to avoid conflict with Tempo)
-      - "8889:8889"   # Prometheus exporter
+      - "4319:4317"   # OTLP gRPC (offset so Tempo can keep 4317)
+      - "4320:4318"   # OTLP HTTP
+      - "8888:8888"   # collector internal metrics
     volumes:
       - ../../observability/otel/otelcol.yml:/etc/otelcol/otelcol.yml:ro
     depends_on:

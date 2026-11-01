@@ -14,6 +14,14 @@ RUN pip install --no-cache-dir \
     prometheus-client==0.20.0 \
     mlflow-skinny==3.17.1
 
+RUN pip install --no-cache-dir \
+    opentelemetry-api==1.45.1 \
+    opentelemetry-sdk==1.45.1 \
+    opentelemetry-exporter-otlp-proto-http==1.45.1 \
+    opentelemetry-instrumentation-fastapi==0.66b1 \
+    opentelemetry-instrumentation-logging==0.66b1 \
+    opentelemetry-instrumentation-httpx==0.66b1
+
 COPY src/ /app/src/
 
 RUN mkdir -p /app/data \

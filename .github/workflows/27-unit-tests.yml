@@ -8,6 +8,8 @@ on:
       - "services/**"
       - "platform/**"
       - "tests/unit/**"
+      - "observability/otel/**"
+      - "infra/docker-compose/**"
       - "aiops/policies/opa/**"
       - "pyproject.toml"
   pull_request:
@@ -46,7 +48,12 @@ jobs:
           pip install --upgrade pip
           pip install pytest pytest-cov numpy pandas scipy scikit-learn \
                       httpx fastapi "starlette[full]" pydantic prometheus-client \
-                      httpx evidently nannyml
+                      httpx evidently nannyml \
+                      opentelemetry-api==1.45.1 opentelemetry-sdk==1.45.1 \
+                      opentelemetry-exporter-otlp-proto-http==1.45.1 \
+                      opentelemetry-instrumentation-fastapi==0.66b1 \
+                      opentelemetry-instrumentation-logging==0.66b1 \
+                      opentelemetry-instrumentation-httpx==0.66b1
 
       - name: Run unit tests with coverage
         run: |

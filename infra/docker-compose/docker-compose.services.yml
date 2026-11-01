@@ -10,6 +10,15 @@ services:
       dockerfile: Dockerfile
     container_name: platform-anomaly-detector
     environment:
+      OTEL_SERVICE_NAME: anomaly-detector
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: otlp
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_PROPAGATORS: tracecontext,baggage
+      DEPLOYMENT_ENVIRONMENT: local
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=observable-mlops,deployment.environment.name=local
       MLFLOW_TRACKING_URI: http://mlflow:5000
       QDRANT_URL: http://qdrant:6333
       REDIS_URL: redis://redis:6379/0
@@ -32,6 +41,15 @@ services:
       dockerfile: Dockerfile
     container_name: platform-drift-monitor
     environment:
+      OTEL_SERVICE_NAME: drift-monitor
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: otlp
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_PROPAGATORS: tracecontext,baggage
+      DEPLOYMENT_ENVIRONMENT: local
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=observable-mlops,deployment.environment.name=local
       MLFLOW_TRACKING_URI: http://mlflow:5000
       DAGSHUB_TOKEN: ${DAGSHUB_TOKEN:-}
       REPORT_OUTPUT_DIR: /app/reports
@@ -55,6 +73,15 @@ services:
       dockerfile: Dockerfile
     container_name: platform-alert-correlator
     environment:
+      OTEL_SERVICE_NAME: alert-correlator
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: otlp
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_PROPAGATORS: tracecontext,baggage
+      DEPLOYMENT_ENVIRONMENT: local
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=observable-mlops,deployment.environment.name=local
       PROMETHEUS_URL: http://prometheus:9090
       ALERTMANAGER_URL: http://alertmanager:9093
       REDIS_URL: redis://redis:6379/1
@@ -77,6 +104,15 @@ services:
       dockerfile: Dockerfile
     container_name: platform-predictive-scaler
     environment:
+      OTEL_SERVICE_NAME: predictive-scaler
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: otlp
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_PROPAGATORS: tracecontext,baggage
+      DEPLOYMENT_ENVIRONMENT: local
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=observable-mlops,deployment.environment.name=local
       PROMETHEUS_URL: http://prometheus:9090
       MLFLOW_TRACKING_URI: http://mlflow:5000
     ports:
@@ -98,6 +134,15 @@ services:
       dockerfile: Dockerfile
     container_name: platform-self-healing
     environment:
+      OTEL_SERVICE_NAME: self-healing
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: otlp
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_PROPAGATORS: tracecontext,baggage
+      DEPLOYMENT_ENVIRONMENT: local
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=observable-mlops,deployment.environment.name=local
       N8N_URL: http://n8n:5678
       OPA_URL: http://opa:8181
       PROMETHEUS_URL: http://prometheus:9090
@@ -124,6 +169,15 @@ services:
       dockerfile: Dockerfile
     container_name: platform-runbook-agent
     environment:
+      OTEL_SERVICE_NAME: runbook-agent
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: otlp
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_PROPAGATORS: tracecontext,baggage
+      DEPLOYMENT_ENVIRONMENT: local
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=observable-mlops,deployment.environment.name=local
       QDRANT_URL: http://qdrant:6333
       OLLAMA_URL: http://ollama:11434
       COLLECTION_NAME: runbook_chunks
@@ -146,6 +200,15 @@ services:
       dockerfile: Dockerfile
     container_name: platform-cost-optimizer
     environment:
+      OTEL_SERVICE_NAME: cost-optimizer
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: otlp
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_PROPAGATORS: tracecontext,baggage
+      DEPLOYMENT_ENVIRONMENT: local
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=observable-mlops,deployment.environment.name=local
       PROMETHEUS_URL: http://prometheus:9090
       MLFLOW_TRACKING_URI: http://mlflow:5000
     ports:
@@ -167,6 +230,15 @@ services:
       dockerfile: Dockerfile
     container_name: platform-model-trust
     environment:
+      OTEL_SERVICE_NAME: model-trust
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: otlp
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_PROPAGATORS: tracecontext,baggage
+      DEPLOYMENT_ENVIRONMENT: local
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=observable-mlops,deployment.environment.name=local
       MLFLOW_TRACKING_URI: http://mlflow:5000
       MLFLOW_WRITEBACK: "true"
       TRUST_LEDGER_PATH: /app/data/trust_ledger.jsonl

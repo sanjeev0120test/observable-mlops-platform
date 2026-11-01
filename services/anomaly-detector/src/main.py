@@ -83,3 +83,13 @@ def detect_anomalies(batch: LogBatch) -> AnomalyResult:
 def similar_incidents(query: str, top_k: int = 5) -> dict[str, Any]:
     """Query Qdrant for similar past incidents (stub until Qdrant is seeded)."""
     return {"query": query, "similar_incidents": [], "status": "qdrant_not_seeded"}
+
+
+try:
+    try:
+        from otel_setup import init_telemetry
+    except ImportError:  # uvicorn loads the module as src.main
+        from .otel_setup import init_telemetry
+    init_telemetry(app, service_namespace="observable-mlops")
+except ImportError:
+    pass

@@ -52,3 +52,13 @@ def analyze(req: CostAnalysisRequest) -> CostAnalysisResult:
         ],
         model_version="stub-v0",
     )
+
+
+try:
+    try:
+        from otel_setup import init_telemetry
+    except ImportError:  # uvicorn loads the module as src.main
+        from .otel_setup import init_telemetry
+    init_telemetry(app, service_namespace="observable-mlops")
+except ImportError:
+    pass

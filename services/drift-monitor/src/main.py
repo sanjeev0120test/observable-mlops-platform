@@ -233,3 +233,13 @@ def get_report() -> dict:
         return {"status": "no_reports", "message": "Run /api/v1/check-drift first"}
     latest = reports[-1]
     return {"status": "ok", "report_path": str(latest), "all_reports": [str(r) for r in reports]}
+
+
+try:
+    try:
+        from otel_setup import init_telemetry
+    except ImportError:  # uvicorn loads the module as src.main
+        from .otel_setup import init_telemetry
+    init_telemetry(app, service_namespace="observable-mlops")
+except ImportError:
+    pass

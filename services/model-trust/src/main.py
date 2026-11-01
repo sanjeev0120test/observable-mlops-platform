@@ -253,3 +253,13 @@ def verify() -> dict[str, Any]:
 @app.get("/api/v1/ledger/attestation")
 def attestation() -> dict[str, Any]:
     return ledger.attestation()
+
+
+try:
+    try:
+        from otel_setup import init_telemetry
+    except ImportError:  # uvicorn loads the module as src.main
+        from .otel_setup import init_telemetry
+    init_telemetry(app, service_namespace="observable-mlops")
+except ImportError:
+    pass

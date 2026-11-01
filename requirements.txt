@@ -23,9 +23,12 @@ alibi-detect>=0.13.0
 whylogs>=1.6.4
 
 # Observability
-opentelemetry-api>=1.45.1
-opentelemetry-sdk>=1.45.1
-opentelemetry-exporter-otlp>=1.45.1
+opentelemetry-api==1.45.1
+opentelemetry-sdk==1.45.1
+opentelemetry-exporter-otlp-proto-http==1.45.1
+opentelemetry-instrumentation-fastapi==0.66b1
+opentelemetry-instrumentation-logging==0.66b1
+opentelemetry-instrumentation-httpx==0.66b1
 prometheus-client>=0.26.0
 
 # Vector store / LLM
