@@ -25,7 +25,7 @@ output "mlflow_artifact_bucket" {
 
 output "mlflow_irsa_role_arn" {
   description = "Annotate the platform/mlflow ServiceAccount with eks.amazonaws.com/role-arn"
-  value       = module.mlflow_irsa.iam_role_arn
+  value       = module.mlflow_irsa.arn
 }
 
 output "kms_key_arn" {

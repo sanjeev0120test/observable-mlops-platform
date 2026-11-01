@@ -95,75 +95,69 @@ module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "~> 21.29"
 
-  cluster_name    = var.cluster_name
-  cluster_version = var.cluster_version
+  name               = var.cluster_name
+  kubernetes_version = var.cluster_version
 
   vpc_id                   = module.vpc.vpc_id
   subnet_ids               = module.vpc.private_subnets
   control_plane_subnet_ids = module.vpc.private_subnets
 
-  cluster_endpoint_public_access       = var.enable_public_endpoint
-  cluster_endpoint_public_access_cidrs = var.endpoint_public_access_cidrs
-  cluster_endpoint_private_access      = true
+  endpoint_public_access       = var.enable_public_endpoint
+  endpoint_public_access_cidrs = var.endpoint_public_access_cidrs
+  endpoint_private_access      = true
 
   enable_cluster_creator_admin_permissions = true
   authentication_mode                      = "API_AND_CONFIG_MAP"
 
-  cluster_encryption_config = {
+  encryption_config = {
     provider_key_arn = aws_kms_key.platform.arn
     resources        = ["secrets"]
   }
 
-  cluster_enabled_log_types              = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
+  enabled_log_types                      = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
   cloudwatch_log_group_retention_in_days = local.is_production ? 365 : 30
   cloudwatch_log_group_kms_key_id        = aws_kms_key.platform.arn
 
   enable_irsa = true
 
-  cluster_addons = {
+  addons = {
     coredns                = { most_recent = true }
     kube-proxy             = { most_recent = true }
     vpc-cni                = { most_recent = true, before_compute = true }
     eks-pod-identity-agent = { most_recent = true }
     aws-ebs-csi-driver = {
       most_recent              = true
-      service_account_role_arn = module.ebs_csi_irsa.iam_role_arn
-    }
-  }
-
-  eks_managed_node_group_defaults = {
-    ami_type       = "AL2023_x86_64_STANDARD"
-    disk_size      = 50
-    capacity_type  = "ON_DEMAND"
-    instance_types = var.platform_node_instance_types
-
-    metadata_options = {
-      http_endpoint               = "enabled"
-      http_tokens                 = "required" # IMDSv2 only
-      http_put_response_hop_limit = 1
-    }
-
-    block_device_mappings = {
-      xvda = {
-        device_name = "/dev/xvda"
-        ebs = {
-          volume_size           = 50
-          volume_type           = "gp3"
-          encrypted             = true
-          kms_key_id            = aws_kms_key.platform.arn
-          delete_on_termination = true
-        }
-      }
+      service_account_role_arn = module.ebs_csi_irsa.arn
     }
   }
 
   eks_managed_node_groups = {
     platform = {
       name           = "platform"
+      ami_type       = "AL2023_x86_64_STANDARD"
+      disk_size      = 50
+      capacity_type  = "ON_DEMAND"
       min_size       = var.platform_node_min_size
       max_size       = var.platform_node_max_size
       desired_size   = var.platform_node_min_size
       instance_types = var.platform_node_instance_types
+      metadata_options = {
+        http_endpoint               = "enabled"
+        http_tokens                 = "required" # IMDSv2 only
+        http_put_response_hop_limit = 1
+      }
+      block_device_mappings = {
+        xvda = {
+          device_name = "/dev/xvda"
+          ebs = {
+            volume_size           = 50
+            volume_type           = "gp3"
+            encrypted             = true
+            kms_key_id            = aws_kms_key.platform.arn
+            delete_on_termination = true
+          }
+        }
+      }
       labels = {
         "platform.observable-mlops/pool" = "platform"
       }
@@ -171,11 +165,30 @@ module "eks" {
 
     inference = {
       name           = "inference"
+      ami_type       = "AL2023_x86_64_STANDARD"
+      disk_size      = 50
       min_size       = 0
       max_size       = var.inference_node_max_size
       desired_size   = 0
       capacity_type  = "SPOT"
       instance_types = var.inference_node_instance_types
+      metadata_options = {
+        http_endpoint               = "enabled"
+        http_tokens                 = "required" # IMDSv2 only
+        http_put_response_hop_limit = 1
+      }
+      block_device_mappings = {
+        xvda = {
+          device_name = "/dev/xvda"
+          ebs = {
+            volume_size           = 50
+            volume_type           = "gp3"
+            encrypted             = true
+            kms_key_id            = aws_kms_key.platform.arn
+            delete_on_termination = true
+          }
+        }
+      }
       labels = {
         "platform.observable-mlops/pool" = "inference"
       }
@@ -196,15 +209,17 @@ module "eks" {
 
 # ──────────────────────────────── IRSA roles ────────────────────────────────
 module "ebs_csi_irsa" {
-  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts"
   version = "~> 6.8"
 
-  role_name             = "${var.cluster_name}-ebs-csi"
+  name                  = "${var.cluster_name}-ebs-csi"
+  use_name_prefix       = false
   attach_ebs_csi_policy = true
 
   oidc_providers = {
     main = {
       provider_arn               = module.eks.oidc_provider_arn
+      provider                   = module.eks.oidc_provider
       namespace_service_accounts = ["kube-system:ebs-csi-controller-sa"]
     }
   }
@@ -232,16 +247,18 @@ resource "aws_iam_policy" "mlflow_artifacts" {
 }
 
 module "mlflow_irsa" {
-  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts"
   version = "~> 6.8"
 
-  role_name = "${var.cluster_name}-mlflow"
-  role_policy_arns = {
+  name            = "${var.cluster_name}-mlflow"
+  use_name_prefix = false
+  policies = {
     artifacts = aws_iam_policy.mlflow_artifacts.arn
   }
   oidc_providers = {
     main = {
       provider_arn               = module.eks.oidc_provider_arn
+      provider                   = module.eks.oidc_provider
       namespace_service_accounts = ["platform:mlflow"]
     }
   }
