@@ -27,7 +27,7 @@ jobs:
   unit-tests:
     name: "Python Unit Tests (py${{ matrix.python-version }})"
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 2
     strategy:
       fail-fast: false
       matrix:
@@ -65,6 +65,7 @@ jobs:
           retention-days: 7
 
   opa-unit-tests:
+    timeout-minutes: 2
     name: "OPA Rego Policy Unit Tests"
     runs-on: ubuntu-latest
     steps:

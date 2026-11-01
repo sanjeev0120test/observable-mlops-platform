@@ -18,6 +18,7 @@ permissions:
 
 jobs:
   lint:
+    timeout-minutes: 2
     name: "Lint (Ruff + Black + YAML)"
     runs-on: ubuntu-latest
     steps:
@@ -47,6 +48,7 @@ jobs:
         run: python -c "import tomllib; tomllib.loads(open('pyproject.toml').read())"
 
   opa-policy-tests:
+    timeout-minutes: 2
     name: "OPA Policy Unit Tests"
     runs-on: ubuntu-latest
     steps:
@@ -64,6 +66,7 @@ jobs:
           echo "All OPA policy unit tests passed"
 
   structure-check:
+    timeout-minutes: 2
     name: "Directory Structure Check"
     runs-on: ubuntu-latest
     steps:
@@ -141,6 +144,7 @@ jobs:
           [ $MISSING -eq 0 ]
 
   eval-framework-test:
+    timeout-minutes: 2
     name: "Eval Framework Unit Tests"
     runs-on: ubuntu-latest
     steps:
@@ -206,6 +210,7 @@ jobs:
           "
 
   data-generator-test:
+    timeout-minutes: 2
     name: "Synthetic Data Generator Smoke Tests"
     runs-on: ubuntu-latest
     steps:
@@ -272,6 +277,7 @@ jobs:
           "
 
   workflow-count-check:
+    timeout-minutes: 2
     name: "Workflow File Inventory"
     runs-on: ubuntu-latest
     steps:
@@ -286,6 +292,7 @@ jobs:
           [ "$COUNT" -ge 26 ] || { echo "Expected at least 26 workflow files"; exit 1; }
 
   observability-coverage-check:
+    timeout-minutes: 2
     name: "Observability UC Coverage (static)"
     runs-on: ubuntu-latest
     steps:
