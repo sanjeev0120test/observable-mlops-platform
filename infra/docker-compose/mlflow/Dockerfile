@@ -1,6 +1,6 @@
 # MLflow 3 tracking server with the Postgres driver and S3 client the upstream image omits.
 # The upstream ghcr.io/mlflow/mlflow image only supports sqlite/file backends out of the box.
-FROM ghcr.io/mlflow/mlflow:v3.17.1
+FROM ghcr.io/mlflow/mlflow:v3.17.2
 
 RUN pip install --no-cache-dir psycopg2-binary==2.9.10 boto3==1.40.49
 
