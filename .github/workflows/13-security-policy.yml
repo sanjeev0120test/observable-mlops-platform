@@ -26,7 +26,7 @@ jobs:
       critical_cves: ${{ steps.trivy.outputs.critical_cves }}
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Trivy
         run: |
@@ -108,7 +108,7 @@ jobs:
           " || true
 
       - name: Upload scan results
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: trivy-reports
           path: /tmp/trivy_*.json
@@ -120,7 +120,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install kyverno CLI
         run: |
@@ -182,7 +182,7 @@ jobs:
     name: "Falco Rules Syntax Validation"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Validate Falco custom rules YAML syntax
         run: |
@@ -208,8 +208,8 @@ jobs:
       run:
         working-directory: infra/terraform/aws-eks
     steps:
-      - uses: actions/checkout@v7
-      - uses: hashicorp/setup-terraform@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
         with:
           terraform_version: "~1.16"
       - run: terraform fmt -check -diff -recursive
@@ -222,7 +222,7 @@ jobs:
     needs: [trivy-scan, kyverno-policy-test, falco-rules-validate, terraform-validate]
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Collect security metrics
         run: |
@@ -258,7 +258,7 @@ jobs:
           run_eval_gate("UC7", metrics, Path("eval-results"))
           PYEOF
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: eval-uc7

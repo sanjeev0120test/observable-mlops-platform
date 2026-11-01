@@ -21,10 +21,10 @@ jobs:
     name: "Lint (Ruff + Black + YAML)"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: "pip"
@@ -40,7 +40,7 @@ jobs:
         # Black is now blocking — services/ and mlops/ are no longer excluded
 
       - name: YAML lint (actionlint)
-        uses: rhysd/actionlint@v1.7.12
+        uses: rhysd/actionlint@914e7df21a07ef503a81201c76d2b11c789d3fca # v1.7.12
         # actionlint is now blocking — workflow syntax must be valid
 
       - name: Validate pyproject.toml
@@ -50,7 +50,7 @@ jobs:
     name: "OPA Policy Unit Tests"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install OPA
         run: |
@@ -67,7 +67,7 @@ jobs:
     name: "Directory Structure Check"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Verify required directories
         run: |
@@ -144,10 +144,10 @@ jobs:
     name: "Eval Framework Unit Tests"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: "pip"
@@ -209,10 +209,10 @@ jobs:
     name: "Synthetic Data Generator Smoke Tests"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: "pip"
@@ -275,7 +275,7 @@ jobs:
     name: "Workflow File Inventory"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Count and list workflows
         run: |
           echo "=== GitHub Actions Workflows ==="
@@ -289,7 +289,7 @@ jobs:
     name: "Observability UC Coverage (static)"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: pip install pyyaml --quiet
       - name: Verify alert rules, OTEL pipelines, and Grafana UC panels
         run: |
