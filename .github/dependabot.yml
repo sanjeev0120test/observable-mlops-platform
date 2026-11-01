@@ -4,6 +4,12 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
     open-pull-requests-limit: 5
     groups:
       github_actions:
@@ -13,6 +19,12 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
     open-pull-requests-limit: 5
     groups:
       pip:
@@ -22,6 +34,12 @@ updates:
     directory: "/infra/terraform/aws-eks"
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
     open-pull-requests-limit: 5
     groups:
       terraform:
@@ -31,6 +49,12 @@ updates:
     directory: "/infra/docker-compose/mlflow"
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
     open-pull-requests-limit: 5
     groups:
       docker:
@@ -40,6 +64,12 @@ updates:
     directory: "/services/alert-correlator"
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
     open-pull-requests-limit: 5
     groups:
       docker:
@@ -49,6 +79,12 @@ updates:
     directory: "/services/anomaly-detector"
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
     open-pull-requests-limit: 5
     groups:
       docker:
@@ -58,6 +94,12 @@ updates:
     directory: "/services/cost-optimizer"
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
     open-pull-requests-limit: 5
     groups:
       docker:
@@ -67,6 +109,12 @@ updates:
     directory: "/services/drift-monitor"
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
     open-pull-requests-limit: 5
     groups:
       docker:
@@ -76,6 +124,12 @@ updates:
     directory: "/services/model-trust"
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
     open-pull-requests-limit: 5
     groups:
       docker:
@@ -85,6 +139,12 @@ updates:
     directory: "/services/predictive-scaler"
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
     open-pull-requests-limit: 5
     groups:
       docker:
@@ -94,6 +154,12 @@ updates:
     directory: "/services/runbook-agent"
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
     open-pull-requests-limit: 5
     groups:
       docker:
@@ -103,6 +169,12 @@ updates:
     directory: "/services/self-healing"
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
     open-pull-requests-limit: 5
     groups:
       docker:
