@@ -20,6 +20,23 @@ COPIES = sorted((REPO / "services").glob("*/src/otel_setup.py"))
 COLLECTOR = REPO / "observability" / "otel" / "otelcol.yml"
 
 
+@pytest.fixture
+def otel_enabled():
+    """Enable the SDK for one test, then put the process back how we found it.
+
+    The unit-test conftest disables export. Leaving the flag unset makes every
+    later service import open OTLP exporters against localhost.
+    """
+    previous = os.environ.pop("OTEL_SDK_DISABLED", None)
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("OTEL_SDK_DISABLED", None)
+        else:
+            os.environ["OTEL_SDK_DISABLED"] = previous
+
+
 def test_every_service_ships_the_canonical_bootstrap():
     canonical = CANONICAL.read_bytes()
     assert COPIES, "expected otel_setup.py beside each service main.py"
@@ -38,10 +55,10 @@ def test_collector_fans_traces_metrics_and_logs_out():
     assert "\n  logging:" not in text
 
 
+@pytest.mark.usefixtures("otel_enabled")
 def test_business_route_is_traced_and_probes_are_not():
     pytest.importorskip("fastapi")
     pytest.importorskip("opentelemetry")
-    os.environ.pop("OTEL_SDK_DISABLED", None)
 
     from fastapi import FastAPI
     from httpx import ASGITransport, AsyncClient
@@ -95,3 +112,48 @@ def test_business_route_is_traced_and_probes_are_not():
     assert finished[0].resource.attributes["service.name"] == "anomaly-detector"
     assert finished[0].resource.attributes["service.namespace"] == "observable-mlops"
     module.shutdown_telemetry()
+
+
+@pytest.mark.usefixtures("otel_enabled")
+def test_init_telemetry_survives_without_add_event_handler():
+    pytest.importorskip("fastapi")
+    pytest.importorskip("opentelemetry")
+
+    from fastapi import FastAPI
+    from opentelemetry.sdk._logs.export import InMemoryLogRecordExporter
+    from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    spec = importlib.util.spec_from_file_location("platform_otel_setup_init", CANONICAL)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    real_configure = module.configure_telemetry
+
+    def configure_in_memory(app, **kwargs):
+        kwargs["span_exporter"] = InMemorySpanExporter()
+        kwargs["metric_reader"] = InMemoryMetricReader()
+        kwargs["log_exporter"] = InMemoryLogRecordExporter()
+        return real_configure(app, **kwargs)
+
+    # init_telemetry looks this name up on the module. The wrapper keeps the
+    # real function so it does not recurse and does not open an OTLP socket.
+    module.configure_telemetry = configure_in_memory
+
+    original = getattr(FastAPI, "add_event_handler", None)
+
+    def removed(*_args, **_kwargs):
+        raise AssertionError("add_event_handler is not available on current FastAPI")
+
+    FastAPI.add_event_handler = removed  # type: ignore[method-assign]
+    try:
+        app = FastAPI(title="Anomaly Detector", version="0.1.0")
+        module.init_telemetry(app, service_namespace="observable-mlops")
+        assert app.router.lifespan_context.__name__ == "_otel_lifespan"
+    finally:
+        if original is None:
+            del FastAPI.add_event_handler
+        else:
+            FastAPI.add_event_handler = original  # type: ignore[method-assign]
+        module.shutdown_telemetry()

@@ -161,11 +161,35 @@ def init_telemetry(
         service_name=service_name or os.getenv("OTEL_SERVICE_NAME") or _slug(title),
         service_version=service_version or os.getenv("OTEL_SERVICE_VERSION") or version,
     )
-    app.add_event_handler("shutdown", shutdown_telemetry)
+    _register_shutdown(app)
+
+
+def _register_shutdown(app) -> None:
+    """Flush on process exit and on the ASGI lifespan.
+
+    Current FastAPI does not provide add_event_handler. The router lifespan
+    is present on both that release and older ones, so shutdown hangs off it.
+    """
+    import atexit
+    from contextlib import asynccontextmanager
+
+    atexit.register(shutdown_telemetry)
+    router = getattr(app, "router", None)
+    previous = getattr(router, "lifespan_context", None)
+    if router is None or previous is None:
+        return
+
+    @asynccontextmanager
+    async def _otel_lifespan(app_):
+        async with previous(app_):
+            yield
+        shutdown_telemetry()
+
+    router.lifespan_context = _otel_lifespan
 
 
 def shutdown_telemetry() -> None:
-    """Flush exporters. Registered on each service's shutdown event."""
+    """Flush exporters and detach the log handler."""
     global _tracer_provider, _meter_provider, _logger_provider
     if _logger_provider is not None:
         _logger_provider.force_flush()
