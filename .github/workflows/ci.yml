@@ -301,7 +301,8 @@ jobs:
         run: |
           set -euo pipefail
           cd infra/docker-compose
-          for f in docker-compose.*.yml; do
+          # services.yml is an overlay (depends on n8n, mlflow, …) and only validates merged.
+          for f in docker-compose.observability.yml docker-compose.mlops-core.yml; do
             echo "::group::$f"; docker compose -f "$f" config -q; echo "::endgroup::"
           done
           docker compose -f docker-compose.observability.yml -f docker-compose.mlops-core.yml \
@@ -337,7 +338,7 @@ jobs:
               from airflow.dag_processing.dagbag import DagBag
           except ImportError:
               from airflow.models.dagbag import DagBag
-          bag = DagBag(dag_folder="/opt/airflow/dags", include_examples=False)
+          bag = DagBag(dag_folder="/opt/airflow/dags")
           assert not bag.import_errors, bag.import_errors
           assert bag.dag_ids, "no DAGs found"
           print("DAGs:", sorted(bag.dag_ids))

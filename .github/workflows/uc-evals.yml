@@ -78,7 +78,7 @@ jobs:
             uc09: [.github/workflows/09-*.yml, services/runbook-agent/**]
             uc10: [.github/workflows/10-*.yml, mlops/experiments/**]
             uc11: [.github/workflows/11-*.yml, services/cost-optimizer/**]
-            uc13: [.github/workflows/13-*.yml, .github/actions/setup-kyverno/**, aiops/policies/kyverno/**, aiops/falco/**]
+            uc13: [.github/workflows/13-*.yml, .github/actions/setup-kyverno/**, aiops/policies/kyverno/**, aiops/falco/**, infra/helm/falco/**]
             uc14: [.github/workflows/14-*.yml]
             uc15: [.github/workflows/15-*.yml, observability/alerts/**]
             uc18: [.github/workflows/18-*.yml, observability/otel/**]

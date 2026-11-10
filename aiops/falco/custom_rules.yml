@@ -7,7 +7,7 @@
     spawned_process and
     proc.name in (kubectl) and
     proc.args contains "exec" and
-    container.label.environment = "production"
+    container.label[environment] = "production"
   output: >
     Suspicious kubectl exec in production (user=%user.name pod=%k8s.pod.name
     namespace=%k8s.ns.name args=%proc.args)
@@ -31,7 +31,7 @@
   desc: Detect unexpected outbound connections from ML serving pods
   condition: >
     outbound and
-    container.label.app in (ml-serving-api, anomaly-detector) and
+    container.label[app] in (ml-serving-api, anomaly-detector) and
     not fd.sip.name in (prometheus, mlflow, qdrant, redis, postgresql)
   output: >
     Unexpected outbound connection from ML service

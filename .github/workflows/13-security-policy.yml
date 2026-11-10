@@ -107,9 +107,17 @@ jobs:
         run: |
           set -euo pipefail
           for _ in $(seq 1 60); do docker image inspect "$FALCO_IMAGE" &>/dev/null && break; sleep 2; done
+          helm_rules="$RUNNER_TEMP/helm-rules"
+          mkdir -p "$helm_rules"
+          python3 - "$helm_rules" <<'PYEOF'
+          import sys, yaml
+          values = yaml.safe_load(open("infra/helm/falco/values.yaml"))
+          for name, body in values["customRules"].items():
+              open(f"{sys.argv[1]}/{name}", "w").write(body)
+          PYEOF
           docker run --rm --entrypoint /usr/bin/falco \
-            -v "$PWD/aiops/falco:/rules:ro" "$FALCO_IMAGE" \
-            -V /etc/falco/falco_rules.yaml -V /rules/custom_rules.yml
+            -v "$PWD/aiops/falco:/rules:ro" -v "$helm_rules:/helm-rules:ro" "$FALCO_IMAGE" \
+            -V /etc/falco/falco_rules.yaml -V /rules/custom_rules.yml -V /helm-rules/platform_rules.yaml
           rules=$(python3 -c "
           import yaml
           print(sum(1 for d in yaml.safe_load(open('aiops/falco/custom_rules.yml')) if 'rule' in d))
