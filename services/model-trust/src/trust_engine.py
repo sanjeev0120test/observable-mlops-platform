@@ -152,7 +152,7 @@ REMEDIATIONS: list[Remediation] = [
         "Rebuild image on patched base and re-sign (Cosign)",
         1.5,
         0.90,
-        "workflow 28-sbom-signing",
+        "workflows security + 13-security-policy",
     ),
     Remediation(
         "security",

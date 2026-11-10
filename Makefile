@@ -1,11 +1,11 @@
-.PHONY: help dev down test test-unit test-opa test-ci test-self-healing install-opa \
+.PHONY: help install dev down test test-unit test-opa test-ci test-self-healing install-opa \
         lint format type-check pre-commit generate-data seed-qdrant trust-demo trust-score ci-local clean \
         logs ps compose-config kind-up kind-down network
 
 SHELL := /bin/bash
-PYTHON := python3
-PIP := pip
-OPA_VERSION := v1.21.2
+# uv manages Python 3.14 and the locked environment (uv.lock); `make install` once, then any target.
+PYTHON := uv run --frozen python
+OPA_VERSION := v1.22.2
 COMPOSE_DIR := infra/docker-compose
 # Single project: services.yml depends_on services defined in the core and observability files.
 COMPOSE := docker compose -p mlops-platform --env-file .env \
@@ -19,6 +19,10 @@ help: ## Show this help (default target)
 		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-25s\033[0m %s\n", $$1, $$2}'
 
 # â”€â”€â”€ Local Development â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+install: ## Create .venv with the dev toolchain (lint + test groups) from uv.lock
+	uv sync --frozen
+	uv run --frozen pre-commit install
+
 dev: .env ## Start all services locally (requires Docker + .env)
 	@echo "Creating platform-net if it doesn't exist..."
 	docker network create platform-net 2>/dev/null || true
@@ -53,8 +57,8 @@ compose-config: .env ## Validate the merged docker-compose project
 # â”€â”€â”€ Testing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 test: test-unit test-opa ## Run all tests (unit + OPA policy)
 
-test-unit: ## Run Python unit tests
-	$(PYTHON) -m pytest tests/unit/ -v --tb=short -q
+test-unit: ## Run Python unit tests (parallel)
+	$(PYTHON) -m pytest tests/unit/ -n auto --dist loadfile -q
 
 test-self-healing: ## Run self-healing unit tests specifically
 	$(PYTHON) -m pytest tests/unit/test_self_healing.py -v --tb=long
@@ -63,9 +67,9 @@ test-opa: ## Run OPA Rego policy unit tests
 	@command -v opa >/dev/null 2>&1 || { echo "OPA not installed. Run: make install-opa"; exit 1; }
 	opa test aiops/policies/opa/ -v --ignore "*.gitkeep"
 
-test-ci: ## Run tests as CI would (install deps first)
-	$(PIP) install pytest numpy pandas scipy scikit-learn httpx fastapi starlette pydantic prometheus-client --quiet
-	$(PYTHON) -m pytest tests/unit/ -v --tb=short
+test-ci: ## Run tests exactly as the ci workflow does (test group only)
+	UV_PROJECT_ENVIRONMENT=.venv-ci uv sync --frozen --no-default-groups --group test
+	.venv-ci/bin/python -m pytest tests/unit -n auto --dist loadfile -q -p no:cacheprovider
 
 install-opa: ## Install OPA binary (Linux/macOS)
 	@OS=$$(uname -s | tr '[:upper:]' '[:lower:]'); \
@@ -76,19 +80,19 @@ install-opa: ## Install OPA binary (Linux/macOS)
 	echo "OPA $$(opa version) installed"
 
 # â”€â”€â”€ Code Quality â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-lint: ## Run ruff + black check
-	ruff check . --output-format=github
-	black --check . --diff
+lint: ## Run ruff lint + format check
+	uv run --frozen ruff check .
+	uv run --frozen ruff format --check .
 
-format: ## Auto-format code (ruff fix + black)
-	ruff check . --fix
-	black .
+format: ## Auto-fix lint and format code with ruff
+	uv run --frozen ruff check . --fix
+	uv run --frozen ruff format .
 
 type-check: ## Run mypy type checks
-	mypy eval/ services/ --ignore-missing-imports
+	uvx mypy eval/ services/ --ignore-missing-imports
 
 pre-commit: ## Run all pre-commit hooks
-	pre-commit run --all-files
+	uv run --frozen pre-commit run --all-files
 
 # â”€â”€â”€ Data & Seeds â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 generate-data: ## Generate all synthetic datasets

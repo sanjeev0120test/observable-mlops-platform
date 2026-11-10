@@ -63,17 +63,17 @@ class TestCorrelateAlerts:
         for n in [5, 20, 100]:
             df = _make_alert_df(n, n_clusters=min(n // 3, 5))
             result = correlate_alerts(df)
-            assert (
-                result.n_clusters <= result.n_input
-            ), f"n_clusters {result.n_clusters} > n_input {result.n_input}"
+            assert result.n_clusters <= result.n_input, (
+                f"n_clusters {result.n_clusters} > n_input {result.n_input}"
+            )
 
     def test_clustered_alerts_reduces_noise(self):
         """Alerts injected with cluster structure should have dedup_rate > 0."""
         df = _make_alert_df(60, n_clusters=3)
         result = correlate_alerts(df)
-        assert (
-            result.deduplication_rate > 0.0
-        ), "Structured clusters should produce non-zero deduplication"
+        assert result.deduplication_rate > 0.0, (
+            "Structured clusters should produce non-zero deduplication"
+        )
 
     def test_small_input_below_threshold_returns_trivial_result(self):
         df = pd.DataFrame(
@@ -108,9 +108,9 @@ class TestCorrelateAlerts:
         df = _make_alert_df(30, n_clusters=3)
         original_columns = set(df.columns)
         _ = correlate_alerts(df)
-        assert (
-            set(df.columns) == original_columns
-        ), "correlate_alerts should not add columns to the input DataFrame"
+        assert set(df.columns) == original_columns, (
+            "correlate_alerts should not add columns to the input DataFrame"
+        )
         assert "cluster" not in df.columns
 
     def test_handles_duplicate_timestamps_without_error(self):

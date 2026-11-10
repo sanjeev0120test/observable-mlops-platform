@@ -258,7 +258,7 @@ services:
 
   opa:
     # -debug variant ships busybox wget for the healthcheck; the plain image is distroless (no curl/wget).
-    image: openpolicyagent/opa:1.21.2-debug
+    image: openpolicyagent/opa:1.22.2-debug
     container_name: platform-opa
     command:
       - "run"

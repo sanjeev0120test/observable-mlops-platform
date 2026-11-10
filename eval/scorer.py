@@ -11,11 +11,14 @@ Usage:
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
 
 from eval.metrics import EvalResult, MetricSpec, THRESHOLDS, UC_METRICS
+
+_RESULT_FILE = re.compile(r"uc\d+\.json")
 
 
 def _score_metric(spec: MetricSpec, value: Any) -> float:
@@ -123,13 +126,13 @@ def run_eval_gate(
     """
     result = compute_score(uc, metric_values)
     path = result.save(output_dir)
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  EVAL GATE: {uc}")
     print(f"  Score:     {result.score:.1f} / 100")
     print(f"  Threshold: {result.threshold}")
     print(f"  Status:    {'PASS' if result.passed else 'FAIL'}")
     print(f"  Results:   {path}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     for metric, info in result.details.items():
         status_icon = "✓" if info["status"] == "PASS" else "~" if info["status"] == "WARN" else "✗"
@@ -149,7 +152,10 @@ def run_eval_gate(
 def aggregate_all_results(eval_dir: Path = Path("eval-results")) -> dict:
     """Read all UC result files and produce a summary report."""
     summary: dict[str, Any] = {"passed": 0, "failed": 0, "total": 0, "ucs": {}}
-    for json_file in sorted(eval_dir.glob("uc*.json")):
+    # Artifacts may nest results; *_metrics.json inputs sit beside them and are skipped.
+    for json_file in sorted(eval_dir.rglob("uc*.json")):
+        if not _RESULT_FILE.fullmatch(json_file.name):
+            continue
         data = json.loads(json_file.read_text())
         uc = data["uc"]
         summary["ucs"][uc] = {

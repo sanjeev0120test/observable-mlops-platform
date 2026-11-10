@@ -1,14 +1,10 @@
-name: "25 · UC19 — Feature Monitoring (WhyLogs + WhyLabs opt-in)"
+name: "25 · UC19 — Feature Monitoring (Evidently profiles + constraint tests)"
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/25-feature-monitoring.yml"
+  workflow_call:
   workflow_dispatch:
 
 env:
-  PYTHON_VERSION: "3.11"
   UC: UC19
 
 permissions:
@@ -16,80 +12,81 @@ permissions:
 
 jobs:
   feature-monitoring:
-    name: "WhyLogs Profiles + Constraint Violations"
+    name: "Evidently Profiles + Constraint Violations"
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 8
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+      - uses: ./.github/actions/setup-python-uv
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-      - run: pip install --quiet whylogs==1.3.30 numpy==1.26.4 pandas==2.2.2 pyarrow==15.0.2
+          groups: "quality"
 
       - name: Generate data
         run: python data/synthetic/generate_pod_metrics.py --hours 24 --output /tmp/pod_metrics.parquet
 
-      - name: WhyLogs profiling + violation detection
+      - name: Evidently profiling + violation detection
         run: |
           python3 - <<'PYEOF'
           import json
+          from pathlib import Path
           import numpy as np
           import pandas as pd
-          import whylogs as why
-          from pathlib import Path
+          from evidently import Report
+          from evidently.metrics import DriftedColumnsCount, MaxValue, MinValue
+          from evidently.presets import DataDriftPreset
+          from evidently.tests import gte, lte
 
-          df = pd.read_parquet("/tmp/pod_metrics.parquet").head(2000)
+          COLS = ["cpu_usage_pct", "mem_usage_pct", "restart_count"]
+          df = pd.read_parquet("/tmp/pod_metrics.parquet")[COLS]
+          reference = df.iloc[:2000].reset_index(drop=True)
+          clean = df.iloc[2000:4000].reset_index(drop=True)
 
-          # Profile reference data
-          ref_result = why.log(df[["cpu_usage_pct", "mem_usage_pct", "restart_count"]])
-          ref_profile = ref_result.profile()
+          # Injected faults the monitor must catch: out-of-range CPU + a memory shift.
+          current = clean.copy()
+          current.loc[:10, "cpu_usage_pct"] = 150.0
+          current["mem_usage_pct"] = np.clip(current["mem_usage_pct"] * 1.6, 0, 100)
 
-          print(f"WhyLogs profiles generated successfully")
-          print(f"  Columns profiled: {['cpu_usage_pct', 'mem_usage_pct', 'restart_count']}")
+          def bounds():
+              return [MaxValue(column=c, tests=[lte(100)]) for c in ("cpu_usage_pct", "mem_usage_pct")] + [
+                  MinValue(column=c, tests=[gte(0)]) for c in COLS
+              ]
 
-          # Inject a violation: add out-of-range values
-          bad_df = df.copy()
-          bad_df.loc[:10, "cpu_usage_pct"] = 150.0  # deliberately out of range
+          def failed(snapshot):
+              return [
+                  t["name"] for t in snapshot.dict()["tests"]
+                  if str(getattr(t["status"], "value", t["status"])) == "FAIL"
+              ]
 
-          cur_result = why.log(bad_df[["cpu_usage_pct", "mem_usage_pct", "restart_count"]])
-          cur_view = cur_result.view()
+          # Negative control: clean data must not trip the range constraints.
+          control = Report(bounds(), include_tests=True).run(current_data=clean, reference_data=reference)
+          false_positives = failed(control)
+          assert not false_positives, f"constraints fire on clean data: {false_positives}"
 
-          # Check for violations via profile statistics (avoid volatile ConstraintsBuilder API)
-          constraint_violations = 0
-          try:
-              cpu_col = cur_view.get_column("cpu_usage_pct")
-              cpu_max = cpu_col.get_metric("distribution").max.value
-              if cpu_max > 100:
-                  constraint_violations += 1
-                  print(f"  cpu_usage_pct max={cpu_max:.1f} > 100 — VIOLATION detected")
-              mem_col = cur_view.get_column("mem_usage_pct")
-              mem_max = mem_col.get_metric("distribution").max.value
-              if mem_max > 100:
-                  constraint_violations += 1
-                  print(f"  mem_usage_pct max={mem_max:.1f} > 100 — VIOLATION detected")
-          except Exception as e:
-              print(f"  Stats-based check failed ({e}); using raw data check")
-              cpu_max = bad_df["cpu_usage_pct"].max()
-              if cpu_max > 100:
-                  constraint_violations += 1
-          print(f"Constraint violations detected: {constraint_violations}")
+          report = Report([DataDriftPreset(columns=COLS), DriftedColumnsCount(columns=COLS)])
+          drift = report.run(current_data=current, reference_data=reference)
+          drift_share = next(
+              m["value"]["share"] for m in drift.dict()["metrics"]
+              if m["metric_name"].startswith("DriftedColumnsCount")
+          )
 
-          profiles_generated = True
-          constraint_violations_detected = constraint_violations
-          drift_flagged = constraint_violations > 0
-
-          metrics = {
-              "profiles_generated": profiles_generated,
-              "constraint_violations_detected": constraint_violations_detected,
-              "drift_flagged": drift_flagged,
-          }
-          print(f"\n=== UC19 Feature Monitoring Metrics ===")
-          for k, v in metrics.items():
-              print(f"  {k}: {v}")
+          checks = Report(bounds(), include_tests=True).run(current_data=current, reference_data=reference)
+          violations = failed(checks)
+          for name in violations:
+              print(f"  VIOLATION  {name}")
 
           Path("eval-results").mkdir(exist_ok=True)
+          drift.save_html("eval-results/uc19_profile.html")
+
+          metrics = {
+              "profiles_generated": Path("eval-results/uc19_profile.html").stat().st_size > 0,
+              "constraint_violations_detected": len(violations),
+              "drift_flagged": drift_share >= 0.5,
+              "drifted_column_share": round(drift_share, 4),
+          }
+          print("\n=== UC19 Feature Monitoring Metrics ===")
+          for k, v in metrics.items():
+              print(f"  {k}: {v}")
           Path("eval-results/uc19_metrics.json").write_text(json.dumps(metrics, indent=2))
           PYEOF
 

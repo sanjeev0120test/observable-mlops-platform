@@ -1,17 +1,10 @@
 name: "08 · UC6 — Agentic Self-Healing (Falco + n8n + OPA)"
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "services/self-healing/**"
-      - "aiops/policies/opa/**"
-      - "aiops/n8n-workflows/**"
-      - ".github/workflows/08-self-healing.yml"
+  workflow_call:
   workflow_dispatch:
 
 env:
-  PYTHON_VERSION: "3.11"
   UC: UC6
 
 permissions:
@@ -19,16 +12,16 @@ permissions:
 
 jobs:
   opa-policy-test:
-    timeout-minutes: 2
     name: "OPA Policy Unit Tests"
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install OPA
         uses: open-policy-agent/setup-opa@b2b258e089860efaadaaf71bf6e3aecb4a3eeff1 # v2
         with:
-          version: v1.21.2
+          version: v1.22.2
 
       - name: Test model_promotion policy
         run: |
@@ -96,27 +89,28 @@ jobs:
   self-healing-integration:
     name: "Self-Healing Service Integration Test"
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 5
     needs: opa-policy-test
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+      - uses: ./.github/actions/setup-python-uv
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
+          groups: "serving"
 
-      - name: Install dependencies
-        run: pip install --quiet fastapi uvicorn httpx pydantic prometheus-client pytest pytest-asyncio
+      - name: Install OPA
+        uses: open-policy-agent/setup-opa@b2b258e089860efaadaaf71bf6e3aecb4a3eeff1 # v2
+        with:
+          version: v1.22.2
 
       - name: Start OPA server
         run: |
-          curl -fsSL -o /usr/local/bin/opa \
-            https://github.com/open-policy-agent/opa/releases/download/v1.21.2/opa_linux_amd64_static
-          chmod +x /usr/local/bin/opa
-          opa run --server --log-level=error \
+          opa run --server --log-level=error --addr localhost:8181 \
             --bundle aiops/policies/opa/ &
-          sleep 3
-          curl -sf http://localhost:8181/health | python3 -c "import sys,json; r=json.load(sys.stdin); assert r.get('status') == 'ok' or True"
+          for _ in $(seq 1 30); do
+            curl -sf http://localhost:8181/health && break
+            sleep 0.5
+          done
+          curl -sf "http://localhost:8181/health?bundles"
           echo "OPA server started"
 
       - name: Test self-healing end-to-end

@@ -1,11 +1,7 @@
 name: "19 · UC12 — GitOps Compliance Drift (Kyverno + OPA)"
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "aiops/policies/**"
-      - ".github/workflows/19-gitops-drift.yml"
+  workflow_call:
   workflow_dispatch:
 
 env:
@@ -18,7 +14,7 @@ jobs:
   gitops-drift:
     name: "GitOps Config Drift Detection + Policy Check"
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 3
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

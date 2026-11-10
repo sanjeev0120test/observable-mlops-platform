@@ -1,14 +1,10 @@
 name: "23 · UC17 — Model Explainability + Audit (SHAP + MLflow)"
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/23-explainability.yml"
+  workflow_call:
   workflow_dispatch:
 
 env:
-  PYTHON_VERSION: "3.11"
   UC: UC17
 
 permissions:
@@ -18,15 +14,13 @@ jobs:
   explainability:
     name: "SHAP Explainability + MLflow Audit Log"
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 8
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+      - uses: ./.github/actions/setup-python-uv
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-      - run: pip install --quiet shap==0.45.0 scikit-learn==1.5.0 numpy==1.26.4 pandas==2.2.2 pyarrow==15.0.2 mlflow==3.17.1
+          groups: "ml"
 
       - name: Generate data + train model + compute SHAP
         run: |

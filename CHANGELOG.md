@@ -3,6 +3,55 @@
 All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer.
 
+## [0.5.0] - 2026-11-10
+
+### Upgrade notes
+- **Postgres 18 needs a fresh volume.** The data directory layout changed, so the
+  `postgres_data` volume now mounts at `/var/lib/postgresql`. Run
+  `docker compose -p mlops-platform down -v` (or dump/restore) before `make dev`.
+- Airflow 3.4: the webserver is replaced by `airflow-apiserver` (port 8080) plus a
+  separate `airflow-dag-processor`; REST calls use `/auth/token` + `/api/v2`.
+  Set `AIRFLOW__API_AUTH__JWT_SECRET` in `.env` for any shared deployment (the compose
+  default is a lab-only value).
+- `requirements.txt` is gone: install with `make install` (uv, `uv.lock`).
+
+### Changed
+- Python 3.14 everywhere (services, CI, devcontainer); dependencies moved to PEP 735
+  groups in `pyproject.toml` with a single `uv.lock`, so each CI job installs only its
+  group (torch and prophet only for the UCs that train with them; langchain, nannyml
+  and alibi-detect are dropped). Service images install with uv.
+- Stack images: Postgres 18.6, Redis 8.8, MLflow 3.18, Airflow 3.4, n8n 2.47,
+  Qdrant 1.20, Ollama 0.40, Prometheus 3.16, Alertmanager 0.34, Grafana 13.3,
+  Loki 3.7, Tempo 2.10, OTel Collector 0.165, Fluent Bit 5.1, OPA 1.22.
+- Kyverno policies are `ValidatingPolicy` (CEL) with CLI tests; UC7 runs Kyverno 1.19,
+  Trivy 0.76 (cached DB) and validates the Falco rules with Falco 0.45.
+- UC5 measures skew against a real Feast 0.67 Redis online store (materialize →
+  `get_online_features` vs latest offline rows). Fixed the Redis connection string
+  (Feast expects `host:port,db=0`) and the synthetic timestamps (now real datetimes).
+- UC19 uses Evidently tests (with a clean-data negative control) instead of whylogs;
+  UC13/UC5/UC2 data checks use Great Expectations 1.x via `eval/data_quality.py`.
+- UC8 uses the qdrant-client 1.20 `query_points` API.
+
+### CI
+- One PR gate, `ci.yml`, replaces `00`, `27`, `29`, `30` and `gitleaks.yml`: path-filtered
+  jobs, uv-cached Python setup, pytest-xdist, container smoke tests with the GitHub
+  Actions layer cache, observability config validation in the real images, and a single
+  required check `ci-ok`.
+- `uc-evals.yml` calls the 23 UC gates as reusable workflows (changed UCs on merge, all
+  nightly) and replaces the `workflow_run` cascade in `90`/`91`.
+- `auto-merge.yml` reacts to `ci` completion (hourly sweep as a fallback) instead of
+  polling every five minutes, and uses native auto-merge once `ci-ok` is a required
+  check.
+- `security.yml` replaces `28-sbom-signing.yml` and `sbom.yml`; Dependabot covers
+  actions, uv, Docker, Compose and Terraform and replaces Renovate.
+- Ruff format replaces Black.
+
+### Fixed
+- Upload paths with `{a,b}` braces matched nothing, so UC8/UC23 and UC9/UC17 results
+  never reached the aggregate.
+- The drift monitor container failed to import `drift_engine`; the UC1 retrain step
+  wrote to a literal `$GITHUB_OUTPUT` file; the aggregator crashed on `*_metrics.json`.
+
 ## [0.4.0] - 2026-10-17
 
 ### Added

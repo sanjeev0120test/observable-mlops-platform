@@ -1,15 +1,10 @@
 name: "07 · UC4 — Predictive Autoscaling (Prophet + KEDA)"
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "services/predictive-scaler/**"
-      - ".github/workflows/07-predictive-scaling.yml"
+  workflow_call:
   workflow_dispatch:
 
 env:
-  PYTHON_VERSION: "3.11"
   UC: UC4
 
 permissions:
@@ -19,23 +14,13 @@ jobs:
   predictive-scaling:
     name: "Prophet Forecast + KEDA ScaledObject Validation"
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+      - uses: ./.github/actions/setup-python-uv
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-
-      - name: Install dependencies
-        run: |
-          pip install --quiet \
-            prophet==1.1.5 \
-            numpy==1.26.4 \
-            pandas==2.2.2 \
-            pyarrow==15.0.2 \
-            mlflow==3.17.1
+          groups: "ml"
 
       - name: Generate HTTP traffic data
         run: |

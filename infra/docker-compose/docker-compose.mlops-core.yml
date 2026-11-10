@@ -13,7 +13,7 @@
 services:
 
   postgresql:
-    image: postgres:16-alpine
+    image: postgres:18.6-alpine
     container_name: platform-postgres
     environment:
       POSTGRES_USER: platform
@@ -21,7 +21,8 @@ services:
       POSTGRES_DB: platform
       POSTGRES_MULTIPLE_DATABASES: "mlflow,airflow,feast"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # Postgres 18 keeps PGDATA under a versioned subdirectory of this mount.
+      - postgres_data:/var/lib/postgresql
       - ./init-scripts/postgres-init-dbs.sh:/docker-entrypoint-initdb.d/01-init-dbs.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U platform -d platform"]
@@ -35,7 +36,7 @@ services:
           memory: 512M
 
   redis:
-    image: redis:7-alpine
+    image: redis:8.8.4-alpine
     container_name: platform-redis
     command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
     healthcheck:
@@ -49,7 +50,7 @@ services:
     build:
       context: ./mlflow
       dockerfile: Dockerfile
-    image: observable-mlops-platform/mlflow:3.17.1
+    image: observable-mlops-platform/mlflow:3.18.0
     container_name: platform-mlflow
     command: >
       mlflow server
@@ -78,20 +79,19 @@ services:
     mem_limit: 512m
 
   airflow-init:
-    image: apache/airflow:2.9.2-python3.11
+    image: apache/airflow:3.4.0-python3.13
     container_name: platform-airflow-init
-    command: >
-      bash -c "
-      airflow db migrate &&
-      airflow users create --username admin --password admin
-        --firstname Admin --lastname Admin
-        --role Admin --email admin@example.com || true
-      "
+    command: airflow db migrate
     environment: &airflow-env
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://platform:platform@postgresql:5432/airflow
       AIRFLOW__CORE__FERNET_KEY: "46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLt0nIe3aI="
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      # Airflow 3: task workers report through the API server's execution API.
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-apiserver:8080/execution/
+      AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW__API_AUTH__JWT_SECRET:-local-lab-only-change-me}
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: "admin:admin"
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "True"
       AIRFLOW__LOGGING__LOGGING_LEVEL: WARNING
       DAGSHUB_TOKEN: ${DAGSHUB_TOKEN:-}
       MLFLOW_TRACKING_URI: http://mlflow:5000
@@ -101,14 +101,14 @@ services:
     restart: "no"
     mem_limit: 1g
 
-  airflow-webserver:
-    image: apache/airflow:2.9.2-python3.11
-    container_name: platform-airflow-webserver
-    command: airflow webserver
+  airflow-apiserver:
+    image: apache/airflow:3.4.0-python3.13
+    container_name: platform-airflow-apiserver
+    command: airflow api-server
     environment: *airflow-env
     ports:
       - "8080:8080"
-    volumes:
+    volumes: &airflow-volumes
       - ../../mlops/pipelines/airflow/dags:/opt/airflow/dags:ro
       - ../../governance/eu-ai-act:/opt/airflow/eu_ai_act:ro
       - ../../mlops/models:/opt/airflow/model_cards:ro
@@ -116,10 +116,8 @@ services:
     depends_on:
       airflow-init:
         condition: service_completed_successfully
-      postgresql:
-        condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v2/version"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -127,22 +125,29 @@ services:
     mem_limit: 1g
 
   airflow-scheduler:
-    image: apache/airflow:2.9.2-python3.11
+    image: apache/airflow:3.4.0-python3.13
     container_name: platform-airflow-scheduler
     command: airflow scheduler
     environment: *airflow-env
-    volumes:
-      - ../../mlops/pipelines/airflow/dags:/opt/airflow/dags:ro
-      - ../../governance/eu-ai-act:/opt/airflow/eu_ai_act:ro
-      - ../../mlops/models:/opt/airflow/model_cards:ro
-      - airflow_logs:/opt/airflow/logs
+    volumes: *airflow-volumes
     depends_on:
       airflow-init:
         condition: service_completed_successfully
     mem_limit: 1g
 
+  airflow-dag-processor:
+    image: apache/airflow:3.4.0-python3.13
+    container_name: platform-airflow-dag-processor
+    command: airflow dag-processor
+    environment: *airflow-env
+    volumes: *airflow-volumes
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    mem_limit: 512m
+
   n8n:
-    image: n8nio/n8n:1.39.1
+    image: n8nio/n8n:2.47.2
     container_name: platform-n8n
     environment:
       N8N_BASIC_AUTH_ACTIVE: "true"
@@ -168,7 +173,7 @@ services:
     mem_limit: 512m
 
   qdrant:
-    image: qdrant/qdrant:v1.9.2
+    image: qdrant/qdrant:v1.20.0
     container_name: platform-qdrant
     ports:
       - "6333:6333"
@@ -180,7 +185,7 @@ services:
     mem_limit: 512m
 
   ollama:
-    image: ollama/ollama:0.1.44
+    image: ollama/ollama:0.40.15
     container_name: platform-ollama
     ports:
       - "11434:11434"

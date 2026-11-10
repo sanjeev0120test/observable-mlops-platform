@@ -1,13 +1,7 @@
 name: "01 · Observability Stack (Prometheus + Grafana + Loki + Tempo + OTEL)"
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "observability/**"
-      - "infra/docker-compose/docker-compose.observability.yml"
-      - "infra/docker-compose/config/**"
-      - ".github/workflows/01-observability.yml"
+  workflow_call:
   workflow_dispatch:
 
 env:
@@ -21,17 +15,21 @@ jobs:
   observability-stack:
     name: "Start Observability Stack + Health Check"
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: ./.github/actions/setup-python-uv
+        with:
+          groups: "data serving telemetry"
 
       - name: Create external Docker network
         run: docker network create platform-net || true
 
       - name: Start observability stack
         run: |
-          docker compose -f ${{ env.COMPOSE_FILE }} up -d \
+          docker compose -f ${{ env.COMPOSE_FILE }} up -d --quiet-pull \
             prometheus alertmanager grafana loki tempo otel-collector
           echo "Stack started, waiting for services to be healthy..."
 
@@ -51,7 +49,8 @@ jobs:
         run: |
           echo "Waiting for Grafana..."
           for i in $(seq 1 30); do
-            if curl -sf http://localhost:3000/api/health | grep -q '"database": "ok"'; then
+            if curl -sf http://localhost:3000/api/health \
+                | python3 -c "import json,sys; sys.exit(json.load(sys.stdin).get('database') != 'ok')"; then
               echo "Grafana healthy"
               break
             fi
@@ -77,12 +76,10 @@ jobs:
 
       - name: Wait for OTEL Collector
         run: |
-          echo "OTEL Collector depends on Tempo+Loki+Prometheus — allowing extra startup time..."
-          sleep 15
           for i in $(seq 1 24); do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8889/metrics 2>/dev/null || echo "000")
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:13133/ 2>/dev/null || echo "000")
             if [ "$STATUS" = "200" ]; then
-              echo "OTEL Collector metrics endpoint ready (HTTP $STATUS)"
+              echo "OTEL Collector health_check ready (HTTP $STATUS)"
               break
             fi
             echo "  Attempt $i/24: HTTP $STATUS — waiting 5s..."
@@ -93,6 +90,13 @@ jobs:
               exit 1
             fi
           done
+
+      # The shipped Fluent Bit config targets Kubernetes (kubernetes filter), so it is
+      # validated rather than started on the runner.
+      - name: Fluent Bit config dry-run
+        run: |
+          docker compose -f ${{ env.COMPOSE_FILE }} run --rm --no-deps fluentbit \
+            -c /fluent-bit/etc/fluent-bit.conf --dry-run
 
       - name: Validate Prometheus datasource in Grafana
         run: |
@@ -117,7 +121,6 @@ jobs:
 
       - name: Send test OTLP span to OTEL Collector
         run: |
-          pip install opentelemetry-sdk opentelemetry-exporter-otlp-proto-http --quiet
           python3 - <<'EOF'
           from opentelemetry import trace
           from opentelemetry.sdk.trace import TracerProvider
@@ -149,7 +152,6 @@ jobs:
 
       - name: Validate critical UC observability coverage (alerts + routing)
         run: |
-          pip install pyyaml --quiet
           python3 - <<'PYEOF'
           import yaml
           from pathlib import Path
@@ -192,7 +194,6 @@ jobs:
 
       - name: Emit platform metrics to Prometheus
         run: |
-          pip install prometheus-client --quiet
           python3 - <<'EOF'
           from prometheus_client import CollectorRegistry, Counter, Gauge, push_to_gateway
           import time

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Collect all eval results and HTML reports, build the portal index page,
 # then push to GitHub Pages (branch: gh-pages).
-# Called by workflow 91-publish-portal.yml.
+# Called by the publish-portal job in .github/workflows/uc-evals.yml.
 
 set -euo pipefail
 
@@ -12,21 +12,20 @@ mkdir -p "${PORTAL_DIR}"
 
 echo "[publish-portal] Collecting eval results ..."
 python3 - <<'PYEOF'
-import json, os, sys
+import datetime, sys
 from pathlib import Path
 
+sys.path.insert(0, ".")
+from eval.scorer import aggregate_all_results
+
 eval_dir = Path("eval-results")
-results = {}
-if eval_dir.exists():
-    for f in sorted(eval_dir.glob("uc*.json")):
-        data = json.loads(f.read_text())
-        results[data["uc"]] = data
+results = aggregate_all_results(eval_dir)["ucs"] if eval_dir.exists() else {}
 
 passed = sum(1 for r in results.values() if r.get("passed"))
 total = len(results)
 
 rows = ""
-for uc, r in sorted(results.items()):
+for uc, r in sorted(results.items(), key=lambda kv: int(kv[0][2:])):
     status = "PASS" if r.get("passed") else "FAIL"
     color = "#2ecc71" if r.get("passed") else "#e74c3c"
     rows += f"""
@@ -67,7 +66,7 @@ html = f"""<!DOCTYPE html>
     <thead><tr><th>Use Case</th><th>Status</th><th>Score</th><th>Threshold</th></tr></thead>
     <tbody>{rows}</tbody>
   </table>
-  <p><small>Generated at: {__import__('datetime').datetime.utcnow().isoformat()}Z</small></p>
+  <p><small>Generated at: {datetime.datetime.now(datetime.UTC).strftime('%Y-%m-%dT%H:%M:%SZ')}</small></p>
 </body>
 </html>"""
 

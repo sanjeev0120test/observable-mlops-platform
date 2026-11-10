@@ -1,355 +1,175 @@
 name: auto-merge
 
-# Squash-merges Dependabot, Renovate, github-actions, and same-repository
-# pull requests after checks finish green. Drafts, conflicts, failing or
-# stale checks, changes requested, and pull requests from other people's
-# forks stay open. This job never checks out pull request code and never
-# bypasses branch rules. Repositories that already have CI are left open
-# until that CI reports. Non-security major Dependabot bumps stay open.
-# Workflow-file updates that GitHub refuses to merge
-# with the Actions token stay open.
+# Event-driven squash auto-merge for same-repository and trusted-bot pull requests.
+#   PR opened/updated → enable GitHub native auto-merge (merges the moment `ci-ok` passes)
+#   ci completed      → direct merge fallback when native auto-merge is unavailable
+#   hourly sweep      → catches anything the events missed
+# Native auto-merge is only used while main requires status checks; without them GitHub
+# would merge before CI runs. Drafts, forks, failing checks, requested changes, and
+# non-security major Dependabot bumps stay open. PR code is never checked out.
+# GITHUB_TOKEN cannot merge workflow-file changes and its merges do not trigger
+# push workflows; set the optional AUTO_MERGE_TOKEN secret (fine-grained PAT or app
+# token with contents/pull-requests/workflows write) to lift both limits.
 
 on:
-  # zizmor: ignore[dangerous-triggers]
+  # zizmor: ignore[dangerous-triggers] — no checkout of PR code; metadata only.
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "41 * * * *"
   workflow_dispatch:
 
 permissions: {}
 
+concurrency:
+  group: auto-merge-${{ github.event.pull_request.number || github.event.workflow_run.head_branch || 'sweep' }}
+  cancel-in-progress: false
+
 jobs:
   auto-merge:
     name: auto-merge
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    if: github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.user.login == 'dependabot[bot]' || github.event.pull_request.user.login == 'renovate[bot]' || github.event.pull_request.user.login == 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: >-
+      (github.event_name == 'pull_request_target' && !github.event.pull_request.draft &&
+        (github.event.pull_request.head.repo.full_name == github.repository ||
+         contains(fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]"]'), github.event.pull_request.user.login)))
+      || (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' &&
+          github.event.workflow_run.conclusion == 'success')
+      || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     permissions:
       contents: write
       pull-requests: write
     steps:
       - name: Merge eligible pull requests
-        shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.AUTO_MERGE_TOKEN || secrets.GITHUB_TOKEN }}
+          HAS_PAT: ${{ secrets.AUTO_MERGE_TOKEN != '' }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          SELF_CHECK: auto-merge
         run: |
-          #!/usr/bin/env bash
-          # Merge Dependabot, Renovate, and same-repository pull requests once checks
-          # are finished and green. Forks, drafts, conflicts, failing checks, and
-          # review changes stay open. Never uses administrator bypass.
-          # A repository that already has CI is not merged while that CI has not
-          # reported. GitHub refuses GITHUB_TOKEN merges of workflow-file changes;
-          # those pull requests stay open instead of being forced through.
           set -euo pipefail
-
-          repo="${GITHUB_REPOSITORY:?repository is required}"
-          event_name="${GITHUB_EVENT_NAME:?event name is required}"
-          base_owner="${repo%%/*}"
-          mode="once"
-          if [[ "$event_name" == "pull_request_target" ]]; then
-            mode="watch"
-          fi
+          repo="$GITHUB_REPOSITORY"
+          owner="${repo%%/*}"
 
           log() {
             printf '%s\n' "$*"
-            if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
-              printf '%s\n' "$*" >>"$GITHUB_STEP_SUMMARY"
-            fi
+            printf -- '- %s\n' "$*" >>"$GITHUB_STEP_SUMMARY"
           }
 
-          trusted_author() {
+          trusted_bot() {
             case "$1" in
-              "dependabot[bot]" | "app/dependabot" | "renovate[bot]" | "github-actions[bot]")
-                return 0
-                ;;
-              *)
-                return 1
-                ;;
+              "dependabot[bot]" | "app/dependabot" | "renovate[bot]" | "app/renovate" | \
+              "github-actions[bot]" | "app/github-actions") return 0 ;;
+              *) return 1 ;;
             esac
           }
 
-          workflow_count="$(gh api "repos/${repo}/contents/.github/workflows" \
-            --jq '[.[] | select(.name != "auto-merge.yml" and .name != "auto-merge.yaml")] | length' \
-            2>/dev/null || printf '0')"
+          required_checks="$(gh api "repos/${repo}/rules/branches/main" \
+            --jq '[.[] | select(.type == "required_status_checks")] | length')"
 
-          have_match=0
-          if gh pr merge --help | grep -q -- '--match-head-commit'; then
-            have_match=1
-          fi
+          case "$GITHUB_EVENT_NAME" in
+            pull_request_target) numbers="$PR_NUMBER" ;;
+            workflow_run)
+              numbers="$(jq -r '.workflow_run.pull_requests[]?.number' "$GITHUB_EVENT_PATH")"
+              if [[ -z "$numbers" ]]; then
+                numbers="$(gh pr list --repo "$repo" --state open --head "$RUN_HEAD_BRANCH" \
+                  --json number --jq '.[].number')"
+              fi
+              ;;
+            *) numbers="$(gh pr list --repo "$repo" --state open --limit 100 --json number --jq '.[].number')" ;;
+          esac
 
-          count_checks() {
-            jq -c '
+          checks() {
+            jq -c --arg self "$SELF_CHECK" '
               [ .statusCheckRollup[]?
                 | if .__typename == "StatusContext" then
-                    {
-                      pending: (.state == "PENDING" or .state == "EXPECTED"),
-                      failed: (.state == "FAILURE" or .state == "ERROR")
-                    }
+                    {name: .context, pending: (.state == "PENDING" or .state == "EXPECTED"),
+                     failed: (.state == "FAILURE" or .state == "ERROR")}
                   else
-                    {
-                      pending: (.status != "COMPLETED"),
-                      failed: (
-                        .conclusion == "FAILURE"
-                        or .conclusion == "CANCELLED"
-                        or .conclusion == "TIMED_OUT"
-                        or .conclusion == "ACTION_REQUIRED"
-                        or .conclusion == "STARTUP_FAILURE"
-                      ),
-                      stale: (.conclusion == "STALE")
-                    }
+                    {name: .name, pending: (.status != "COMPLETED"),
+                     failed: (.conclusion as $c | ["FAILURE","CANCELLED","TIMED_OUT","ACTION_REQUIRED","STARTUP_FAILURE","STALE"] | index($c) != null)}
                   end
-              ]
-              | {
-                  pending: (map(select(.pending)) | length),
-                  failed: (map(select(.failed)) | length),
-                  stale: (map(select(.stale)) | length),
-                  total: length
-                }
+                | select(.name != $self) ]
+              | {total: length, pending: map(select(.pending)) | length,
+                 failed: map(select(.failed)) | length, failing: (map(select(.failed) | .name) | join(", "))}
             ' <<<"$1"
           }
 
-          failing_names() {
-            jq -r '
-              [ .statusCheckRollup[]?
-                | if .__typename == "StatusContext" then
-                    select(.state == "FAILURE" or .state == "ERROR") | .context
-                  else
-                    select(
-                      .conclusion == "FAILURE"
-                      or .conclusion == "CANCELLED"
-                      or .conclusion == "TIMED_OUT"
-                      or .conclusion == "ACTION_REQUIRED"
-                      or .conclusion == "STARTUP_FAILURE"
-                    ) | .name
-                  end
-              ] | join(", ")
-            ' <<<"$1"
+          nonsecurity_major() {
+            local meta
+            meta="$(gh pr view "$1" --repo "$repo" --json title,body,commits)"
+            jq -e '
+              ([.commits[]? | .messageHeadline, .messageBody] | join("\n") | contains("version-update:semver-major"))
+              and ([.title, (.body // ""), (.commits[]?.messageBody // "")] | join("\n")
+                   | test("GHSA-|CVE-|security vulnerability|as a direct security update"; "i") | not)
+            ' <<<"$meta" >/dev/null
           }
 
-          hold_nonsecurity_major() {
-            local number="$1"
-            local meta major security
-            if [[ "$author" != "dependabot[bot]" && "$author" != "app/dependabot" ]]; then
-              return 1
-            fi
-            meta="$(gh pr view "$number" --repo "$repo" --json title,body,commits)"
-            major="$(jq -r '[.commits[]?.messageBody, .commits[]?.messageHeadline] | join("\n") | contains("version-update:semver-major")' <<<"$meta")"
-            security="$(jq -r '[.title, (.body // ""), (.commits[]?.messageBody // empty)] | join("\n") | test("GHSA-|CVE-|Security vulnerability|as a direct security update"; "i")' <<<"$meta")"
-            if [[ "$major" == "true" && "$security" != "true" ]]; then
-              log "skip #${number}: major Dependabot update is not a security fix (${title})"
-              return 0
-            fi
-            return 1
+          touches_workflows() {
+            local files
+            files="$(gh api --paginate "repos/${repo}/pulls/$1/files" --jq '.[].filename')"
+            grep -q '^\.github/workflows/' <<<"$files"
           }
 
-          request_dependabot_rebase() {
-            local number="$1"
-            local last
-            last="$(gh pr view "$number" --repo "$repo" --json comments --jq '.comments[-1].body // empty' 2>/dev/null || true)"
-            if [[ "$last" == *"@dependabot rebase"* ]]; then
-              log "skip #${number}: Dependabot rebase already requested"
+          process() {
+            local n="$1" pr title author sha c
+            pr="$(gh pr view "$n" --repo "$repo" --json \
+              title,state,isDraft,author,headRepositoryOwner,headRefOid,reviewDecision,mergeable,mergeStateStatus,autoMergeRequest,statusCheckRollup)"
+            title="$(jq -r .title <<<"$pr")"
+            author="$(jq -r '.author.login // ""' <<<"$pr")"
+            sha="$(jq -r .headRefOid <<<"$pr")"
+
+            [[ "$(jq -r .state <<<"$pr")" == OPEN ]] || { log "#$n skip: not open"; return 0; }
+            [[ "$(jq -r .isDraft <<<"$pr")" == false ]] || { log "#$n skip: draft — $title"; return 0; }
+            if [[ "$(jq -r '.headRepositoryOwner.login // ""' <<<"$pr")" != "$owner" ]] && ! trusted_bot "$author"; then
+              log "#$n skip: fork from an untrusted author — $title"; return 0
+            fi
+            if [[ "$(jq -r '.reviewDecision // ""' <<<"$pr")" == CHANGES_REQUESTED ]]; then
+              log "#$n skip: changes requested — $title"; return 0
+            fi
+            if [[ "$author" == "dependabot[bot]" || "$author" == "app/dependabot" ]] && nonsecurity_major "$n"; then
+              log "#$n hold: major Dependabot bump without a security advisory — $title"; return 0
+            fi
+            if [[ "$HAS_PAT" != true ]] && touches_workflows "$n"; then
+              log "#$n hold: changes .github/workflows, which GITHUB_TOKEN cannot merge (set AUTO_MERGE_TOKEN) — $title"
               return 0
             fi
-            if gh pr comment "$number" --repo "$repo" --body "@dependabot rebase"; then
-              log "asked Dependabot to rebase #${number} so checks run on the updated branch"
+
+            c="$(checks "$pr")"
+            if (( $(jq .failed <<<"$c") > 0 )); then
+              gh pr merge "$n" --repo "$repo" --disable-auto >/dev/null 2>&1 || true
+              log "#$n hold: failing checks: $(jq -r .failing <<<"$c") — $title"; return 0
+            fi
+
+            if (( required_checks > 0 )); then
+              if [[ "$(jq -r '.autoMergeRequest != null' <<<"$pr")" == true ]]; then
+                log "#$n: auto-merge already enabled — $title"; return 0
+              fi
+              if gh pr merge "$n" --repo "$repo" --auto --squash --match-head-commit "$sha"; then
+                log "#$n: auto-merge enabled; GitHub merges when required checks pass — $title"; return 0
+              fi
+            fi
+
+            if (( $(jq .total <<<"$c") == 0 || $(jq .pending <<<"$c") > 0 )); then
+              log "#$n wait: checks not finished — $title"; return 0
+            fi
+            if [[ "$(jq -r .mergeable <<<"$pr")" != MERGEABLE ]]; then
+              log "#$n wait: $(jq -r '"\(.mergeable) / \(.mergeStateStatus)"' <<<"$pr") — $title"; return 0
+            fi
+            if gh pr merge "$n" --repo "$repo" --squash --match-head-commit "$sha"; then
+              log "#$n merged at ${sha:0:12} — $title"
             else
-              log "could not ask Dependabot to rebase #${number}"
+              log "#$n left open: GitHub refused the merge — $title"
             fi
           }
 
-          merge_pr() {
-            local number="$1"
-            local head_sha="$2"
-            local state method_args
-            state="$(gh pr view "$number" --repo "$repo" --json state --jq .state)"
-            if [[ "$state" == "MERGED" ]]; then
-              log "already merged #${number}"
-              return 0
-            fi
-            if [[ ! "$head_sha" =~ ^[0-9a-fA-F]{40}$ ]]; then
-              log "refuse #${number}: head SHA is not a commit id"
-              return 0
-            fi
-            if [[ "$have_match" == "1" ]]; then
-              method_args=(--match-head-commit "$head_sha")
-            else
-              method_args=()
-            fi
-            if gh pr merge "$number" --repo "$repo" --squash --delete-branch "${method_args[@]}"; then
-              log "squash-merged #${number}"
-              return 0
-            fi
-            if gh pr merge "$number" --repo "$repo" --merge --delete-branch "${method_args[@]}"; then
-              log "merged #${number}"
-              return 0
-            fi
-            log "left #${number} open; GitHub refused the merge"
-            return 0
-          }
-
-          process_pr() {
-            local number="$1"
-            local json draft state author head_owner status mergeable title review
-            local counts pending failed stale total head_sha updated_at age now_epoch updated_epoch
-            local behind_updates=0
-            local started=$SECONDS
-            local startup_wait=600
-            local quiet_age=900
-            local pending_wait=1500
-
-            while true; do
-              json="$(gh pr view "$number" --repo "$repo" \
-                --json isDraft,state,author,headRepositoryOwner,mergeStateStatus,mergeable,statusCheckRollup,title,updatedAt,reviewDecision,headRefOid)"
-              draft="$(jq -r '.isDraft' <<<"$json")"
-              state="$(jq -r '.state' <<<"$json")"
-              author="$(jq -r '.author.login // empty' <<<"$json")"
-              head_owner="$(jq -r '.headRepositoryOwner.login // empty' <<<"$json")"
-              status="$(jq -r '.mergeStateStatus' <<<"$json")"
-              mergeable="$(jq -r '.mergeable' <<<"$json")"
-              title="$(jq -r '.title' <<<"$json")"
-              review="$(jq -r '.reviewDecision // empty' <<<"$json")"
-              head_sha="$(jq -r '.headRefOid' <<<"$json")"
-              updated_at="$(jq -r '.updatedAt' <<<"$json")"
-              counts="$(count_checks "$json")"
-              pending="$(jq -r '.pending' <<<"$counts")"
-              failed="$(jq -r '.failed' <<<"$counts")"
-              stale="$(jq -r '.stale // 0' <<<"$counts")"
-              total="$(jq -r '.total' <<<"$counts")"
-
-              if [[ "$state" != "OPEN" ]]; then
-                log "skip #${number}: ${state} (${title})"
-                return 0
-              fi
-              if [[ "$draft" == "true" ]]; then
-                log "skip #${number}: draft (${title})"
-                return 0
-              fi
-              if [[ "$head_owner" != "$base_owner" ]] && ! trusted_author "$author"; then
-                log "skip #${number}: external fork from ${head_owner} (${title})"
-                return 0
-              fi
-              if [[ "$review" == "CHANGES_REQUESTED" ]]; then
-                log "skip #${number}: changes requested (${title})"
-                return 0
-              fi
-              if [[ "$status" == "DIRTY" || "$mergeable" == "CONFLICTING" ]]; then
-                log "skip #${number}: merge conflict (${title})"
-                return 0
-              fi
-              if [[ "$failed" != "0" ]]; then
-                gh pr merge "$number" --repo "$repo" --disable-auto >/dev/null 2>&1 || true
-                log "skip #${number}: failing checks: $(failing_names "$json") (${title})"
-                return 0
-              fi
-              if [[ "$mergeable" == "UNKNOWN" ]]; then
-                if [[ "$mode" != "watch" ]] || ((SECONDS - started > pending_wait)); then
-                  log "wait #${number}: mergeability still unknown (${title})"
-                  return 0
-                fi
-                printf '%s\n' "watch #${number}: mergeability unknown"
-                sleep 10
-                continue
-              fi
-              if [[ "$stale" != "0" && "$pending" == "0" ]]; then
-                if [[ "$author" == "dependabot[bot]" || "$author" == "app/dependabot" ]]; then
-                  request_dependabot_rebase "$number"
-                  return 0
-                fi
-                if ((behind_updates >= 1)); then
-                  log "skip #${number}: checks are stale (${title})"
-                  return 0
-                fi
-                log "update #${number}: checks are stale, updating branch"
-                if ! gh api --method PUT "repos/${repo}/pulls/${number}/update-branch" >/dev/null; then
-                  log "skip #${number}: could not refresh stale checks (${title})"
-                  return 0
-                fi
-                behind_updates=$((behind_updates + 1))
-                sleep 15
-                continue
-              fi
-              if [[ "$pending" != "0" ]]; then
-                if [[ "$mode" != "watch" ]]; then
-                  log "wait #${number}: ${pending} check(s) still running (${title})"
-                  return 0
-                fi
-                if ((SECONDS - started > pending_wait)); then
-                  log "wait #${number}: checks still running after the watch window (${title})"
-                  return 0
-                fi
-                printf '%s\n' "watch #${number}: ${pending} check(s) running"
-                sleep 20
-                continue
-              fi
-              if [[ "$total" == "0" && "$workflow_count" != "0" ]]; then
-                now_epoch="$(date -u +%s)"
-                updated_epoch="$(date -u -d "$updated_at" +%s)"
-                age="$((now_epoch - updated_epoch))"
-                if [[ "$mode" == "watch" ]]; then
-                  if ((SECONDS - started < startup_wait)); then
-                    printf '%s\n' "watch #${number}: waiting for checks to start"
-                    sleep 20
-                    continue
-                  fi
-                  log "wait #${number}: checks did not start during this run (${title})"
-                  return 0
-                fi
-                if ((age < quiet_age)); then
-                  log "wait #${number}: no checks yet (${title})"
-                  return 0
-                fi
-              fi
-              if [[ "$status" == "BEHIND" ]]; then
-                if [[ "$author" == "dependabot[bot]" || "$author" == "app/dependabot" ]]; then
-                  request_dependabot_rebase "$number"
-                  return 0
-                fi
-                if ((behind_updates >= 1)); then
-                  log "skip #${number}: still behind main after an update (${title})"
-                  return 0
-                fi
-                log "update #${number}: branch is behind main"
-                if ! gh api --method PUT "repos/${repo}/pulls/${number}/update-branch" >/dev/null; then
-                  log "skip #${number}: could not update the branch (${title})"
-                  return 0
-                fi
-                behind_updates=$((behind_updates + 1))
-                sleep 15
-                continue
-              fi
-              if [[ "$mergeable" != "MERGEABLE" ]]; then
-                log "skip #${number}: ${mergeable} / ${status} (${title})"
-                return 0
-              fi
-              if hold_nonsecurity_major "$number"; then
-                return 0
-              fi
-              log "merge #${number}: checks are green (${title})"
-              merge_pr "$number" "$head_sha"
-              return 0
-            done
-          }
-
-          main() {
-            local numbers number
-            if [[ "$event_name" == "pull_request_target" ]]; then
-              numbers="$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")"
-            else
-              numbers="$(gh pr list --repo "$repo" --state open --limit 50 --json number --jq '.[].number')"
-            fi
-            if [[ -z "$numbers" || "$numbers" == "null" ]]; then
-              log "no open pull requests"
-              return 0
-            fi
-            while IFS= read -r number; do
-              [[ -z "$number" ]] && continue
-              if [[ ! "$number" =~ ^[0-9]+$ ]]; then
-                log "skip unexpected pull request id"
-                continue
-              fi
-              process_pr "$number"
-            done <<<"$numbers"
-          }
-
-          main
+          [[ -n "${numbers//[[:space:]]/}" ]] || { log "no open pull requests to process"; exit 0; }
+          while IFS= read -r n; do
+            [[ "$n" =~ ^[0-9]+$ ]] || continue
+            process "$n"
+          done <<<"$numbers"

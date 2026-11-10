@@ -1,30 +1,120 @@
-[build-system]
-requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "observable-mlops-platform"
-version = "0.4.0"
+version = "0.5.0"
 description = "Enterprise-grade AIOps + MLOps platform — 23 use cases, all CI-gated"
 readme = "README.md"
 license = { file = "LICENSE" }
-requires-python = ">=3.11"
+requires-python = ">=3.13"
+dependencies = []
 
-[project.optional-dependencies]
+# One lockfile (uv.lock), one group per CI domain. Jobs install only the group they need:
+#   uv sync --frozen --no-default-groups --group <group>   (.github/actions/setup-python-uv)
+[dependency-groups]
+lint = ["ruff==0.17.4"]
+data = [
+    "numpy>=2.5",
+    # Evidently 0.7 still imports pandas internals removed in pandas 3.
+    "pandas>=2.3,<3",
+    "pyarrow>=26.0",
+    "pyyaml>=6.0.3",
+]
+serving = [
+    "fastapi>=0.162",
+    "uvicorn[standard]>=0.54",
+    "httpx>=0.28.1",
+    "pydantic>=2.14",
+    "prometheus-client>=0.26",
+]
+telemetry = [
+    "opentelemetry-api==1.45.2",
+    "opentelemetry-sdk==1.45.2",
+    "opentelemetry-exporter-otlp-proto-http==1.45.2",
+    "opentelemetry-instrumentation-fastapi==0.66b2",
+    "opentelemetry-instrumentation-logging==0.66b2",
+    "opentelemetry-instrumentation-httpx==0.66b2",
+]
+test = [
+    { include-group = "data" },
+    { include-group = "serving" },
+    { include-group = "telemetry" },
+    "pytest>=8.4",
+    "pytest-cov>=7.0",
+    "pytest-xdist>=3.8",
+    "scipy>=1.17",
+    "scikit-learn>=1.9",
+    "evidently>=0.7.23",
+    "great-expectations>=1.24",
+]
+drift = [
+    { include-group = "data" },
+    "scipy>=1.17",
+    "scikit-learn>=1.9",
+    "evidently>=0.7.23",
+    "mlflow>=3.18",
+]
+ml = [
+    { include-group = "data" },
+    "scipy>=1.17",
+    "scikit-learn>=1.9",
+    "mlflow>=3.18",
+    "shap>=0.54",
+    "optuna>=5.0",
+    "prophet>=1.5",
+]
+dl = [
+    { include-group = "data" },
+    "torch>=2.15",
+    "scikit-learn>=1.9",
+    "mlflow>=3.18",
+    "sentence-transformers>=6.2",
+    "qdrant-client>=1.20",
+]
+quality = [
+    { include-group = "data" },
+    "great-expectations>=1.24",
+    "evidently>=0.7.23",
+]
+# Feast still caps pandas below 3, so it resolves in its own fork of the lock.
+feature-store = [
+    "feast[redis]>=0.67",
+    "numpy>=2.5",
+    "pandas>=2.3,<3",
+    "pyarrow>=26.0",
+    "scipy>=1.17",
+    "great-expectations>=1.24",
+]
 dev = [
-    "ruff==0.17.3",
-    "black==26.10.1",
-    "pytest>=8.2",
-    "pytest-cov>=5.0",
-    "pre-commit>=3.7",
+    { include-group = "lint" },
+    { include-group = "test" },
+    "pre-commit>=4.3",
 ]
 
-[tool.setuptools.packages.find]
-include = ["eval*"]
+[tool.uv]
+package = false
+default-groups = ["dev"]
+required-environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
+conflicts = [
+    [{ group = "feature-store" }, { group = "data" }],
+    [{ group = "feature-store" }, { group = "serving" }],
+    [{ group = "feature-store" }, { group = "test" }],
+    [{ group = "feature-store" }, { group = "drift" }],
+    [{ group = "feature-store" }, { group = "ml" }],
+    [{ group = "feature-store" }, { group = "dl" }],
+    [{ group = "feature-store" }, { group = "quality" }],
+    [{ group = "feature-store" }, { group = "dev" }],
+]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py313"
 exclude = ["__pycache__", ".git", ".venv", "venv", "dist", "build", "*.egg-info"]
 
 [tool.ruff.lint]
@@ -47,15 +137,8 @@ ignore = [
 "mlops/pipelines/**/*.py" = ["F841"]
 "services/*/src/*.py" = ["F841", "B007", "E741", "E712", "SIM105"]
 
-[tool.black]
-line-length = 100
-target-version = ["py311"]
-exclude = '''
-/(
-    \.git | \.venv | venv | build | dist |
-    data/synthetic
-)/
-'''
+[tool.ruff.format]
+exclude = ["data/synthetic/*.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -66,6 +149,6 @@ addopts = "-v --tb=short --no-header -rN"
 filterwarnings = ["ignore::DeprecationWarning", "ignore::PendingDeprecationWarning"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.13"
 ignore_missing_imports = true
 warn_return_any = false

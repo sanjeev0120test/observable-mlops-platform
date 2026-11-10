@@ -1,15 +1,10 @@
 name: "18 · UC11 — Distributed Tracing + RCA (OTEL + Tempo)"
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "observability/otel/**"
-      - ".github/workflows/18-distributed-tracing.yml"
+  workflow_call:
   workflow_dispatch:
 
 env:
-  PYTHON_VERSION: "3.11"
   UC: UC11
 
 permissions:
@@ -19,15 +14,13 @@ jobs:
   tracing-rca:
     name: "Generate Traces + Anomalous Span RCA"
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 5
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+      - uses: ./.github/actions/setup-python-uv
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-      - run: pip install --quiet opentelemetry-sdk opentelemetry-api numpy scikit-learn
+          groups: "telemetry drift"
 
       - name: Generate synthetic traces with anomalous spans
         run: |

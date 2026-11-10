@@ -5,7 +5,7 @@ import rego.v1
 # OPA unit tests for self_healing.rego
 # Co-located in the policy package so `allow` / `deny_reasons` resolve directly.
 # Run with: opa test aiops/policies/opa/ -v
-# All tests must pass before any policy change is merged (see 00-pr-validate.yml)
+# All tests must pass before any policy change is merged (see the policy job in .github/workflows/ci.yml)
 
 # ─── ALLOW TESTS ──────────────────────────────────────────────────────────────
 

@@ -72,7 +72,7 @@ customRules:
         container.label.app in (ml-serving-api, anomaly-detector, drift-monitor) and
         not fd.rip.name in (prometheus.platform, mlflow.platform, qdrant.platform,
                             redis.platform, postgres.platform, opa.platform,
-                            otelcol.platform, airflow-webserver.platform) and
+                            otelcol.platform, airflow-apiserver.platform) and
         not fd.rip in (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
       output: >
         Unexpected outbound from ML service (proc=%proc.name dest=%fd.rip.name

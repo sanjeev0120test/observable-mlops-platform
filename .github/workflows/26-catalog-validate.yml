@@ -1,11 +1,7 @@
 name: "26 · UC20 — Backstage Service Catalog Validation"
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "backstage/catalog-info.yaml"
-      - ".github/workflows/26-catalog-validate.yml"
+  workflow_call:
   workflow_dispatch:
 
 env:
@@ -18,7 +14,7 @@ jobs:
   catalog-validate:
     name: "Backstage Entity Lint + Count Validation"
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 3
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

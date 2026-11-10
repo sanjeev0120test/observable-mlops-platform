@@ -8,13 +8,15 @@ alert correlation to self-healing, RAG runbooks, and cost optimization — each 
 
 - **Repo:** <https://github.com/sanjeev0120test/observable-mlops-platform>
 - **MLflow / DVC remote:** <https://dagshub.com/sanjeev0120test/observable-mlops-platform>
-- **Eval portal:** published by `91-publish-portal.yml` after every CI run
+- **Eval portal:** published to GitHub Pages by the nightly `uc-evals` run
 
-> **CI status:** 30 workflows — 23 UC eval gates + lint/structure (ruff, black,
-> actionlint), 154 unit tests, 36 OPA policy tests, the Model Trust rehearsal
-> (checker → score → ledger → promotion gate), chaos/k8s manifest validation, SBOM
-> signing, and end-to-end score aggregation. Every use case must clear its numeric threshold
-> before a commit lands on `main`.
+> **CI status (November 2026):** one path-filtered PR gate (`ci.yml` → required check
+> `ci-ok`): ruff, actionlint + shellcheck, gitleaks, 216 unit tests on Python 3.13/3.14,
+> 36 OPA tests, Kyverno CLI tests, the Model Trust rehearsal, container smoke tests of
+> every changed service, compose/observability config validation, Airflow 3 DAG import
+> and Terraform validate. `uc-evals.yml` orchestrates the 23 UC eval gates (changed UCs
+> on every merge, all of them nightly), aggregates scores and publishes the portal.
+> Eligible PRs auto-merge the moment `ci-ok` passes.
 
 The numbers above were re-checked on this machine on **17 October 2026**. What was
 actually run, what was only seen in GitHub Actions, and what was **not** run are in
@@ -170,11 +172,18 @@ Complete map of every folder and file, one line per entry, explaining **what it 
 ```text
 observable-mlops-platform/
 │
-├── .github/workflows/                     # All CI — 29 numbered workflows + aggregation + portal
-│   ├── 00-pr-validate.yml                 # Gate 0: ruff, black, actionlint, OPA tests, structure checks
+├── .github/actions/                       # Composite actions shared by workflows
+│   ├── setup-python-uv/                   # uv 0.13 + Python + `uv sync --frozen --group …` with cache
+│   └── setup-kyverno/                     # Checksum-verified Kyverno CLI
+├── .github/workflows/                     # PR gate + UC orchestrator + 23 reusable UC eval gates
+│   ├── ci.yml                             # PR/main gate (path-filtered); `ci-ok` is the required check
+│   ├── uc-evals.yml                       # Calls 01–26; aggregates scores; nightly portal publish
+│   ├── auto-merge.yml                     # Native auto-merge on eligible PRs (+ workflow_run fallback)
+│   ├── security.yml                       # Syft SBOM → Grype, Trivy fs scan → Security tab (weekly)
+│   ├── scorecard.yml                      # OSSF Scorecard (weekly)
 │   ├── 01-observability.yml               # Gate: Stack B health + alert rule inventory (Prometheus/Grafana/Loki/Tempo)
 │   ├── 02-data-pipeline.yml               # Gate: DVC repro + Great Expectations data quality
-│   ├── 03-drift-detection.yml             # Gate UC1: KS/PSI/NannyML/Alibi drift metrics
+│   ├── 03-drift-detection.yml             # Gate UC1: KS/PSI/kernel-MMD + Evidently drift metrics
 │   ├── 04-log-anomaly.yml                 # Gate UC2: LSTM autoencoder reconstruction error
 │   ├── 05-feature-skew.yml                # Gate UC5: Feast feature store train/serve skew
 │   ├── 06-alert-correlation.yml           # Gate UC3: DBSCAN dedup rate / silhouette / FPR
@@ -193,13 +202,8 @@ observable-mlops-platform/
 │   ├── 22-error-classification.yml        # Gate UC16: sklearn sentence-transformer error classifier
 │   ├── 23-explainability.yml              # Gate UC17: SHAP explanation count + fidelity
 │   ├── 24-rate-limiting.yml               # Gate UC18: Redis + sklearn predictive rate limiter precision
-│   ├── 25-feature-monitoring.yml          # Gate UC19: WhyLogs drift profile completeness
-│   ├── 26-catalog-validate.yml            # Gate UC20: Backstage catalog entity schema validation
-│   ├── 27-unit-tests.yml                  # Runs all pytest unit suites + OPA policy tests
-│   ├── 28-sbom-signing.yml                # Syft SBOM generation + Trivy SARIF + Cosign signing
-│   ├── 29-resilience-chaos.yml            # Validates chaos/k8s manifests + unit tests for resilience/shadow/RAG
-│   ├── 90-e2e-integration.yml             # Aggregates all UC eval JSON results; exits 1 if any UC fails
-│   └── 91-publish-portal.yml              # Publishes eval scores to GitHub Pages after successful runs
+│   ├── 25-feature-monitoring.yml          # Gate UC19: Evidently profiles + constraint tests
+│   └── 26-catalog-validate.yml            # Gate UC20: Backstage catalog entity schema validation
 │
 ├── aiops/                                 # Policy-as-code and runtime security
 │   ├── falco/
@@ -342,7 +346,7 @@ observable-mlops-platform/
 │   ├── alert-correlator/
 │   │   ├── src/correlator.py              # DBSCAN clustering with time-horizon scaling + one-hot namespace
 │   │   ├── src/main.py                    # FastAPI: POST /correlate; returns cluster groups + FPR metric
-│   │   └── Dockerfile                     # Non-root (uid 10001), python:3.11-slim
+│   │   └── Dockerfile                     # Non-root (uid 10001), python:3.14-slim + uv
 │   ├── anomaly-detector/
 │   │   ├── src/main.py                    # LSTM autoencoder inference: POST /detect; reconstruction error score
 │   │   └── Dockerfile
@@ -350,7 +354,7 @@ observable-mlops-platform/
 │   │   ├── src/main.py                    # IsolationForest cost anomaly: POST /analyze; anomaly flag + attribution
 │   │   └── Dockerfile
 │   ├── drift-monitor/
-│   │   ├── src/drift_engine.py            # KS test + PSI + NannyML + Alibi drift detectors (composable)
+│   │   ├── src/drift_engine.py            # KS test + PSI + kernel MMD + performance estimate + Evidently report
 │   │   ├── src/main.py                    # FastAPI: POST /detect-drift; returns per-detector scores + Evidently report
 │   │   └── Dockerfile
 │   ├── predictive-scaler/
@@ -369,7 +373,7 @@ observable-mlops-platform/
 ├── tests/
 │   ├── unit/
 │   │   ├── test_correlator.py             # 10 tests: DBSCAN clustering, FPR, dedup, edge cases
-│   │   ├── test_drift_engine.py           # Drift engine unit tests: KS/PSI/NannyML detector correctness
+│   │   ├── test_drift_engine.py           # Drift engine unit tests: KS/PSI/MMD detector correctness
 │   │   ├── test_predictive_scaler.py      # Forecast accuracy + shadow-mode evaluation logic
 │   │   ├── test_resilience.py             # 12 tests: retry backoff delays, circuit breaker state machine
 │   │   ├── test_runbook_agent.py          # RAG hardening: sanitization, grounding, injection defense
@@ -383,13 +387,12 @@ observable-mlops-platform/
 │   ├── chaos/                             # Placeholder for future in-cluster chaos test harness
 │   └── integration/                       # Placeholder for future end-to-end service integration tests
 │
-├── .pre-commit-config.yaml                # Hooks: ruff, black, hadolint (Dockerfiles), trailing whitespace
+├── .pre-commit-config.yaml                # Hooks: ruff check + ruff format, gitleaks, hadolint, whitespace
 ├── LICENSE                                # Apache 2.0
-├── Makefile                               # Targets: test-unit, test-opa, lint, dev, ci-local, clean
-├── pyproject.toml                         # ruff + black + pytest + mypy config; tool versions pinned
+├── Makefile                               # Targets: install, test-unit, test-opa, lint, dev, ci-local, clean
+├── pyproject.toml                         # PEP 735 dependency groups (one per CI domain) + ruff/pytest config
 ├── README.md                              # This document
-├── renovate.json                          # Renovate bot: auto-PRs for dependency updates (weekly)
-└── requirements.txt                       # Pinned Python deps: ML (scikit-learn, torch), MLOps (mlflow, evidently, feast), serving (fastapi, httpx)
+└── uv.lock                                # Single lockfile for every group (CI installs with --frozen)
 ```
 
 ---
@@ -400,13 +403,13 @@ Each UC has a numbered workflow, a blocking eval gate, and code under `services/
 
 | UC | Capability | Algorithm / Tool (2026) | CI workflow | Pass threshold |
 |----|-----------|------------------------|-------------|---------------|
-| UC1 | ML data + prediction drift | KS test, PSI, NannyML, Alibi, Evidently | `03` | score ≥ 70 |
+| UC1 | ML data + prediction drift | KS test, PSI, kernel MMD, Evidently | `03` | score ≥ 70 |
 | UC2 | Log anomaly detection | LSTM autoencoder, PyTorch, Qdrant | `04` | score ≥ 65 |
 | UC3 | Alert-storm correlation & de-duplication | DBSCAN (time-horizon scaled), silhouette | `06` | score ≥ 50 |
 | UC4 | Predictive autoscaling | Linear trend forecast, KEDA, shadow mode | `07` | score ≥ 70 |
-| UC5 | Feature train/serve skew detection | Feast, Great Expectations, Evidently | `05` | score ≥ 75 |
+| UC5 | Feature train/serve skew detection | Feast 0.67 (file offline → Redis online), Great Expectations | `05` | score ≥ 75 |
 | UC6 | Agentic self-healing | OPA (fail-closed), Falco, n8n, retry+CB | `08` | score ≥ 85 |
-| UC7 | Supply-chain & admission security | Trivy, Falco, Kyverno, SBOM/Cosign | `13`, `28` | score ≥ 75 |
+| UC7 | Supply-chain & admission security | Trivy, Falco, Kyverno, Syft/Grype SBOM | `13`, `security` | score ≥ 75 |
 | UC8 | RAG runbook Q&A | Qdrant, TinyLlama/Ollama, grounding | `09` | score ≥ 70 |
 | UC9 | Safe model promotion | OPA `model_promotion.rego`, MLflow registry | `10` | score ≥ 80 |
 | UC10 | Cloud cost anomaly + attribution | IsolationForest, MLflow | `11` | score ≥ 70 |
@@ -418,7 +421,7 @@ Each UC has a numbered workflow, a blocking eval gate, and code under `services/
 | UC16 | Intelligent error classification | sklearn, sentence-transformers | `22` | score ≥ 65 |
 | UC17 | Model explainability + audit | SHAP, MLflow, EU AI Act checks | `23` | score ≥ 70 |
 | UC18 | Predictive rate limiting | Redis, sklearn, sliding window | `24` | score ≥ 70 |
-| UC19 | Feature monitoring / data profiling | WhyLogs, WhyLabs opt-in | `25` | score ≥ 65 |
+| UC19 | Feature monitoring / data profiling | Evidently profiles + constraint tests | `25` | score ≥ 65 |
 | UC20 | Service catalog validation | Backstage, catalog-info.yaml schema | `26` | score ≥ 80 |
 | UC21 | SLO / error-budget monitoring | Prometheus recording rules, burn-rate alerts | `15` | score ≥ 75 |
 | UC22 | A/B testing + auto-promote | KServe traffic split, shadow evaluator | `10` | score ≥ 80 |
@@ -457,7 +460,7 @@ chains all incidents together) and one-hot namespace encoding. FPR measures cros
 a root alert correctly grouped with its own cascade alerts is not a false positive. Result: silhouette ≥ 0.87,
 FPR ≤ 0.10 on the 24h synthetic dataset, composite score 99.8.
 
-**Model Trust Score — a credit score for models** (`services/model-trust/`, workflow `30`)
+**Model Trust Score — a credit score for models** (`services/model-trust/`, `ci.yml` policy + container jobs)
 Every monitoring product reports signals in silos: drift here, SLO burn there, CVEs in a third tool, SHAP in
 MLflow. None of them answers the question the on-call engineer, the product owner and the auditor all ask —
 *"can I trust this model version in production right now, and if not, what is the cheapest fix?"* The Trust
@@ -467,7 +470,7 @@ Score does, with three properties no single tool combines:
 |---|---|
 | **One 300–1000 number, fully attributable** | Six weighted pillars (performance 25%, drift 20%, reliability 20%, security 15%, governance 10%, cost 10%); every point traces to a pillar and a signal. Unmeasured pillars are *penalised* (health 0.4): you get no credit for what you do not measure. |
 | **Knockout caps** | Like a bankruptcy on a credit file: ≥1 critical CVE caps at FAIR, ≥3 at SUBPRIME; unsigned image or EU-AI-Act non-compliance can never be PRIME; exhausted error budget caps below GOOD. A 93%-accurate model in an unsigned image with 3 critical CVEs scores **599 / SUBPRIME**, not "fine". |
-| **Remediation-ROI advisor** | Each lost point maps to the platform action that recovers it (retrain via UC1, promote shadow winner via UC22, rebuild+re-sign via workflow 28, …) with an effort estimate. Output is ranked by points-per-hour plus the minimal action set to reach a target band. |
+| **Remediation-ROI advisor** | Each lost point maps to the platform action that recovers it (retrain via UC1, promote shadow winner via UC22, rebuild on a patched base via `security` + `13`, …) with an effort estimate. Output is ranked by points-per-hour plus the minimal action set to reach a target band. |
 | **Tamper-evident ledger** | Every score appends to a SHA-256 hash-chained JSONL ledger. Edit, delete or reorder one historic entry and `/api/v1/ledger/verify` fails at that exact sequence number. `/api/v1/ledger/attestation` is the EU AI Act Art. 12 record-keeping evidence, produced by operating the platform rather than by a quarterly spreadsheet. |
 | **Wired into the control plane** | OPA `model_promotion` denies production below 700 and denies everything while SUBPRIME or when the ledger is broken; the Airflow retrain DAG scores every candidate before the gate; the score is written back to the MLflow 3 model version as tags; Prometheus alerts + Grafana panels ship in `observability/`. |
 
@@ -489,16 +492,16 @@ default-deny `NetworkPolicy` that whitelists only OPA egress and Prometheus/n8n 
 git clone https://github.com/sanjeev0120test/observable-mlops-platform.git
 cd observable-mlops-platform
 
-# Install Python tooling
-pip install -r requirements.txt
+# Install uv (https://docs.astral.sh/uv/), then the locked dev toolchain (Python 3.14)
+make install              # uv sync --frozen && pre-commit install
 
-# Run unit tests (101 tests, ~15s)
-make test-unit            # or: python -m pytest tests/unit -q
+# Run unit tests (216 tests, parallel)
+make test-unit            # or: uv run pytest tests/unit -n auto
 
 # Lint exactly as CI does
-make lint                 # ruff check . && black --check .
+make lint                 # ruff check . && ruff format --check .
 
-# OPA policy tests (requires opa binary)
+# OPA policy tests (requires opa binary: make install-opa)
 make test-opa             # opa test aiops/policies/opa/ -v
 
 # Bring up local observability stack (Docker Desktop required)
@@ -515,7 +518,7 @@ docker compose -f infra/docker-compose/docker-compose.observability.yml -p platf
 | Alertmanager | <http://localhost:9093> | Routes UC6/UC23 webhooks |
 | Loki | <http://localhost:3100> | Query via Grafana Explore |
 | Tempo | <http://localhost:3200> | Traces via Grafana Explore |
-| OTEL Collector | metrics: <http://localhost:8889> | OTLP gRPC on `4319` (host) → `4317` (container) |
+| OTEL Collector | health: <http://localhost:13133> | OTLP gRPC on `4319` (host) → `4317` (container); internal metrics port `8888` |
 | MLflow | <http://localhost:5000> | Stack A only |
 | Airflow | <http://localhost:8080> | Stack A — retrain DAGs |
 | Qdrant | <http://localhost:6333> | Stack A — RAG vector store |
@@ -525,18 +528,18 @@ docker compose -f infra/docker-compose/docker-compose.observability.yml -p platf
 
 ## 9. CI reference
 
-| Workflow | Purpose | Key gate |
+| Workflow | Trigger | Purpose |
 |---|---|---|
-| `00-pr-validate` | Lint (ruff, black), actionlint, OPA tests, structure | All must pass — blocks merge |
-| `27-unit-tests` | 130 pytest unit tests (py3.11 + 3.12) + OPA policy tests | 0 failures |
-| `30-model-trust-score` | Trust engine tests → 3-model demo → ledger tamper proof → OPA gate → container smoke (non-root, read-only rootfs) | Demo assertions + HTTP smoke |
-| `29-resilience-chaos` | Chaos + k8s manifest validation + resilience/shadow/RAG tests | All valid |
-| `28-sbom-signing` | Syft SBOM + Grype scan + Cosign signing + Trivy SARIF | Informational (SARIF to Security tab) |
-| `90-e2e-integration` | Aggregate all UC scores; exit 1 if any UC fails | 100% UC pass rate |
-| `91-publish-portal` | Deploy eval dashboard to GitHub Pages | Runs only after E2E success |
-| `01` – `26` | Per-UC: generate data → run algorithm → log to MLflow → eval gate | Numeric threshold per UC |
+| `ci` | PR, push to main, merge queue | Path-filtered jobs: lint (ruff, actionlint + shellcheck), gitleaks, pytest 3.13/3.14 (xdist, coverage), OPA + Kyverno tests + Model Trust rehearsal, container smoke per changed service (build with GHA layer cache, non-root, read-only rootfs, `/health` + `/metrics`), compose + Prometheus/Alertmanager/Loki/OTel/Fluent Bit config validation, Airflow 3 DAG import, Terraform validate. **`ci-ok`** aggregates them and is the only required check. |
+| `uc-evals` | push to main (changed UCs), nightly + manual (all UCs) | Calls the 23 reusable UC gates `01`–`26`, aggregates scores (fails on any failing UC, or any missing UC on a full run), publishes the portal to GitHub Pages on full runs. |
+| `auto-merge` | PR events, `ci` completion, hourly sweep | Enables native squash auto-merge on same-repo and trusted-bot PRs; holds drafts, forks, failing checks, requested changes and non-security major Dependabot bumps. |
+| `security` | weekly, pushes touching services/deps | Syft SBOM → Grype, Trivy filesystem scan → SARIF in the Security tab; SBOM submitted to the dependency graph. |
+| `scorecard` | weekly | OSSF Scorecard. |
 
-Run all workflows locally with `make ci-local` (lint + unit tests + data generators).
+All Python jobs share `.github/actions/setup-python-uv`: uv installs the interpreter and only the
+dependency group the job needs from `uv.lock`, with the uv cache keyed per group and Python version.
+Run `make ci-local` for lint + unit tests + data generators, or `bash scripts/run-all-workflows.sh`
+to dispatch a full `uc-evals` run.
 
 ---
 
@@ -546,13 +549,13 @@ Run all workflows locally with `make ci-local` (lint + unit tests + data generat
 |---|---|---|
 | **Policy-as-code** | OPA (remediation + model promotion) + Kyverno (admission) | `aiops/policies/` |
 | **Runtime security** | Falco rules: crypto miner, shell-in-container, privilege escalation | `aiops/falco/custom_rules.yml` |
-| **Supply chain** | Trivy image scan + Syft SBOM + Cosign keyless signing | `.github/workflows/28-sbom-signing.yml` |
+| **Supply chain** | Trivy image + fs scans, Syft SBOM → Grype, SHA-pinned actions, checksum-verified CLI downloads | `.github/workflows/security.yml`, `13-security-policy.yml` |
 | **Least privilege** | Non-root containers, dropped capabilities, read-only root filesystem | `services/*/Dockerfile`, `infra/kubernetes/` |
 | **Network isolation** | Default-deny NetworkPolicy; explicit allow-lists per service | `infra/kubernetes/base/self-healing/networkpolicy.yaml` |
 | **Compliance** | EU AI Act: model card presence, bias metric logging, audit trail | `governance/eu-ai-act/compliance_check.py` |
 | **Model trust + record-keeping** | 300–1000 trust score with knockout caps, OPA promotion gate, SHA-256 hash-chained ledger + attestation | `services/model-trust/`, `aiops/policies/opa/model_promotion.rego` |
 | **Cloud footprint as code** | EKS (IRSA, KMS secrets, IMDSv2, spot inference pool), S3 artifacts (SSE-KMS, versioned), VPC flow logs; `fmt`+`validate` in CI | `infra/terraform/aws-eks/` |
-| **Dependency hygiene** | Renovate bot auto-PRs for outdated deps weekly | `renovate.json` |
+| **Dependency hygiene** | Dependabot weekly grouped PRs (actions, uv, Docker, Compose, Terraform) → auto-merge on green | `.github/dependabot.yml` |
 
 ---
 
@@ -676,10 +679,12 @@ provision time, so panels show **No data** even when Prometheus has metrics. Fix
 ```python
 # python fix-grafana-dashboard.py
 import base64, json, urllib.request
+
 auth = base64.b64encode(b"admin:admin").decode()
 hdrs = {"Authorization": f"Basic {auth}", "Content-Type": "application/json"}
-with urllib.request.urlopen(urllib.request.Request(
-    "http://localhost:3000/api/datasources", headers=hdrs)) as r:
+with urllib.request.urlopen(
+    urllib.request.Request("http://localhost:3000/api/datasources", headers=hdrs)
+) as r:
     prom_uid = next(d["uid"] for d in json.load(r) if d["type"] == "prometheus")
 # Then GET the dashboard, replace ${DS_PROMETHEUS} → prom_uid, POST back
 ```
@@ -855,7 +860,7 @@ Representative incident classes from SaaS post-mortems. Each row shows how this 
 
 | Scenario | Symptoms in prod | Business impact | Platform response (UC chain) | CI evidence |
 |---|---|---|---|---|
-| **Payment fraud model drift** | Approval rate shifts; chargebacks spike days later | Wrong fraud decisions; regulatory scrutiny | UC1 PSI/KS → Airflow retrain; UC19 WhyLogs early warning | `03`, `25` |
+| **Payment fraud model drift** | Approval rate shifts; chargebacks spike days later | Wrong fraud decisions; regulatory scrutiny | UC1 PSI/KS → Airflow retrain; UC19 Evidently early warning | `03`, `25` |
 | **Black Friday CPU spike** | p99 latency spikes; HPA lags behind load | Cart/checkout degradation; SLO burn | UC4 forecast → KEDA pre-scale; UC21 fast-burn alert fires | `07`, `15` |
 | **Log storm after bad deploy** | ERROR volume floods dashboards; root cause buried | Long MTTR; alert fatigue; wrong escalations | UC2 LSTM anomaly; UC3 DBSCAN dedup; UC8 RAG runbook answer | `04`, `06`, `09` |
 | **CVE in base Python image** | Trivy flags CRITICAL in CI build | Compliance audit fail; exploit risk | UC7 blocks promotion; Kyverno denies admission | `13`, `28` |
@@ -908,14 +913,14 @@ Where each `score_i` is 0–100:
 - `lower_better`: `min(100, max(0, (1 - (observed - threshold) / threshold) * 100))`
 - `bool_true`: `100 if observed else 0`
 
-If `composite_score < THRESHOLDS[UC]`, the job calls `sys.exit(1)` — the CI job fails, the PR is blocked, and `90-e2e-integration` cannot aggregate. The threshold is the contract; the CI run is the proof.
+If `composite_score < THRESHOLDS[UC]`, the job calls `sys.exit(1)` — the CI job fails, the `uc-evals` aggregate job fails. The threshold is the contract; the CI run is the proof.
 
 ```python
 # eval/metrics.py — UC3 example
 UC_METRICS["UC3"] = [
     MetricSpec("deduplication_rate", "higher_better", pass_threshold=0.70, weight=2.0),
-    MetricSpec("silhouette_score",   "higher_better", pass_threshold=0.30, weight=1.5),
-    MetricSpec("false_positive_rate","lower_better",  pass_threshold=0.10, weight=2.0),
+    MetricSpec("silhouette_score", "higher_better", pass_threshold=0.30, weight=1.5),
+    MetricSpec("false_positive_rate", "lower_better", pass_threshold=0.10, weight=2.0),
 ]
 THRESHOLDS["UC3"] = 50  # composite must reach 50/100
 ```
