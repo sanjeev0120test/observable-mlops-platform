@@ -16,19 +16,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
-    services:
-      redis:
-        image: redis:8.8.4-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # Same tag as the compose stack, so Dependabot's compose bumps are what UC5 tests.
+      - name: Start Redis (online store)
+        run: |
+          set -euo pipefail
+          image=$(awk '$1 == "image:" && $2 ~ /^redis:/ { print $2; exit }' \
+            infra/docker-compose/docker-compose.mlops-core.yml)
+          test -n "$image"
+          echo "Redis image: $image"
+          docker run -d --name redis -p 6379:6379 "$image"
+
       - uses: ./.github/actions/setup-python-uv
         with:
           groups: "feature-store"
@@ -51,6 +51,11 @@ jobs:
           # Point the online store at the job's Redis service instead of the compose hostname.
           sed -i 's|connection_string: "redis:6379,db=0"|connection_string: "localhost:6379,db=0"|' feature_store.yaml
           grep -q 'localhost:6379' feature_store.yaml
+          for _ in $(seq 1 30); do
+            [ "$(docker exec redis redis-cli ping 2>/dev/null)" = PONG ] && break
+            sleep 1
+          done
+          docker exec redis redis-cli ping
           feast apply
 
       - name: Materialize + compare offline vs online (skew detection)

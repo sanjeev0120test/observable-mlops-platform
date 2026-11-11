@@ -21,6 +21,12 @@ jobs:
       critical_cves: ${{ steps.trivy.outputs.critical_cves }}
 
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          sparse-checkout: |
+            infra/docker-compose
+            services
+
       - uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
         with:
           version: ${{ env.TRIVY_VERSION }}
@@ -41,14 +47,21 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p reports
+          # Service base images plus the data stores and dashboards from the compose stack.
+          mapfile -t images < <(
+            awk '$1 == "FROM" { print $2 }' services/*/Dockerfile
+            awk '$1 == "image:" && $2 ~ /^(postgres|redis|prom\/prometheus|grafana\/grafana):/ { print $2 }' \
+              infra/docker-compose/*.yml
+          )
+          mapfile -t images < <(printf '%s\n' "${images[@]}" | sort -u)
+          test "${#images[@]}" -ge 5
           total=0
           {
             echo "### Trivy — critical fixable CVEs"
             echo "| Image | Critical |"
             echo "|---|---|"
           } >> "$GITHUB_STEP_SUMMARY"
-          for image in python:3.14-slim postgres:18.6-alpine redis:8.8.4-alpine \
-                       prom/prometheus:v3.16.0 grafana/grafana:13.3.0; do
+          for image in "${images[@]}"; do
             out="reports/trivy_$(echo "$image" | tr '/:' '__').json"
             trivy image "$image" --image-src remote --scanners vuln \
               --severity CRITICAL --ignore-unfixed --format json --output "$out" --quiet
@@ -62,7 +75,8 @@ jobs:
 
       - name: Generate SBOM (CycloneDX) for the service base image
         run: |
-          trivy image python:3.14-slim --image-src remote \
+          base=$(awk '$1 == "FROM" { print $2; exit }' services/drift-monitor/Dockerfile)
+          trivy image "$base" --image-src remote \
             --format cyclonedx --output reports/sbom_python_slim.cdx.json --quiet
           echo "SBOM components: $(jq '.components | length' reports/sbom_python_slim.cdx.json)"
 
