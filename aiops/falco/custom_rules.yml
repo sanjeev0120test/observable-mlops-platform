@@ -55,7 +55,7 @@
 - rule: Container running as root
   desc: Alert when a container is running as UID 0 in non-whitelisted namespaces
   condition: >
-    container and
+    spawned_process and
     container.id != host and
     user.uid = 0 and
     not k8s.ns.name in (kube-system, cert-manager, kyverno)

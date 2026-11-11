@@ -307,6 +307,8 @@ jobs:
           done
           docker compose -f docker-compose.observability.yml -f docker-compose.mlops-core.yml \
             -f docker-compose.services.yml config -q
+          # Declared external by the compose files (created by `make dev` locally).
+          docker network create platform-net
       - name: promtool check config (+ rules)
         run: docker compose run --rm --no-deps --entrypoint promtool prometheus check config /etc/prometheus/prometheus.yml
       - name: amtool check-config
