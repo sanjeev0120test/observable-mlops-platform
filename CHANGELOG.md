@@ -20,7 +20,7 @@ All notable changes to this project are documented here. Format follows
   groups in `pyproject.toml` with a single `uv.lock`, so each CI job installs only its
   group (torch and prophet only for the UCs that train with them; langchain, nannyml
   and alibi-detect are dropped). Service images install with uv.
-- Stack images: Postgres 18.6, Redis 8.8, MLflow 3.18, Airflow 3.4, n8n 2.47,
+- Stack images: Postgres 18.6, Redis 8.10, MLflow 3.18, Airflow 3.4, n8n 2.47,
   Qdrant 1.20, Ollama 0.40, Prometheus 3.16, Alertmanager 0.34, Grafana 13.3,
   Loki 3.7, Tempo 2.10, OTel Collector 0.165, Fluent Bit 5.1, OPA 1.22.
 - Kyverno policies are `ValidatingPolicy` (CEL) with CLI tests; UC7 runs Kyverno 1.19,

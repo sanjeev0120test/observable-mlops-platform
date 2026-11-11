@@ -79,7 +79,7 @@ Workflow 27 had **failed** on the earlier merge of PR #9 (the rehearsal prepende
 
 ![GitHub Actions: workflow 30 and workflow 27 green on 40401ab](docs/images/validation-2026-10-17/07-github-actions-pr11.png)
 
-Other workflows on that same commit (00, 01, 14, 15, 28, 29, 90, 91, GitHub Pages) were also reported successful by the Actions page. They were not re-run on this machine.
+Other workflows on that same commit (00, 01, 14, 15, 28, 29, 90, 91, GitHub Pages) were also reported successful by the Actions page. They were not re-run on this machine. Those workflow numbers were retired in 0.5.0: the PR gate is `ci` (`ci-ok`), and the UC aggregate plus portal publish run in `uc-evals`.
 
 ### Not run on 17 October 2026
 
@@ -586,7 +586,7 @@ infrastructure. Documents every setup failure encountered and the exact fix appl
 |---|---|
 | Docker Desktop | ~8 GB RAM for Stack A+B together; Stack B alone ~1.8 GB |
 | Git clone | `git clone https://github.com/sanjeev0120test/observable-mlops-platform.git` |
-| Python 3.11+ | For OTEL seed scripts and Grafana API datasource fix |
+| Python 3.13+ | `make install` uses 3.14. Needed for the OTEL seed scripts and the Grafana datasource fix |
 | `DAGSHUB_TOKEN` | GitHub Secret — required for CI MLflow/DVC logging; not needed for local Docker runs |
 
 ### Step-by-step: end-to-end local demo
@@ -666,7 +666,7 @@ docker run -d --name platform-metrics-hub --network platform-net \
   --network-alias self-healing --network-alias runbook-agent \
   --network-alias cost-optimizer \
   -v "$(pwd)/metrics-hub.py:/app/hub.py:ro" \
-  python:3.11-slim bash -c "pip install -q prometheus_client && python /app/hub.py"
+  python:3.14-slim bash -c "pip install -q prometheus_client && python /app/hub.py"
 ```
 
 Verify targets: <http://localhost:9090/targets> — all `platform-services` targets should be **UP**.
@@ -707,7 +707,7 @@ curl -X POST http://localhost:4318/v1/traces \
 | Prometheus Targets | <http://localhost:9090/targets> | All `platform-services` UP |
 | Prometheus Alerts | <http://localhost:9090/alerts> | `MLModelDriftDetected` firing (UC1) |
 | Alertmanager | <http://localhost:9093> | Drift alerts routed and grouped |
-| OTEL Collector | <http://localhost:8889/metrics> | `otelcol_receiver_accepted_*` > 0 |
+| OTEL Collector | <http://localhost:8888/metrics> | `otelcol_receiver_accepted_*` > 0; health is <http://localhost:13133> |
 | Qdrant | <http://localhost:6333> | Dashboard reachable (Stack A) |
 | MLflow | <http://localhost:5000> | Experiments visible (Stack A) |
 
@@ -778,7 +778,7 @@ Evidence from the **2026-06-11** local validation session and **CI runs on DagsH
 
 | # | Screenshot | What it proves |
 |---|---|---|
-| 26 | ![OTEL collector metrics endpoint](docs/images/local-observability-lab/26.png) | `localhost:8889/metrics` — OTEL accepted logs/spans/metrics, zero refused. |
+| 26 | ![OTEL collector metrics endpoint](docs/images/local-observability-lab/26.png) | Collector metrics page (this capture used port 8889). Current compose serves metrics on `localhost:8888` and health on `localhost:13133`. |
 | 27 | ![Qdrant dashboard console](docs/images/local-observability-lab/27.png) | Stack A Qdrant UI reachable on `:6333` (RAG/UC8 vector store). |
 
 #### G. GitHub Actions — CI validation (7)
@@ -786,8 +786,8 @@ Evidence from the **2026-06-11** local validation session and **CI runs on DagsH
 | # | Screenshot | What it proves |
 |---|---|---|
 | 28 | ![GitHub Actions UC1 drift workflow](docs/images/local-observability-lab/28.png) | `03-drift-detection.yml` green — UC1 eval gate passed in CI. |
-| 29 | ![GitHub Actions publish portal](docs/images/local-observability-lab/29.png) | `91-publish-portal.yml` deploys eval dashboard to GitHub Pages. |
-| 30 | ![GitHub Actions E2E workflow YAML](docs/images/local-observability-lab/30.png) | `90-e2e-integration.yml` aggregates all 23 UC workflow results. |
+| 29 | ![GitHub Actions publish portal](docs/images/local-observability-lab/29.png) | Screenshot of the retired `91-publish-portal.yml`. Portal publish now runs as `publish eval portal` in `uc-evals.yml`. |
+| 30 | ![GitHub Actions E2E workflow YAML](docs/images/local-observability-lab/30.png) | Screenshot of the retired `90-e2e-integration.yml`. The 23 UC results are now aggregated by `uc-evals.yml`. |
 | 31 | ![GitHub Pages deployment](docs/images/local-observability-lab/31.png) | Pages build/deploy job succeeded (`gh-pages` branch). |
 | 32 | ![GitHub Actions all workflows list](docs/images/local-observability-lab/32.png) | Recent runs green across observability, E2E, portal, and UC workflows. |
 | 33 | ![GitHub Actions 01-observability history](docs/images/local-observability-lab/33.png) | Stack B workflow history — failed run then **fix commit** (`fa64bf8`) green. |
@@ -815,7 +815,7 @@ Evidence from the **2026-06-11** local validation session and **CI runs on DagsH
 | 45 | ![MLflow baseline-gbc overview](docs/images/local-observability-lab/45.png) | UC9 baseline run with GBC hyperparameters and UC9 baseline tag. |
 | 46 | ![MLflow Optuna HPO overview](docs/images/local-observability-lab/46.png) | UC14 `optuna-study-ci`: 20 trials, best f1 logged to MLflow. |
 | 47 | ![MLflow alert-correlation runs](docs/images/local-observability-lab/47.png) | UC1 + UC3 drift/DBSCAN runs in `alert-correlation` experiment. |
-| 48 | ![MLflow UC1 drift overview](docs/images/local-observability-lab/48.png) | UC1 `uc1-drift-detection-ci`: PSI, KS, NannyML, Alibi metrics; drift detected. |
+| 48 | ![MLflow UC1 drift overview](docs/images/local-observability-lab/48.png) | UC1 `uc1-drift-detection-ci`: PSI, KS, performance estimate, kernel MMD; drift detected. The capture still labels the last two with the retired NannyML and Alibi names. |
 | 49 | ![MLflow UC1 drift model metrics charts](docs/images/local-observability-lab/49.png) | UC1 drift metric charts (ks_statistic 0.32, psi_score, etc.). |
 | 50 | ![MLflow UC3 DBSCAN overview](docs/images/local-observability-lab/50.png) | UC3 `uc3-dbscan-ci`: deduplication_rate, silhouette_score, false_positive_rate. |
 | 51 | ![MLflow UC3 DBSCAN model metrics](docs/images/local-observability-lab/51.png) | UC3 metric charts: deduplication_rate 0.88, false_positive_rate 0.96. |
