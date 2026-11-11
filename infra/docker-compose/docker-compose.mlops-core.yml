@@ -36,7 +36,7 @@ services:
           memory: 512M
 
   redis:
-    image: redis:8.8.4-alpine
+    image: redis:8.10.2-alpine
     container_name: platform-redis
     command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
     healthcheck:
