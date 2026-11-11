@@ -1,18 +1,10 @@
-name: "03 · UC1 — Drift Detection + Auto-Retraining (Evidently + NannyML + Alibi)"
+name: "03 · UC1 — Drift Detection + Auto-Retraining (Evidently + KS/PSI + kernel MMD)"
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "services/drift-monitor/**"
-      - "mlops/experiments/pod_failure_prediction/**"
-      - ".github/workflows/03-drift-detection.yml"
-  schedule:
-    - cron: "0 4 * * *"  # Daily at 04:00 UTC
+  workflow_call:
   workflow_dispatch:
 
 env:
-  PYTHON_VERSION: "3.11"
   UC: UC1
 
 permissions:
@@ -20,22 +12,17 @@ permissions:
 
 jobs:
   generate-data:
-    timeout-minutes: 2
     name: "Generate Synthetic Dataset (reference + drifted)"
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       data_artifact: synthetic-data-uc1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Set up Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+      - uses: ./.github/actions/setup-python-uv
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-
-      - name: Install dependencies
-        run: pip install --quiet numpy==1.26.4 pandas==2.2.2 pyarrow==15.0.2
+          groups: "data"
 
       - name: Generate reference (no drift) + drifted (after hour 48) datasets
         run: |
@@ -68,30 +55,16 @@ jobs:
           retention-days: 1
 
   drift-detection:
-    timeout-minutes: 2
     name: "Run Drift Detection (UC1)"
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: generate-data
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Set up Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+      - uses: ./.github/actions/setup-python-uv
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-
-      - name: Install drift detection dependencies
-        run: |
-          pip install --quiet \
-            numpy==1.26.4 \
-            pandas==2.2.2 \
-            pyarrow==15.0.2 \
-            scipy==1.13.0 \
-            evidently==0.4.30 \
-            alibi-detect==0.12.0 \
-            nannyml==0.13.1 \
-            mlflow==3.17.1
+          groups: "drift"
 
       - name: Download datasets
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
@@ -134,8 +107,8 @@ jobs:
           print(f"\n=== UC1 Drift Metrics ===")
           print(f"  KS statistic:               {metrics.ks_statistic}")
           print(f"  PSI score:                  {metrics.psi_score}")
-          print(f"  NannyML perf estimate:      {metrics.nannyml_performance_estimate}")
-          print(f"  Alibi LSDD p-value:         {metrics.alibi_lsdd_p_value}")
+          print(f"  Performance estimate:       {metrics.nannyml_performance_estimate}")
+          print(f"  Kernel MMD p-value:         {metrics.alibi_lsdd_p_value}")
           print(f"  Retrain triggered:          {metrics.retrain_triggered}")
           print(f"  Drifted features:           {metrics.drifted_features}")
           print(f"  Report:                     {metrics.report_path}")
@@ -198,54 +171,53 @@ jobs:
           run_eval_gate("UC1", metrics, Path("eval-results"))
           PYEOF
 
+      - name: Upload eval results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: eval-uc1
+          path: eval-results/uc1*.json
+          retention-days: 7
+
       - name: Upload drift report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: drift-reports-uc1
-          path: |
-            services/drift-monitor/reports/*.html
-            eval-results/uc1*.json
+          path: services/drift-monitor/reports/*.html
           retention-days: 7
 
   trigger-retrain:
-    timeout-minutes: 2
     name: "Trigger Airflow Retrain DAG (if drift > threshold)"
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     needs: drift-detection
-    if: ${{ needs.drift-detection.result == 'success' }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
       - name: Download eval results
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: drift-reports-uc1
-          path: .
+          name: eval-uc1
+          path: eval-results/
 
-      - name: Check if retrain needed
+      - name: Retrain decision
         id: check
         run: |
-          python3 - <<'PYEOF'
-          import json
-          from pathlib import Path
+          retrain=$(jq -r '.retrain_triggered' eval-results/uc1_metrics.json)
+          echo "retrain_needed=${retrain}" >> "$GITHUB_OUTPUT"
+          echo "UC1 retrain needed: \`${retrain}\` (PSI $(jq -r '.psi_score' eval-results/uc1_metrics.json))" >> "$GITHUB_STEP_SUMMARY"
 
-          metrics = json.loads(Path("eval-results/uc1_metrics.json").read_text())
-          if metrics.get("retrain_triggered"):
-              print("RETRAIN_NEEDED=true")
-              with open("$GITHUB_OUTPUT" if __import__("os").environ.get("GITHUB_OUTPUT") else "/dev/null", "a") as f:
-                  f.write("retrain_needed=true\n")
-          else:
-              print("RETRAIN_NEEDED=false — PSI below threshold, no retrain required")
-          PYEOF
-
-      - name: Trigger Airflow retrain DAG via REST API
-        if: steps.check.outputs.retrain_needed == 'true'
+      - name: Trigger Airflow 3 retrain DAG
+        if: steps.check.outputs.retrain_needed == 'true' && vars.AIRFLOW_URL != ''
+        env:
+          AIRFLOW_URL: ${{ vars.AIRFLOW_URL }}
+          AIRFLOW_USER: ${{ secrets.AIRFLOW_USER }}
+          AIRFLOW_PASSWORD: ${{ secrets.AIRFLOW_PASSWORD }}
         run: |
-          echo "Drift detected: triggering Airflow pod_failure_prediction_retrain DAG"
-          curl -sf -X POST \
-            http://localhost:8080/api/v1/dags/pod_failure_prediction_retrain/dagRuns \
-            -H "Content-Type: application/json" \
-            -u "admin:admin" \
-            -d '{"conf": {"trigger": "uc1_drift_gate", "psi_score": "'"$(cat eval-results/uc1_metrics.json | python3 -c "import sys,json; print(json.load(sys.stdin)['psi_score'])")"'"}}' \
-            || echo "[Airflow] Not running in this job — retrain would be triggered via workflow_dispatch in production"
+          set -euo pipefail
+          token=$(jq -n --arg u "$AIRFLOW_USER" --arg p "$AIRFLOW_PASSWORD" '{username: $u, password: $p}' \
+            | curl -fsS -X POST "${AIRFLOW_URL}/auth/token" -H 'content-type: application/json' -d @- \
+            | jq -r '.access_token')
+          jq '{logical_date: null, conf: {trigger: "uc1_drift_gate", psi_score: (.psi_score | tostring)}}' \
+            eval-results/uc1_metrics.json \
+            | curl -fsS -X POST "${AIRFLOW_URL}/api/v2/dags/pod_failure_prediction_retrain/dagRuns" \
+                -H "Authorization: Bearer ${token}" -H 'content-type: application/json' -d @-

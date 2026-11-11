@@ -3,7 +3,7 @@ registry: data/feature_store/registry.db
 provider: local
 online_store:
   type: redis
-  connection_string: "redis://redis:6379:0"
+  connection_string: "redis:6379,db=0"  # Feast format host:port,params — not a redis:// URL
 offline_store:
   type: file
-entity_key_serialization_version: 2
+entity_key_serialization_version: 3

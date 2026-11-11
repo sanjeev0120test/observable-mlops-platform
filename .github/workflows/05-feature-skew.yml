@@ -1,15 +1,10 @@
-name: "05 · UC5 — Feature Store + Training-Serving Skew (Feast + GE + Evidently)"
+name: "05 · UC5 — Feature Store + Training-Serving Skew (Feast + GE)"
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "mlops/feature-store/**"
-      - ".github/workflows/05-feature-skew.yml"
+  workflow_call:
   workflow_dispatch:
 
 env:
-  PYTHON_VERSION: "3.11"
   UC: UC5
 
 permissions:
@@ -19,42 +14,27 @@ jobs:
   feature-skew:
     name: "Feast Materialize + Skew Detection"
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 10
 
     services:
       redis:
-        image: redis:7-alpine
+        image: redis:8.8.4-alpine
         ports:
           - 6379:6379
         options: >-
           --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+      - uses: ./.github/actions/setup-python-uv
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-
-      - name: Install dependencies
-        run: |
-          pip install --quiet \
-            feast==0.40.0 \
-            redis==5.0.4 \
-            evidently==0.4.30 \
-            great-expectations==0.18.19 \
-            numpy==1.26.4 \
-            pandas==2.2.2 \
-            pyarrow==15.0.2 \
-            scipy==1.13.0 \
-            mlflow==3.17.1
+          groups: "feature-store"
 
       - name: Generate synthetic data
         run: |
-          pip install --quiet numpy pandas pyarrow
           python data/synthetic/generate_pod_metrics.py \
             --hours 72 --interval 5 \
             --output data/synthetic/pod_metrics.parquet \
@@ -65,98 +45,49 @@ jobs:
             --output data/synthetic/cost_data.parquet
 
       - name: Feast apply (register feature definitions)
+        working-directory: mlops/feature-store/feature_repo
         run: |
-          mkdir -p mlops/feature-store/feature_repo/data/feature_store
-          cd mlops/feature-store/feature_repo
-          # Update feature_store.yaml for CI (file-based offline, redis online)
-          sed -i 's|connection_string: "redis://redis:6379:0"|connection_string: "redis://localhost:6379:0"|' feature_store.yaml
+          mkdir -p data/feature_store
+          # Point the online store at the job's Redis service instead of the compose hostname.
+          sed -i 's|connection_string: "redis:6379,db=0"|connection_string: "localhost:6379,db=0"|' feature_store.yaml
+          grep -q 'localhost:6379' feature_store.yaml
           feast apply
-          echo "Feast feature store initialized"
 
-      - name: Feast materialize (offline → online store)
-        continue-on-error: true  # timestamp tz-awareness varies by generator; skew eval is independent
+      - name: Materialize + compare offline vs online (skew detection)
         run: |
-          cd mlops/feature-store/feature_repo
-          feast materialize-incremental "$(date -u +%Y-%m-%dT%H:%M:%S)"
-          echo "Feast materialization complete"
-
-      - name: Compare offline vs online features (skew detection)
-        run: |
-          python3 - <<'PYEOF'
-          import sys, json
-          sys.path.insert(0, '.')
-          import numpy as np
-          import pandas as pd
-          from scipy import stats
-          from pathlib import Path
-
-          def compute_psi(reference, current, n_bins=10):
-              eps = 1e-8
-              r, edges = np.histogram(reference, bins=n_bins)
-              c, _ = np.histogram(current, bins=edges)
-              r_pct = (r + eps) / (len(reference) + n_bins * eps)
-              c_pct = (c + eps) / (len(current) + n_bins * eps)
-              return float(np.sum((c_pct - r_pct) * np.log(c_pct / r_pct)))
-
-          # Offline dataset (training features)
-          offline_df = pd.read_parquet("data/synthetic/pod_metrics.parquet")
-          offline_recent = offline_df[~offline_df["is_drifted"]].head(1000)
-
-          # Simulate online store values (served features with slight noise = realistic skew)
-          rng = np.random.default_rng(42)
-          online_cpu = offline_recent["cpu_usage_pct"].values + rng.normal(0, 2, len(offline_recent))
-          online_cpu = np.clip(online_cpu, 0, 100)
-
-          psi = compute_psi(offline_recent["cpu_usage_pct"].values, online_cpu)
-          ks_stat, _ = stats.ks_2samp(offline_recent["cpu_usage_pct"].values, online_cpu)
-
-          # Simulate feature freshness (how old is the most recent online store record)
-          feature_freshness_seconds = 1800  # 30 min — within 1-hour TTL
-
-          metrics = {
-              "offline_online_psi": round(psi, 4),
-              "ge_validation_success_pct": 1.0,  # GE checks below update this
-              "feature_freshness_seconds": feature_freshness_seconds,
-          }
-
-          print(f"=== UC5 Feature Skew Metrics ===")
-          print(f"  Offline-Online PSI:         {psi:.4f}")
-          print(f"  KS statistic:               {ks_stat:.4f}")
-          print(f"  Feature freshness:          {feature_freshness_seconds}s")
-
-          Path("eval-results").mkdir(exist_ok=True)
-          Path("eval-results/uc5_metrics.json").write_text(json.dumps(metrics, indent=2))
-          PYEOF
+          python mlops/feature-store/skew_check.py \
+            --repo mlops/feature-store/feature_repo \
+            --out eval-results/uc5_metrics.json
 
       - name: Great Expectations — feature validation
         run: |
           python3 - <<'PYEOF'
           import json, sys
-          import great_expectations as ge
-          import pandas as pd
+          sys.path.insert(0, ".")
           from pathlib import Path
+          import pandas as pd
+          from eval.data_quality import between, in_set, not_null, validate
 
           df = pd.read_parquet("data/synthetic/pod_metrics.parquet")
-          ge_df = ge.from_pandas(df)
-
-          checks = {
-              "cpu_range": ge_df.expect_column_values_to_be_between("cpu_usage_pct", 0, 100).success,
-              "mem_range": ge_df.expect_column_values_to_be_between("mem_usage_pct", 0, 100).success,
-              "restart_non_neg": ge_df.expect_column_values_to_be_between("restart_count", 0, 1000).success,
-              "ready_not_null": ge_df.expect_column_values_to_not_be_null("ready_status").success,
-              "ns_in_set": ge_df.expect_column_values_to_be_in_set(
+          checks = validate(df, {
+              "cpu_range": between("cpu_usage_pct", 0, 100),
+              "mem_range": between("mem_usage_pct", 0, 100),
+              "restart_non_neg": between("restart_count", 0, 1000),
+              "ready_not_null": not_null("ready_status"),
+              "ns_in_set": in_set(
                   "namespace",
-                  ["payments","auth","catalog","recommendations","gateway","ml-serving"]
-              ).success,
-          }
+                  ["payments", "auth", "catalog", "recommendations", "gateway", "ml-serving"],
+              ),
+          })
+          for name, ok in checks.items():
+              print(f"  {'PASS' if ok else 'FAIL'}  {name}")
+          ge_pct = sum(checks.values()) / len(checks)
+          print(f"GE passed {sum(checks.values())}/{len(checks)} = {ge_pct:.2%}")
 
-          passed = sum(checks.values())
-          ge_pct = passed / len(checks)
-          print(f"GE passed {passed}/{len(checks)} = {ge_pct:.2%}")
-
-          metrics = json.loads(Path("eval-results/uc5_metrics.json").read_text())
+          out = Path("eval-results/uc5_metrics.json")
+          metrics = json.loads(out.read_text())
           metrics["ge_validation_success_pct"] = ge_pct
-          Path("eval-results/uc5_metrics.json").write_text(json.dumps(metrics, indent=2))
+          out.write_text(json.dumps(metrics, indent=2))
           PYEOF
 
       - name: Run eval gate (UC5)

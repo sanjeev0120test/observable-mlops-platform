@@ -7,15 +7,12 @@
 
 image:
   registry: docker.io
-  repository: falcosecurity/falco-no-driver
-  tag: "0.38.0"
+  repository: falcosecurity/falco
+  tag: "0.45.2"
 
 driver:
   enabled: true
-  kind: ebpf  # Use eBPF driver (no kernel module required — works on EKS Bottlerocket)
-  ebpf:
-    path: "${HOME}/.falco/falco-bpf.o"
-    hostNetwork: false
+  kind: modern_ebpf  # CO-RE probe bundled in the binary: no driver download, works on Bottlerocket
 
 falco:
   # Log JSON to stdout for Loki/Fluent Bit ingestion
@@ -27,17 +24,16 @@ falco:
   priority: warning
 
   # Custom rules from this repo (UC7)
-  rules_file:
+  rules_files:
     - /etc/falco/falco_rules.yaml
     - /etc/falco/falco_rules.local.yaml
-    - /etc/falco/k8s_audit_rules.yaml
     - /etc/falco/rules.d
 
+# Validated by `falco -V` in workflow 13 alongside aiops/falco/custom_rules.yml.
 customRules:
   platform_rules.yaml: |
-    # Loaded from aiops/falco/custom_rules.yml
-    # Fix: Use fd.rip.name (resolved IP name) instead of fd.sip.name for DNS-based matching
-    # fd.sip.name was unreliable — use net.dns.name or fd.rip.name for container DNS resolution
+    # Cluster variant of aiops/falco/custom_rules.yml: namespaces and pod labels instead
+    # of container labels, fd.rip.name for DNS-based destination matching.
 
     - rule: Suspicious kubectl exec in production
       desc: Alert on kubectl exec into pods in production namespaces
@@ -69,11 +65,11 @@ customRules:
       desc: Detect unexpected outbound connections from ML serving pods
       condition: >
         outbound and
-        container.label.app in (ml-serving-api, anomaly-detector, drift-monitor) and
+        k8s.pod.label[app] in (ml-serving-api, anomaly-detector, drift-monitor) and
         not fd.rip.name in (prometheus.platform, mlflow.platform, qdrant.platform,
                             redis.platform, postgres.platform, opa.platform,
-                            otelcol.platform, airflow-webserver.platform) and
-        not fd.rip in (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
+                            otelcol.platform, airflow-apiserver.platform) and
+        not fd.rnet in (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
       output: >
         Unexpected outbound from ML service (proc=%proc.name dest=%fd.rip.name
         container=%container.id image=%container.image.repository)
@@ -96,7 +92,7 @@ customRules:
     - rule: Container running as root in platform namespaces
       desc: Alert when container runs as UID 0 outside whitelisted system namespaces
       condition: >
-        container and
+        spawned_process and
         container.id != host and
         user.uid = 0 and
         not k8s.ns.name in (kube-system, cert-manager, kyverno, keda,

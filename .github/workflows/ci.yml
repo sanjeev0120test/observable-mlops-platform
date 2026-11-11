@@ -1,0 +1,391 @@
+name: ci
+
+# Single PR/main gate. Jobs are path-filtered; `ci-ok` is the one required status check.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  merge_group:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  OPA_VERSION: v1.22.2
+  ACTIONLINT_VERSION: 1.7.12
+  ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+
+jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      python: ${{ steps.out.outputs.python }}
+      policy: ${{ steps.out.outputs.policy }}
+      compose: ${{ steps.out.outputs.compose }}
+      terraform: ${{ steps.out.outputs.terraform }}
+      airflow: ${{ steps.out.outputs.airflow }}
+      services: ${{ steps.out.outputs.services }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: github.event_name == 'push'
+        with:
+          persist-credentials: false
+
+      - id: scope
+        run: echo "all=${{ github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' }}" >> "$GITHUB_OUTPUT"
+
+      - id: areas
+        if: steps.scope.outputs.all != 'true'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          predicate-quantifier: some-with-excludes
+          filters: |
+            ci:
+              - .github/workflows/ci.yml
+              - .github/actions/**
+            python:
+              - "**"
+              - "!**/*.md"
+              - "!docs/**"
+              - "!LICENSE"
+              - "!.gitignore"
+            policy:
+              - aiops/policies/**
+              - services/model-trust/**
+              - governance/**
+              - scripts/trust_score_demo.py
+              - scripts/promotion_rehearsal.py
+              - mlops/pipelines/airflow/dags/**
+            compose:
+              - infra/docker-compose/**
+              - observability/**
+              - .env.example
+            terraform:
+              - infra/terraform/**
+            airflow:
+              - mlops/pipelines/airflow/**
+
+      - id: svc
+        if: steps.scope.outputs.all != 'true'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            alert-correlator: services/alert-correlator/**
+            anomaly-detector: services/anomaly-detector/**
+            cost-optimizer: services/cost-optimizer/**
+            drift-monitor: services/drift-monitor/**
+            model-trust: services/model-trust/**
+            predictive-scaler: services/predictive-scaler/**
+            runbook-agent: services/runbook-agent/**
+            self-healing: services/self-healing/**
+
+      - id: out
+        env:
+          ALL: ${{ steps.scope.outputs.all == 'true' || steps.areas.outputs.ci == 'true' }}
+          AREAS: ${{ steps.areas.outputs.changes || '[]' }}
+          SERVICES: ${{ steps.svc.outputs.changes || '[]' }}
+          ALL_SERVICES: >-
+            ["alert-correlator","anomaly-detector","cost-optimizer","drift-monitor",
+            "model-trust","predictive-scaler","runbook-agent","self-healing"]
+        run: |
+          set -euo pipefail
+          for area in python policy compose terraform airflow; do
+            if [ "$ALL" = true ]; then hit=true; else hit=$(jq -r --arg a "$area" 'index($a) != null' <<<"$AREAS"); fi
+            echo "$area=$hit" >> "$GITHUB_OUTPUT"
+          done
+          if [ "$ALL" = true ]; then svc="$ALL_SERVICES"; else svc="$SERVICES"; fi
+          echo "services=$(jq -c . <<<"$svc")" >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
+
+  lint:
+    name: lint (ruff + actionlint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-python-uv
+        with:
+          groups: lint
+      - run: ruff check --output-format=github .
+      - run: ruff format --check --diff .
+      - name: actionlint (+ shellcheck)
+        run: |
+          set -euo pipefail
+          tarball="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/$tarball" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${tarball}"
+          echo "${ACTIONLINT_SHA256}  $RUNNER_TEMP/$tarball" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$tarball" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -color -shellcheck "$(command -v shellcheck)"
+
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  policy:
+    name: policy (OPA + Kyverno + model-trust e2e)
+    needs: changes
+    if: needs.changes.outputs.policy == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: open-policy-agent/setup-opa@b2b258e089860efaadaaf71bf6e3aecb4a3eeff1 # v2
+        with:
+          version: ${{ env.OPA_VERSION }}
+      - uses: ./.github/actions/setup-kyverno
+      - uses: ./.github/actions/setup-python-uv
+      - name: OPA check + unit tests
+        run: |
+          opa check aiops/policies/opa
+          opa test aiops/policies/opa -v --ignore "*.gitkeep"
+      - name: Kyverno admission tests
+        run: kyverno test aiops/policies/kyverno/tests
+      - name: Model trust — score 3 versions, ledger, tamper proof, OPA gate
+        run: python scripts/trust_score_demo.py --out trust-results --summary "$GITHUB_STEP_SUMMARY"
+      - name: Promotion rehearsal (checker → score → ledger → OPA)
+        run: python scripts/promotion_rehearsal.py --out rehearsal-results --require-opa
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: model-trust-attestation
+          path: |
+            trust-results/
+            rehearsal-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  test:
+    name: pytest (py${{ matrix.python }})
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-python-uv
+        with:
+          groups: test
+          python-version: ${{ matrix.python }}
+      - name: pytest
+        env:
+          COVERAGE: ${{ matrix.python == '3.14' && '--cov=eval --cov=services --cov-report=xml --cov-report=term:skip-covered' || '' }}
+        run: |
+          # shellcheck disable=SC2086 # COVERAGE is a deliberate word-split flag list
+          python -m pytest tests/unit -n auto --dist loadfile -q -p no:cacheprovider $COVERAGE
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: matrix.python == '3.14'
+        with:
+          name: coverage
+          path: coverage.xml
+          retention-days: 7
+
+  container-smoke:
+    name: container (${{ matrix.service }})
+    needs: changes
+    if: needs.changes.outputs.services != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.changes.outputs.services) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: services/${{ matrix.service }}
+          tags: ${{ matrix.service }}:ci
+          load: true
+          provenance: false
+          cache-from: type=gha,scope=svc-${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=svc-${{ matrix.service }}
+
+      - name: Run (non-root, read-only rootfs like the k8s manifests)
+        env:
+          SERVICE: ${{ matrix.service }}
+        run: |
+          set -euo pipefail
+          extra=()
+          case "$SERVICE" in
+            model-trust) extra=(--tmpfs "/app/data:uid=10001,gid=10001" -e MLFLOW_TRACKING_URI=) ;;
+            drift-monitor) extra=(--tmpfs "/app/reports:uid=10001,gid=10001") ;;
+          esac
+          docker run -d --name svc -p 8000:8000 --read-only --tmpfs /tmp "${extra[@]}" "$SERVICE:ci"
+          for _ in $(seq 1 60); do
+            curl -fsS http://localhost:8000/health && exit 0
+            sleep 1
+          done
+          echo "::error::$SERVICE did not become healthy"
+          exit 1
+
+      - name: Health, metrics, non-root
+        run: |
+          set -euo pipefail
+          curl -fsS http://localhost:8000/metrics -o metrics.txt
+          echo "metric families: $(grep -c '^# TYPE ' metrics.txt)"
+          [ "$(docker exec svc id -u)" = "10001" ]
+
+      - name: Model trust — score + verify ledger over HTTP
+        if: matrix.service == 'model-trust'
+        run: |
+          set -euo pipefail
+          curl -fsS -X POST http://localhost:8000/api/v1/score \
+            -H 'content-type: application/json' \
+            -d '{"model_name":"pod-failure-prediction","model_version":"12","signals":{"psi_score":0.04,"accuracy":0.89,"error_budget_remaining":0.7,"p99_latency_ms":180,"cost_per_1k_predictions_usd":0.02,"critical_cves":0,"image_signed":true,"shap_logged":true,"eu_ai_act_compliant":true}}' \
+            | python3 -c 'import json,sys; r=json.load(sys.stdin); print("score", r["score"], r["band"]); assert r["band"] in ("GOOD","PRIME")'
+          curl -fsS -X POST http://localhost:8000/api/v1/score \
+            -H 'content-type: application/json' \
+            -d '{"model_name":"cost-anomaly-detector","model_version":"4","signals":{"accuracy":0.93,"critical_cves":3,"image_signed":false,"policy_violations":2}}' \
+            | python3 -c 'import json,sys; r=json.load(sys.stdin); print("score", r["score"], r["band"]); assert r["band"]=="SUBPRIME"; assert r["recommendations"][0]["action"].startswith("[LIFTS CAP]")'
+          curl -fsS http://localhost:8000/ -o index.html && grep -c "Model Trust Score" index.html
+          curl -fsS http://localhost:8000/api/v1/ledger/verify | python3 -c 'import json,sys; v=json.load(sys.stdin); print(v); assert v["ok"] and v["entries"]==2'
+          curl -fsS http://localhost:8000/metrics -o metrics.txt && grep -E '^model_trust_score\{' metrics.txt
+
+      - name: Logs on failure
+        if: failure()
+        run: docker logs svc || true
+
+  compose:
+    name: compose + observability config
+    needs: changes
+    if: needs.changes.outputs.compose == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      COMPOSE_FILE: infra/docker-compose/docker-compose.observability.yml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Pull validator images
+        run: docker compose pull --quiet prometheus alertmanager loki otel-collector fluentbit
+      - name: docker compose config
+        run: |
+          set -euo pipefail
+          cd infra/docker-compose
+          # services.yml is an overlay (depends on n8n, mlflow, …) and only validates merged.
+          for f in docker-compose.observability.yml docker-compose.mlops-core.yml; do
+            echo "::group::$f"; docker compose -f "$f" config -q; echo "::endgroup::"
+          done
+          docker compose -f docker-compose.observability.yml -f docker-compose.mlops-core.yml \
+            -f docker-compose.services.yml config -q
+          # Declared external by the compose files (created by `make dev` locally).
+          docker network create platform-net
+      - name: promtool check config (+ rules)
+        run: docker compose run --rm --no-deps --entrypoint promtool prometheus check config /etc/prometheus/prometheus.yml
+      - name: amtool check-config
+        run: docker compose run --rm --no-deps --entrypoint amtool alertmanager check-config /etc/alertmanager/alertmanager.yml
+      - name: loki -verify-config
+        run: docker compose run --rm --no-deps loki -config.file=/etc/loki/loki.yml -verify-config
+      - name: otelcol validate
+        run: docker compose run --rm --no-deps otel-collector validate --config=/etc/otelcol/otelcol.yml
+      - name: fluent-bit --dry-run
+        run: docker compose run --rm --no-deps fluentbit -c /fluent-bit/etc/fluent-bit.conf --dry-run
+
+  airflow:
+    name: airflow DAG import
+    needs: changes
+    if: needs.changes.outputs.airflow == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Parse DAGs in apache/airflow:3.4.0
+        run: |
+          docker run --rm \
+            -v "$PWD/mlops/pipelines/airflow/dags:/opt/airflow/dags:ro" \
+            -e AIRFLOW__CORE__LOAD_EXAMPLES=False -e CONNECTION_CHECK_MAX_COUNT=0 \
+            apache/airflow:3.4.0-python3.13 python -c '
+          try:
+              from airflow.dag_processing.dagbag import DagBag
+          except ImportError:
+              from airflow.models.dagbag import DagBag
+          bag = DagBag(dag_folder="/opt/airflow/dags")
+          assert not bag.import_errors, bag.import_errors
+          assert bag.dag_ids, "no DAGs found"
+          print("DAGs:", sorted(bag.dag_ids))
+          '
+
+  terraform:
+    name: terraform fmt + validate
+    needs: changes
+    if: needs.changes.outputs.terraform == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    defaults:
+      run:
+        working-directory: infra/terraform/aws-eks
+    env:
+      TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform-plugin-cache
+      TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
+        with:
+          terraform_version: "~1.16"
+          terraform_wrapper: false
+      - run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: tf-plugins-${{ hashFiles('infra/terraform/**/*.tf') }}
+          restore-keys: tf-plugins-
+      - run: terraform fmt -check -diff -recursive
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate -no-color
+
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [changes, lint, gitleaks, policy, test, container-smoke, compose, airflow, terraform]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Every job passed or was skipped by path filters
+        env:
+          RESULTS: ${{ toJSON(needs.*.result) }}
+        run: |
+          echo "$RESULTS"
+          jq -e 'all(.[]; . == "success" or . == "skipped")' <<<"$RESULTS"

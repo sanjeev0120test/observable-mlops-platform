@@ -1,16 +1,8 @@
 name: "10 · UC9/UC22 — Experiment Tracking + Registry + Canary Serving + A/B Test"
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "mlops/experiments/pod_failure_prediction/**"
-      - "mlops/serving/**"
-      - ".github/workflows/10-model-serving.yml"
+  workflow_call:
   workflow_dispatch:
-
-env:
-  PYTHON_VERSION: "3.11"
 
 permissions:
   contents: read
@@ -19,26 +11,15 @@ jobs:
   train-and-register:
     name: "UC9 — Train + MLflow Registry + OPA Gate"
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     outputs:
       run_id: ${{ steps.train.outputs.run_id }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+      - uses: ./.github/actions/setup-python-uv
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-
-      - name: Install dependencies
-        run: |
-          pip install --quiet \
-            scikit-learn==1.5.0 \
-            numpy==1.26.4 \
-            pandas==2.2.2 \
-            pyarrow==15.0.2 \
-            mlflow==3.17.1 \
-            shap==0.45.0
+          groups: "ml drift"
 
       - name: Generate training data
         run: |
@@ -188,20 +169,21 @@ jobs:
         if: always()
         with:
           name: eval-uc9-uc17
-          path: eval-results/uc{9,17}*.json
+          path: |
+            eval-results/uc9*.json
+            eval-results/uc17*.json
           retention-days: 7
 
   ab-test:
     name: "UC22 — A/B Test (Champion vs Challenger)"
     runs-on: ubuntu-latest
+    timeout-minutes: 8
     needs: train-and-register
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+      - uses: ./.github/actions/setup-python-uv
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-      - run: pip install --quiet scipy==1.13.0 numpy==1.26.4 pandas==2.2.2 pyarrow==15.0.2 mlflow==3.17.1
+          groups: "ml"
 
       - name: Generate traffic data
         run: |

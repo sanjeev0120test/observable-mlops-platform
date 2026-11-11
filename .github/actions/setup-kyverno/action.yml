@@ -1,0 +1,30 @@
+name: "Setup Kyverno CLI"
+description: "Install a checksum-verified Kyverno CLI binary (linux x86_64) onto PATH."
+
+inputs:
+  version:
+    description: "Kyverno CLI release tag"
+    default: "v1.19.2"
+  sha256:
+    description: "sha256 of kyverno-cli_<version>_linux_x86_64.tar.gz"
+    default: "357eaf1df8bc24ddd5a73979fadeaae6a032e8710f11af264229756e4956bf4a"
+
+runs:
+  using: composite
+  steps:
+    - name: Install kyverno ${{ inputs.version }}
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        SHA256: ${{ inputs.sha256 }}
+      run: |
+        set -euo pipefail
+        tarball="kyverno-cli_${VERSION}_linux_x86_64.tar.gz"
+        dir="$RUNNER_TEMP/kyverno-${VERSION}"
+        mkdir -p "$dir"
+        curl -fsSL --retry 3 -o "$dir/$tarball" \
+          "https://github.com/kyverno/kyverno/releases/download/${VERSION}/${tarball}"
+        echo "${SHA256}  $dir/$tarball" | sha256sum -c -
+        tar -xzf "$dir/$tarball" -C "$dir" kyverno
+        echo "$dir" >> "$GITHUB_PATH"
+        "$dir/kyverno" version

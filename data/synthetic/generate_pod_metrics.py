@@ -85,7 +85,7 @@ def generate_pod_metrics(
                         ready = False
 
                 records.append({
-                    "timestamp": ts.isoformat(),
+                    "timestamp": ts,
                     "namespace": ns,
                     "pod_name": pod_name,
                     "cpu_usage_pct": round(cpu, 2),

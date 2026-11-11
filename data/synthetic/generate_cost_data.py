@@ -71,7 +71,7 @@ def generate_cost_data(
             )
 
             records.append({
-                "hour": ts.isoformat(),
+                "hour": ts,
                 "namespace": ns,
                 "team_label": meta["team"],
                 "cpu_requested": round(cpu_requested, 3),

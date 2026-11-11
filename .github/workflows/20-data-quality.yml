@@ -1,15 +1,10 @@
 name: "20 · UC13 — Data Pipeline Quality Gates (Great Expectations + Airflow)"
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "data/**"
-      - ".github/workflows/20-data-quality.yml"
+  workflow_call:
   workflow_dispatch:
 
 env:
-  PYTHON_VERSION: "3.11"
   UC: UC13
 
 permissions:
@@ -19,15 +14,13 @@ jobs:
   data-quality:
     name: "GE Validation + Bad Data Blocking"
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 8
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+      - uses: ./.github/actions/setup-python-uv
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-      - run: pip install --quiet numpy==1.26.4 pandas==2.2.2 pyarrow==15.0.2 great-expectations==0.18.19
+          groups: "quality"
 
       - name: Generate data
         run: python data/synthetic/generate_pod_metrics.py --hours 24 --output /tmp/pod_metrics.parquet
@@ -35,46 +28,53 @@ jobs:
       - name: GE validation suite + bad data test
         run: |
           python3 - <<'PYEOF'
-          import json
-          import numpy as np
-          import pandas as pd
-          import great_expectations as ge
+          import json, sys
+          sys.path.insert(0, ".")
           from pathlib import Path
+          import pandas as pd
+          from eval.data_quality import between, in_set, not_null, validate
+
+          NAMESPACES = ["payments", "auth", "catalog", "recommendations", "gateway", "ml-serving"]
+          SUITE = {
+              "cpu_range": between("cpu_usage_pct", 0, 100),
+              "mem_range": between("mem_usage_pct", 0, 100),
+              "ns_in_set": in_set("namespace", NAMESPACES),
+              "pod_not_null": not_null("pod_name"),
+              "restart_non_neg": between("restart_count", 0, 10000),
+          }
+          SCHEMA = {
+              "cpu_usage_pct": "float", "mem_usage_pct": "float", "restart_count": "integer",
+              "namespace": "string", "pod_name": "string", "timestamp": "datetime64",
+          }
 
           df = pd.read_parquet("/tmp/pod_metrics.parquet")
-          ge_df = ge.from_pandas(df)
-
-          checks = {
-              "cpu_range": ge_df.expect_column_values_to_be_between("cpu_usage_pct", 0, 100).success,
-              "mem_range": ge_df.expect_column_values_to_be_between("mem_usage_pct", 0, 100).success,
-              "ns_in_set": ge_df.expect_column_values_to_be_in_set("namespace",
-                  ["payments","auth","catalog","recommendations","gateway","ml-serving"]).success,
-              "pod_not_null": ge_df.expect_column_values_to_not_be_null("pod_name").success,
-              "restart_non_neg": ge_df.expect_column_values_to_be_between("restart_count", 0, 10000).success,
-          }
+          schema_ok = all(
+              col in df.columns and pd.api.types.infer_dtype(df[col], skipna=True).startswith(kind)
+              for col, kind in SCHEMA.items()
+          )
+          checks = validate(df, SUITE)
           ge_pass_rate = sum(checks.values()) / len(checks)
 
-          # Inject bad data and verify it's caught
+          # Each injected defect must be caught by its expectation.
           bad_df = pd.DataFrame({
-              "cpu_usage_pct": [150.0, -5.0],  # out of range
+              "cpu_usage_pct": [150.0, -5.0],
               "mem_usage_pct": [50.0, 60.0],
               "restart_count": [0, 0],
               "namespace": ["invalid_ns", "payments"],
               "pod_name": ["pod-01", None],
           })
-          bad_ge = ge.from_pandas(bad_df)
-          bad_cpu_caught = not bad_ge.expect_column_values_to_be_between("cpu_usage_pct", 0, 100).success
-          bad_ns_caught = not bad_ge.expect_column_values_to_be_in_set("namespace",
-              ["payments","auth","catalog","recommendations","gateway","ml-serving"]).success
-
-          bad_data_blocked = bad_cpu_caught or bad_ns_caught
+          bad = validate(bad_df, SUITE)
+          bad_data_blocked = not (bad["cpu_range"] or bad["ns_in_set"] or bad["pod_not_null"])
 
           metrics = {
               "ge_expectations_passed_pct": round(ge_pass_rate, 4),
               "bad_data_blocked": bad_data_blocked,
-              "schema_validation_pass": True,
+              "schema_validation_pass": schema_ok,
           }
 
+          print(f"clean: {checks}")
+          print(f"bad:   {bad}")
+          print(f"schema ok: {schema_ok}")
           print(f"GE pass rate: {ge_pass_rate:.2%}, bad data blocked: {bad_data_blocked}")
           Path("eval-results").mkdir(exist_ok=True)
           Path("eval-results/uc13_metrics.json").write_text(json.dumps(metrics, indent=2))

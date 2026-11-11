@@ -2,25 +2,27 @@
 Feast feature definitions for the Observable MLOps Platform.
 UC5: Training-serving feature skew detection uses offline vs online store comparison.
 
-Feast 0.40.0+ API:
-- Entity: name, description (no join_key, no value_type)
-- FeatureView: schema=[Field(...)], not features=[Feature(...)]
-- FileSource: path, timestamp_field (not event_timestamp_column)
+Feast 0.67 API:
+- Entity: name, value_type (mandatory in the next Feast release), description
+- FeatureView: schema=[Field(...)]
+- FileSource: path, timestamp_field
 """
 
 from datetime import timedelta
 
-from feast import Entity, FeatureView, Field, FileSource
+from feast import Entity, FeatureView, Field, FileSource, ValueType
 from feast.types import Float32, Int64
 
 # ---------- Entities ----------
 pod_entity = Entity(
     name="pod_name",
+    value_type=ValueType.STRING,
     description="Kubernetes pod identifier (namespace/pod-name)",
 )
 
 namespace_entity = Entity(
     name="namespace",
+    value_type=ValueType.STRING,
     description="Kubernetes namespace",
 )
 

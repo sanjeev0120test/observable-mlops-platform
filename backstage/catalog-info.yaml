@@ -24,11 +24,11 @@ kind: Component
 metadata:
   name: drift-monitor
   title: "UC1: ML Drift Monitor"
-  description: Evidently + NannyML + Alibi Detect drift detection with Airflow-triggered retraining
+  description: Evidently + KS/PSI + kernel-MMD drift detection with Airflow-triggered retraining
   annotations:
     backstage.io/techdocs-ref: dir:.
     github.com/project-slug: observable-mlops/observable-mlops-platform
-  tags: [mlops, drift, evidently, nannyml, uc1]
+  tags: [mlops, drift, evidently, uc1]
 spec:
   type: service
   lifecycle: experimental
@@ -312,8 +312,8 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: feature-monitor
-  title: "UC19: Feature Monitoring (WhyLogs)"
-  tags: [mlops, whylogs, monitoring, uc19]
+  title: "UC19: Feature Monitoring (Evidently)"
+  tags: [mlops, evidently, monitoring, uc19]
 spec:
   type: service
   lifecycle: experimental

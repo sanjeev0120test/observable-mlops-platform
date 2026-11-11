@@ -14,7 +14,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from eval.metrics import THRESHOLDS, UC_METRICS, MetricSpec
-from eval.scorer import _score_metric, compute_score
+from eval.scorer import _score_metric, aggregate_all_results, compute_score
 
 
 class TestScoreMetric:
@@ -67,9 +67,9 @@ class TestUCMetricsDefinitions:
 
     def test_all_23_ucs_defined(self):
         expected = {f"UC{i}" for i in range(1, 24)}
-        assert expected == set(
-            UC_METRICS.keys()
-        ), f"Missing UCs: {expected - set(UC_METRICS.keys())}"
+        assert expected == set(UC_METRICS.keys()), (
+            f"Missing UCs: {expected - set(UC_METRICS.keys())}"
+        )
 
     def test_all_23_thresholds_defined(self):
         expected = {f"UC{i}" for i in range(1, 24)}
@@ -83,9 +83,9 @@ class TestUCMetricsDefinitions:
         valid_directions = {"higher_better", "lower_better", "bool_true", "exact"}
         for uc, specs in UC_METRICS.items():
             for spec in specs:
-                assert (
-                    spec.direction in valid_directions
-                ), f"{uc}.{spec.name} has invalid direction: {spec.direction}"
+                assert spec.direction in valid_directions, (
+                    f"{uc}.{spec.name} has invalid direction: {spec.direction}"
+                )
 
     def test_all_metric_weights_positive(self):
         for uc, specs in UC_METRICS.items():
@@ -210,3 +210,18 @@ class TestComputeScore:
         data = json.loads(path.read_text())
         assert data["uc"] == "UC1"
         assert "score" in data
+
+
+class TestAggregate:
+    def test_reads_nested_results_and_skips_metric_inputs(self, tmp_path):
+        compute_score("UC3", {"alert_reduction_pct": 90}).save(tmp_path)
+        nested = tmp_path / "eval-results"
+        compute_score("UC12", {}).save(nested)
+        (tmp_path / "uc3_metrics.json").write_text(json.dumps({"alert_reduction_pct": 90}))
+        (nested / "uc12_metrics.json").write_text("{}")
+
+        summary = aggregate_all_results(tmp_path)
+
+        assert set(summary["ucs"]) == {"UC3", "UC12"}
+        assert summary["total"] == 2
+        assert summary["passed"] + summary["failed"] == 2

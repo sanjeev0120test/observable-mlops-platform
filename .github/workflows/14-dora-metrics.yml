@@ -1,15 +1,10 @@
 name: "14 · UC15 — DORA Metrics Dashboard (4 Keys from GHA Events)"
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-    types: [closed]
+  workflow_call:
   workflow_dispatch:
 
 env:
-  PYTHON_VERSION: "3.11"
   UC: UC15
 
 permissions:
@@ -19,21 +14,12 @@ jobs:
   dora-metrics:
     name: "Compute DORA 4 Keys"
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 3
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 100  # need history for frequency metrics
-
-      - name: Set up Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-
-      - name: Install dependencies
-        run: pip install --quiet numpy==1.26.4 pandas==2.2.2 pyarrow==15.0.2 mlflow==3.17.1
 
       - name: Compute DORA metrics from GHA context
         env:

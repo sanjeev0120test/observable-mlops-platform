@@ -1,7 +1,7 @@
 """
 UC1 — Drift detection engine.
-Runs KS test, PSI, NannyML CBPE, and Alibi Detect LSDD on pod metrics.
-Generates Evidently HTML drift report and returns structured DriftCheckResult.
+Runs KS test, PSI, a CBPE-style performance estimate, and a kernel MMD two-sample
+test on pod metrics. Generates an Evidently HTML drift report and returns DriftMetrics.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ class DriftMetrics:
     ks_statistic: float
     psi_score: float
     nannyml_performance_estimate: float
+    # Kept under its original name: the UC1 eval gate and MLflow history key on it.
     alibi_lsdd_p_value: float
     retrain_triggered: bool
     report_path: str | None
@@ -72,26 +73,48 @@ def _estimate_performance_nannyml(
     return float(estimated_accuracy)
 
 
-def _run_alibi_lsdd(reference: np.ndarray, current: np.ndarray) -> float:
+def _run_mmd_test(
+    reference: np.ndarray,
+    current: np.ndarray,
+    n_permutations: int = 100,
+    max_samples: int = 400,
+    seed: int = 0,
+) -> float:
     """
-    Alibi Detect LSDD (Least-Squares Density Difference) detector.
+    Kernel two-sample test: Gaussian-kernel MMD^2 with a permutation p-value.
     Returns p-value: >0.05 = no drift, <0.05 = drift detected.
-    """
-    try:
-        from alibi_detect.cd import LSDDDrift
 
-        detector = LSDDDrift(reference.reshape(-1, 1))
-        result = detector.predict(current.reshape(-1, 1))
-        p_value = result["data"]["p_val"]
-        return float(p_value[0] if hasattr(p_value, "__iter__") else p_value)
-    except ImportError:
-        # Alibi Detect not installed — use KS p-value as fallback
-        _, p_val = stats.ks_2samp(reference, current)
-        return float(p_val)
-    except Exception as e:
-        logger.warning("Alibi Detect LSDD failed: %s — using KS fallback", e)
-        _, p_val = stats.ks_2samp(reference, current)
-        return float(p_val)
+    Replaces Alibi Detect LSDD (now BSL-licensed and pinned to numpy<2); same
+    hypothesis test family, numpy only, deterministic for a fixed seed.
+    """
+    rng = np.random.default_rng(seed)
+    ref = np.asarray(reference, dtype=float).ravel()
+    cur = np.asarray(current, dtype=float).ravel()
+    if len(ref) < 2 or len(cur) < 2:
+        return 1.0
+    if len(ref) > max_samples:
+        ref = rng.choice(ref, max_samples, replace=False)
+    if len(cur) > max_samples:
+        cur = rng.choice(cur, max_samples, replace=False)
+
+    pooled = np.concatenate([ref, cur])
+    dists = (pooled[:, None] - pooled[None, :]) ** 2
+    median = np.median(dists[dists > 0]) if np.any(dists > 0) else 1.0
+    kernel = np.exp(-dists / median)
+    n = len(ref)
+
+    def mmd2(idx: np.ndarray) -> float:
+        x, y = idx[:n], idx[n:]
+        return float(
+            kernel[np.ix_(x, x)].mean()
+            + kernel[np.ix_(y, y)].mean()
+            - 2 * kernel[np.ix_(x, y)].mean()
+        )
+
+    order = np.arange(len(pooled))
+    observed = mmd2(order)
+    exceed = sum(mmd2(rng.permutation(order)) >= observed for _ in range(n_permutations))
+    return float((exceed + 1) / (n_permutations + 1))
 
 
 def _generate_evidently_report(
@@ -100,15 +123,17 @@ def _generate_evidently_report(
     feature_cols: list[str],
     output_path: Path,
 ) -> None:
-    """Generate Evidently HTML drift report."""
+    """Generate Evidently (0.7+) HTML drift report."""
     try:
-        from evidently.report import Report
-        from evidently.metric_preset import DataDriftPreset
+        from evidently import Report
+        from evidently.presets import DataDriftPreset
 
-        report = Report(metrics=[DataDriftPreset()])
-        report.run(reference_data=reference_df[feature_cols], current_data=current_df[feature_cols])
+        report = Report([DataDriftPreset()])
+        snapshot = report.run(
+            current_data=current_df[feature_cols], reference_data=reference_df[feature_cols]
+        )
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        report.save_html(str(output_path))
+        snapshot.save_html(str(output_path))
         logger.info("Evidently report saved to %s", output_path)
     except Exception as e:
         logger.warning("Evidently report generation failed: %s", e)
@@ -138,7 +163,7 @@ def compute_drift(
     ks_stat, _ = _run_ks_test(ref_primary, cur_primary)
     psi = _compute_psi(ref_primary, cur_primary)
     perf_est = _estimate_performance_nannyml(reference_df, current_df, feature_cols)
-    lsdd_p = _run_alibi_lsdd(ref_primary, cur_primary)
+    mmd_p = _run_mmd_test(ref_primary, cur_primary)
 
     drifted = []
     for col in feature_cols:
@@ -160,7 +185,7 @@ def compute_drift(
         ks_statistic=round(ks_stat, 4),
         psi_score=round(psi, 4),
         nannyml_performance_estimate=round(perf_est, 4),
-        alibi_lsdd_p_value=round(lsdd_p, 4),
+        alibi_lsdd_p_value=round(mmd_p, 4),
         retrain_triggered=retrain_triggered,
         report_path=report_path,
         n_reference=len(reference_df),

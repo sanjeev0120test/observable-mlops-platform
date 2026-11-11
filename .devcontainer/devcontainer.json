@@ -1,6 +1,6 @@
 {
   "name": "observable-mlops-platform",
-  "image": "mcr.microsoft.com/devcontainers/python:3.11-bullseye",
+  "image": "mcr.microsoft.com/devcontainers/python:3.14-trixie",
   "features": {
     "ghcr.io/devcontainers/features/docker-in-docker:2": {},
     "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {
@@ -10,24 +10,21 @@
     },
     "ghcr.io/devcontainers/features/github-cli:1": {},
     "ghcr.io/devcontainers/features/node:1": {
-      "version": "20"
+      "version": "24"
     }
   },
-  "postCreateCommand": "pip install -r requirements.txt && pip install pre-commit && pre-commit install && cp .env.example .env",
+  "postCreateCommand": "pip install --user uv==0.13.7 && make install && cp -n .env.example .env",
   "postStartCommand": "docker network create platform-net 2>/dev/null || true",
   "customizations": {
     "vscode": {
       "settings": {
-        "python.defaultInterpreterPath": "/usr/local/bin/python",
-        "python.linting.enabled": true,
-        "python.linting.ruffEnabled": true,
-        "python.formatting.provider": "black",
+        "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv/bin/python",
         "editor.formatOnSave": true,
         "editor.codeActionsOnSave": {
           "source.organizeImports": "explicit"
         },
         "[python]": {
-          "editor.defaultFormatter": "ms-python.black-formatter"
+          "editor.defaultFormatter": "charliermarsh.ruff"
         },
         "files.exclude": {
           "**/__pycache__": true,
@@ -37,7 +34,6 @@
       },
       "extensions": [
         "ms-python.python",
-        "ms-python.black-formatter",
         "charliermarsh.ruff",
         "ms-python.mypy-type-checker",
         "redhat.vscode-yaml",

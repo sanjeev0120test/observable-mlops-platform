@@ -61,6 +61,10 @@ data/processed/
 # Reports generated at runtime
 services/drift-monitor/reports/*.html
 portal/reports/
+eval-results/
+trust-results/
+mlops/feature-store/feature_repo/data/
+.venv-ci/
 
 # Docker
 .docker/

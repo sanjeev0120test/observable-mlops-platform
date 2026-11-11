@@ -1,0 +1,30 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: uc7-admission-policies
+policies:
+  - ../require-labels.yml
+  - ../disallow-privileged.yml
+resources:
+  - resources.yaml
+results:
+  - policy: require-team-labels
+    isValidatingPolicy: true
+    kind: Deployment
+    resources: [unlabeled-deploy, serving-missing-uc]
+    result: fail
+  - policy: require-team-labels
+    isValidatingPolicy: true
+    kind: Deployment
+    resources: [labeled-deploy]
+    result: pass
+  - policy: disallow-privileged-containers
+    isValidatingPolicy: true
+    kind: Pod
+    resources: [priv-pod]
+    result: fail
+  - policy: disallow-privileged-containers
+    isValidatingPolicy: true
+    kind: Pod
+    resources: [safe-pod]
+    result: pass

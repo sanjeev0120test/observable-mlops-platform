@@ -1,5 +1,5 @@
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
 metadata:
   name: require-team-labels
   annotations:
@@ -9,31 +9,25 @@ metadata:
       'app.kubernetes.io/team' and 'app.kubernetes.io/uc' labels
       for cost attribution (UC10) and DORA metrics (UC15).
 spec:
-  validationFailureAction: Enforce
-  background: true
-  rules:
-    - name: check-team-label
-      match:
-        any:
-          - resources:
-              kinds: [Deployment, StatefulSet, DaemonSet]
-              namespaces: ["payments", "auth", "catalog", "recommendations", "gateway", "ml-serving"]
-      validate:
-        message: "Label 'app.kubernetes.io/team' is required for cost attribution."
-        pattern:
-          metadata:
-            labels:
-              app.kubernetes.io/team: "?*"
-
-    - name: check-uc-label
-      match:
-        any:
-          - resources:
-              kinds: [Deployment, StatefulSet]
-              namespaces: ["ml-serving"]
-      validate:
-        message: "Label 'app.kubernetes.io/uc' is required for ML serving workloads."
-        pattern:
-          metadata:
-            labels:
-              app.kubernetes.io/uc: "?*"
+  validationActions: [Deny]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [apps]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [deployments, statefulsets, daemonsets]
+  matchConditions:
+    - name: team-namespaces
+      expression: >-
+        object.metadata.namespace in
+        ['payments', 'auth', 'catalog', 'recommendations', 'gateway', 'ml-serving']
+  variables:
+    - name: labels
+      expression: "has(object.metadata.labels) ? object.metadata.labels : {}"
+  validations:
+    - expression: "variables.labels[?'app.kubernetes.io/team'].orValue('') != ''"
+      message: "Label 'app.kubernetes.io/team' is required for cost attribution."
+    - expression: >-
+        object.metadata.namespace != 'ml-serving' || object.kind == 'DaemonSet' ||
+        variables.labels[?'app.kubernetes.io/uc'].orValue('') != ''
+      message: "Label 'app.kubernetes.io/uc' is required for ML serving workloads."

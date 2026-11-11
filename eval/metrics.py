@@ -64,7 +64,11 @@ UC_METRICS: dict[str, list[MetricSpec]] = {
             "ks_statistic", "higher_better", 0.20, 1.5, "KS stat > 0.20 = feature drift detected"
         ),
         MetricSpec(
-            "alibi_lsdd_p_value", "lower_better", 0.05, 1.0, "LSDD p-value < 0.05 = drift confirmed"
+            "alibi_lsdd_p_value",
+            "lower_better",
+            0.05,
+            1.0,
+            "Kernel-MMD p-value < 0.05 = drift confirmed",
         ),
         MetricSpec(
             "retrain_triggered",
@@ -78,7 +82,7 @@ UC_METRICS: dict[str, list[MetricSpec]] = {
             "higher_better",
             0.0,
             0.5,
-            "NannyML returned an estimate (>0 = healthy)",
+            "Performance estimate returned (>0 = healthy)",
         ),
     ],
     "UC2": [
@@ -172,7 +176,7 @@ UC_METRICS: dict[str, list[MetricSpec]] = {
             "lower_better",
             25,
             3.0,
-            "Critical fixable CVEs (python:3.11-slim baseline ~20)",
+            "Critical fixable CVEs (python:3.14-slim baseline)",
         ),
         MetricSpec(
             "kyverno_violations_blocked",
@@ -376,11 +380,11 @@ UC_METRICS: dict[str, list[MetricSpec]] = {
         MetricSpec("window_accuracy", "higher_better", 0.90, 1.5, "Sliding window count accuracy"),
     ],
     "UC19": [
-        MetricSpec("profiles_generated", "bool_true", True, 2.0, "WhyLogs profiles written"),
+        MetricSpec("profiles_generated", "bool_true", True, 2.0, "Evidently data profiles written"),
         MetricSpec(
             "constraint_violations_detected", "higher_better", 1, 3.0, "Injected violation caught"
         ),
-        MetricSpec("drift_flagged", "bool_true", True, 2.0, "WhyLogs drift flag set"),
+        MetricSpec("drift_flagged", "bool_true", True, 2.0, "Evidently drift flag set"),
     ],
     "UC20": [
         MetricSpec(

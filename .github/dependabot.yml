@@ -1,6 +1,23 @@
 version: 2
+
+# Weekly grouped updates with a 7-day cooldown. Majors are ignored here; the
+# auto-merge workflow additionally holds any non-security major that slips through.
 updates:
   - package-ecosystem: github-actions
+    directories: ["/", "/.github/actions/*"]
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  - package-ecosystem: uv
     directory: "/"
     schedule:
       interval: weekly
@@ -8,28 +25,12 @@ updates:
       default-days: 7
     ignore:
       - dependency-name: "*"
-        update-types:
-          - "version-update:semver-major"
+        update-types: ["version-update:semver-major"]
     open-pull-requests-limit: 5
     groups:
-      github_actions:
-        patterns:
-          - "*"
-  - package-ecosystem: pip
-    directory: "/"
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
-    ignore:
-      - dependency-name: "*"
-        update-types:
-          - "version-update:semver-major"
-    open-pull-requests-limit: 5
-    groups:
-      pip:
-        patterns:
-          - "*"
+      python:
+        patterns: ["*"]
+
   - package-ecosystem: terraform
     directory: "/infra/terraform/aws-eks"
     schedule:
@@ -38,235 +39,38 @@ updates:
       default-days: 7
     ignore:
       - dependency-name: "*"
-        update-types:
-          - "version-update:semver-major"
+        update-types: ["version-update:semver-major"]
     open-pull-requests-limit: 5
     groups:
       terraform:
-        patterns:
-          - "*"
+        patterns: ["*"]
+
   - package-ecosystem: docker
-    directory: "/infra/docker-compose/mlflow"
+    directories: ["/services/*", "/infra/docker-compose/mlflow"]
     schedule:
       interval: weekly
     cooldown:
       default-days: 7
     ignore:
       - dependency-name: "*"
-        update-types:
-          - "version-update:semver-major"
-
+        update-types: ["version-update:semver-major"]
       - dependency-name: "python"
-        update-types:
-          - "version-update:semver-minor"
-      - dependency-name: "node"
-        update-types:
-          - "version-update:semver-minor"
-      - dependency-name: "golang"
-        update-types:
-          - "version-update:semver-minor"
+        update-types: ["version-update:semver-minor"]
     open-pull-requests-limit: 5
     groups:
       docker:
-        patterns:
-          - "*"
-  - package-ecosystem: docker
-    directory: "/services/alert-correlator"
+        patterns: ["*"]
+
+  - package-ecosystem: docker-compose
+    directory: "/infra/docker-compose"
     schedule:
       interval: weekly
     cooldown:
       default-days: 7
     ignore:
       - dependency-name: "*"
-        update-types:
-          - "version-update:semver-major"
-
-      - dependency-name: "python"
-        update-types:
-          - "version-update:semver-minor"
-      - dependency-name: "node"
-        update-types:
-          - "version-update:semver-minor"
-      - dependency-name: "golang"
-        update-types:
-          - "version-update:semver-minor"
+        update-types: ["version-update:semver-major"]
     open-pull-requests-limit: 5
     groups:
-      docker:
-        patterns:
-          - "*"
-  - package-ecosystem: docker
-    directory: "/services/anomaly-detector"
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
-    ignore:
-      - dependency-name: "*"
-        update-types:
-          - "version-update:semver-major"
-
-      - dependency-name: "python"
-        update-types:
-          - "version-update:semver-minor"
-      - dependency-name: "node"
-        update-types:
-          - "version-update:semver-minor"
-      - dependency-name: "golang"
-        update-types:
-          - "version-update:semver-minor"
-    open-pull-requests-limit: 5
-    groups:
-      docker:
-        patterns:
-          - "*"
-  - package-ecosystem: docker
-    directory: "/services/cost-optimizer"
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
-    ignore:
-      - dependency-name: "*"
-        update-types:
-          - "version-update:semver-major"
-
-      - dependency-name: "python"
-        update-types:
-          - "version-update:semver-minor"
-      - dependency-name: "node"
-        update-types:
-          - "version-update:semver-minor"
-      - dependency-name: "golang"
-        update-types:
-          - "version-update:semver-minor"
-    open-pull-requests-limit: 5
-    groups:
-      docker:
-        patterns:
-          - "*"
-  - package-ecosystem: docker
-    directory: "/services/drift-monitor"
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
-    ignore:
-      - dependency-name: "*"
-        update-types:
-          - "version-update:semver-major"
-
-      - dependency-name: "python"
-        update-types:
-          - "version-update:semver-minor"
-      - dependency-name: "node"
-        update-types:
-          - "version-update:semver-minor"
-      - dependency-name: "golang"
-        update-types:
-          - "version-update:semver-minor"
-    open-pull-requests-limit: 5
-    groups:
-      docker:
-        patterns:
-          - "*"
-  - package-ecosystem: docker
-    directory: "/services/model-trust"
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
-    ignore:
-      - dependency-name: "*"
-        update-types:
-          - "version-update:semver-major"
-
-      - dependency-name: "python"
-        update-types:
-          - "version-update:semver-minor"
-      - dependency-name: "node"
-        update-types:
-          - "version-update:semver-minor"
-      - dependency-name: "golang"
-        update-types:
-          - "version-update:semver-minor"
-    open-pull-requests-limit: 5
-    groups:
-      docker:
-        patterns:
-          - "*"
-  - package-ecosystem: docker
-    directory: "/services/predictive-scaler"
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
-    ignore:
-      - dependency-name: "*"
-        update-types:
-          - "version-update:semver-major"
-
-      - dependency-name: "python"
-        update-types:
-          - "version-update:semver-minor"
-      - dependency-name: "node"
-        update-types:
-          - "version-update:semver-minor"
-      - dependency-name: "golang"
-        update-types:
-          - "version-update:semver-minor"
-    open-pull-requests-limit: 5
-    groups:
-      docker:
-        patterns:
-          - "*"
-  - package-ecosystem: docker
-    directory: "/services/runbook-agent"
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
-    ignore:
-      - dependency-name: "*"
-        update-types:
-          - "version-update:semver-major"
-
-      - dependency-name: "python"
-        update-types:
-          - "version-update:semver-minor"
-      - dependency-name: "node"
-        update-types:
-          - "version-update:semver-minor"
-      - dependency-name: "golang"
-        update-types:
-          - "version-update:semver-minor"
-    open-pull-requests-limit: 5
-    groups:
-      docker:
-        patterns:
-          - "*"
-  - package-ecosystem: docker
-    directory: "/services/self-healing"
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
-    ignore:
-      - dependency-name: "*"
-        update-types:
-          - "version-update:semver-major"
-
-      - dependency-name: "python"
-        update-types:
-          - "version-update:semver-minor"
-      - dependency-name: "node"
-        update-types:
-          - "version-update:semver-minor"
-      - dependency-name: "golang"
-        update-types:
-          - "version-update:semver-minor"
-    open-pull-requests-limit: 5
-    groups:
-      docker:
-        patterns:
-          - "*"
+      docker-compose:
+        patterns: ["*"]

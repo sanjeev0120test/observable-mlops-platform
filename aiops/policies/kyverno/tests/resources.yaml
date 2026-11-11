@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: unlabeled-deploy
+  namespace: payments
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test
+  template:
+    metadata:
+      labels:
+        app: test
+    spec:
+      containers:
+        - name: test
+          image: nginx:alpine
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: labeled-deploy
+  namespace: payments
+  labels:
+    app.kubernetes.io/team: payments
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test
+  template:
+    metadata:
+      labels:
+        app: test
+    spec:
+      containers:
+        - name: test
+          image: nginx:alpine
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: serving-missing-uc
+  namespace: ml-serving
+  labels:
+    app.kubernetes.io/team: ml
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test
+  template:
+    metadata:
+      labels:
+        app: test
+    spec:
+      containers:
+        - name: test
+          image: nginx:alpine
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: priv-pod
+  namespace: payments
+spec:
+  containers:
+    - name: priv
+      image: nginx:alpine
+      securityContext:
+        privileged: true
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: safe-pod
+  namespace: payments
+spec:
+  containers:
+    - name: safe
+      image: nginx:alpine
+      securityContext:
+        privileged: false
+        runAsNonRoot: true

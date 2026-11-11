@@ -24,10 +24,10 @@ You will get an acknowledgement within 3 business days and a remediation plan wi
 | Fail-closed policy gates (OPA / Rego v1) | `aiops/policies/opa/`, workflows `00`, `08`, `27` |
 | Admission control (Kyverno: no privileged pods, required labels) | `aiops/policies/kyverno/` |
 | Runtime threat detection (Falco custom rules) | `aiops/falco/custom_rules.yml` |
-| SBOM (Syft), vulnerability scan (Grype, Trivy), keyless signing (Cosign) | workflow `28-sbom-signing.yml` |
+| SBOM (Syft), vulnerability scan (Grype, Trivy) | workflows `security.yml`, `13-security-policy.yml` |
 | Secret scanning before commit (gitleaks, detect-private-key) | `.pre-commit-config.yaml` |
 | Non-root containers with healthchecks | `services/*/Dockerfile` |
-| Automated dependency updates + vulnerability alerts | `renovate.json` |
+| Automated dependency updates + vulnerability alerts | `.github/dependabot.yml` |
 
 ## Secrets
 

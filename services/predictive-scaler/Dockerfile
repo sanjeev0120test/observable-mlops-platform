@@ -1,27 +1,29 @@
-FROM python:3.11-slim
+FROM python:3.14-slim
+
+COPY --from=ghcr.io/astral-sh/uv:0.13.7 /uv /usr/local/bin/uv
 
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    UV_SYSTEM_PYTHON=1 \
+    UV_NO_CACHE=1
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir \
-    fastapi==0.111.0 \
-    uvicorn[standard]==0.30.1 \
-    numpy==1.26.4 \
-    pandas==2.2.2 \
-    prophet==1.1.5 \
-    mlflow==3.17.1 \
-    prometheus-client==0.20.0 \
-    httpx==0.27.0
+# Versions track uv.lock; only what src/ actually imports.
+RUN uv pip install \
+    fastapi==0.162.2 \
+    "uvicorn[standard]==0.54.0" \
+    pydantic==2.14.3 \
+    prometheus-client==0.26.0 \
+    httpx==0.28.1
 
-RUN pip install --no-cache-dir \
-    opentelemetry-api==1.45.1 \
-    opentelemetry-sdk==1.45.1 \
-    opentelemetry-exporter-otlp-proto-http==1.45.1 \
-    opentelemetry-instrumentation-fastapi==0.66b1 \
-    opentelemetry-instrumentation-logging==0.66b1 \
-    opentelemetry-instrumentation-httpx==0.66b1
+RUN uv pip install \
+    opentelemetry-api==1.45.2 \
+    opentelemetry-sdk==1.45.2 \
+    opentelemetry-exporter-otlp-proto-http==1.45.2 \
+    opentelemetry-instrumentation-fastapi==0.66b2 \
+    opentelemetry-instrumentation-logging==0.66b2 \
+    opentelemetry-instrumentation-httpx==0.66b2
 
 COPY src/ /app/src/
 

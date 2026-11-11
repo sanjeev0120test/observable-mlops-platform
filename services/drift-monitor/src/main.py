@@ -1,7 +1,7 @@
 """
 UC1 — ML Drift Monitor service.
 Wires the HTTP API to the real drift_engine.compute_drift() pipeline.
-Computes KS statistic, PSI, NannyML CBPE estimates, and Alibi LSDD.
+Computes KS statistic, PSI and a kernel-MMD permutation test.
 Generates Evidently HTML reports and triggers Airflow retrain DAG on breach.
 
 Endpoints:
@@ -25,7 +25,10 @@ from prometheus_client import Counter, Gauge, generate_latest, CONTENT_TYPE_LATE
 from pydantic import BaseModel
 from starlette.responses import Response
 
-from services.drift_monitor.src.drift_engine import compute_drift
+try:
+    from drift_engine import compute_drift
+except ImportError:  # pragma: no cover — container runs `uvicorn src.main:app`
+    from .drift_engine import compute_drift
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +61,7 @@ REPORT_DIR = Path(os.getenv("REPORT_OUTPUT_DIR", "/app/reports"))
 REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
-AIRFLOW_URL = os.getenv("AIRFLOW_URL", "http://airflow-webserver:8080")
+AIRFLOW_URL = os.getenv("AIRFLOW_URL", "http://airflow-apiserver:8080")
 AIRFLOW_USER = os.getenv("AIRFLOW_USER", "admin")
 AIRFLOW_PASSWORD = os.getenv("AIRFLOW_PASSWORD", "admin")
 
@@ -89,16 +92,25 @@ def _load_reference_df() -> pd.DataFrame:
 def _trigger_airflow_retrain(model_name: str, psi_score: float) -> bool:
     """Trigger Airflow retrain DAG via REST API. Returns True if triggered successfully."""
     try:
+        # Airflow 3 API: exchange credentials for a JWT, then call /api/v2.
+        token_resp = httpx.post(
+            f"{AIRFLOW_URL}/auth/token",
+            json={"username": AIRFLOW_USER, "password": AIRFLOW_PASSWORD},
+            timeout=10.0,
+        )
+        token_resp.raise_for_status()
+        token = token_resp.json()["access_token"]
         resp = httpx.post(
-            f"{AIRFLOW_URL}/api/v1/dags/pod_failure_prediction_retrain/dagRuns",
+            f"{AIRFLOW_URL}/api/v2/dags/pod_failure_prediction_retrain/dagRuns",
             json={
+                "logical_date": None,
                 "conf": {
                     "trigger": "drift_monitor",
                     "psi_score": str(psi_score),
                     "model_name": model_name,
                 },
             },
-            auth=(AIRFLOW_USER, AIRFLOW_PASSWORD),
+            headers={"Authorization": f"Bearer {token}"},
             timeout=10.0,
         )
         if resp.status_code in (200, 201):
@@ -161,7 +173,7 @@ def metrics() -> Response:
 @app.post("/api/v1/check-drift", response_model=DriftCheckResult)
 def check_drift(req: DriftCheckRequest) -> DriftCheckResult:
     """
-    Run full drift detection pipeline: KS + PSI + NannyML CBPE + Alibi LSDD + Evidently report.
+    Run full drift detection pipeline: KS + PSI + performance estimate + kernel MMD + Evidently report.
     Triggers Airflow retrain DAG when PSI > RETRAIN_PSI_THRESHOLD (0.10).
     Updates Prometheus metrics ml_model_psi_score and ml_model_ks_statistic.
     """

@@ -13,7 +13,7 @@
 services:
 
   prometheus:
-    image: prom/prometheus:v2.52.0
+    image: prom/prometheus:v3.16.0
     container_name: platform-prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -35,7 +35,7 @@ services:
     mem_limit: 512m
 
   alertmanager:
-    image: prom/alertmanager:v0.27.0
+    image: prom/alertmanager:v0.34.2
     container_name: platform-alertmanager
     command:
       - "--config.file=/etc/alertmanager/alertmanager.yml"
@@ -48,7 +48,7 @@ services:
     mem_limit: 128m
 
   grafana:
-    image: grafana/grafana:10.4.3
+    image: grafana/grafana:13.3.0
     container_name: platform-grafana
     environment:
       GF_SECURITY_ADMIN_PASSWORD: admin
@@ -74,7 +74,7 @@ services:
     mem_limit: 256m
 
   loki:
-    image: grafana/loki:3.0.0
+    image: grafana/loki:3.7.9
     container_name: platform-loki
     command: -config.file=/etc/loki/loki.yml
     ports:
@@ -85,7 +85,7 @@ services:
     mem_limit: 256m
 
   fluentbit:
-    image: cr.fluentbit.io/fluent/fluent-bit:3.0.6
+    image: cr.fluentbit.io/fluent/fluent-bit:5.1.5
     container_name: platform-fluentbit
     command: ["-c", "/fluent-bit/etc/fluent-bit.conf"]
     volumes:
@@ -96,7 +96,7 @@ services:
     mem_limit: 64m
 
   tempo:
-    image: grafana/tempo:2.4.2
+    image: grafana/tempo:2.10.10
     container_name: platform-tempo
     command: ["-config.file=/etc/tempo/tempo.yml"]
     ports:
@@ -109,13 +109,14 @@ services:
     mem_limit: 256m
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.123.0
+    image: otel/opentelemetry-collector-contrib:0.165.0
     container_name: platform-otel-collector
     command: ["--config=/etc/otelcol/otelcol.yml"]
     ports:
       - "4319:4317"   # OTLP gRPC (offset so Tempo can keep 4317)
       - "4320:4318"   # OTLP HTTP
       - "8888:8888"   # collector internal metrics
+      - "13133:13133" # health_check extension
     volumes:
       - ../../observability/otel/otelcol.yml:/etc/otelcol/otelcol.yml:ro
     depends_on:

@@ -29,9 +29,8 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from airflow import DAG
-from airflow.operators.python import PythonOperator
-from airflow.utils.dates import days_ago
+from airflow.providers.standard.operators.python import PythonOperator
+from airflow.sdk import DAG
 
 log = logging.getLogger(__name__)
 
@@ -147,7 +146,7 @@ dag = DAG(
     default_args=default_args,
     description="UC1 Auto-retrain triggered by drift detection (OPA-gated promotion)",
     schedule=None,  # triggered externally via REST API or drift gate
-    start_date=days_ago(1),
+    start_date=datetime(2026, 1, 1),
     catchup=False,
     tags=["uc1", "drift", "retraining", "mlops", "openlineage"],
     params={
@@ -230,18 +229,34 @@ def pull_training_data(**context) -> str:
 
 def run_ge_validation(**context) -> bool:
     """Great Expectations data quality gate before training."""
-    import great_expectations as ge
+    import great_expectations as gx
     import pandas as pd
 
     data_path = context["ti"].xcom_pull(task_ids="pull_training_data")
     df = pd.read_parquet(data_path)
-    ge_df = ge.from_pandas(df)
+    batch = (
+        gx.get_context(mode="ephemeral")
+        .data_sources.add_pandas("training")
+        .add_dataframe_asset("frame")
+        .add_batch_definition_whole_dataframe("whole")
+        .get_batch(batch_parameters={"dataframe": df})
+    )
+    expect = gx.expectations
+
+    def ok(expectation) -> bool:
+        return bool(batch.validate(expectation).success)
 
     checks = {
-        "cpu_range": ge_df.expect_column_values_to_be_between("cpu_usage_pct", 0, 100).success,
-        "mem_range": ge_df.expect_column_values_to_be_between("mem_usage_pct", 0, 100).success,
-        "label_not_null": ge_df.expect_column_values_to_not_be_null("label").success,
-        "positive_class_exists": ge_df.expect_column_values_to_be_in_set("label", [0, 1]).success,
+        "cpu_range": ok(
+            expect.ExpectColumnValuesToBeBetween(column="cpu_usage_pct", min_value=0, max_value=100)
+        ),
+        "mem_range": ok(
+            expect.ExpectColumnValuesToBeBetween(column="mem_usage_pct", min_value=0, max_value=100)
+        ),
+        "label_not_null": ok(expect.ExpectColumnValuesToNotBeNull(column="label")),
+        "positive_class_exists": ok(
+            expect.ExpectColumnValuesToBeInSet(column="label", value_set=[0, 1])
+        ),
         "min_rows": len(df) >= 100,
     }
 

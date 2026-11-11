@@ -1,15 +1,8 @@
 name: "09 · UC8/UC23 — RAG Runbook Agent + Auto Post-Mortem (Qdrant + TinyLlama)"
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "services/runbook-agent/**"
-      - ".github/workflows/09-rag-runbook.yml"
+  workflow_call:
   workflow_dispatch:
-
-env:
-  PYTHON_VERSION: "3.11"
 
 permissions:
   contents: read
@@ -18,21 +11,19 @@ jobs:
   rag-runbook-agent:
     name: "UC8 — RAG Index + Q&A Eval"
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+      - uses: ./.github/actions/setup-python-uv
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
+          groups: "dl"
 
-      - name: Install dependencies
-        run: |
-          pip install --quiet \
-            qdrant-client==1.9.1 \
-            sentence-transformers==3.0.1 \
-            mlflow==3.17.1
+      - name: Cache Hugging Face models
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.cache/huggingface
+          key: hf-all-MiniLM-L6-v2-v1
 
       - name: Setup MLflow
         env:
@@ -52,7 +43,7 @@ jobs:
           client = QdrantClient(":memory:")
           encoder = SentenceTransformer("all-MiniLM-L6-v2")
 
-          client.recreate_collection(
+          client.create_collection(
               collection_name="runbook_chunks",
               vectors_config=VectorParams(size=384, distance=Distance.COSINE),
           )
@@ -152,11 +143,11 @@ jobs:
           precision_scores = []
           for query_text, expected_topic in test_queries:
               q_emb = encoder.encode([query_text])[0]
-              results = client.search(
+              results = client.query_points(
                   collection_name="runbook_chunks",
-                  query_vector=q_emb.tolist(),
+                  query=q_emb.tolist(),
                   limit=5,
-              )
+              ).points
               # Precision@5: any result mentioning the expected topic
               relevant = sum(1 for r in results if expected_topic.lower() in r.payload["text"].lower())
               prec = relevant / 5
@@ -215,7 +206,7 @@ jobs:
               "action_items": [
                   "Set JVM_OPTS=-Xmx768m to respect container limits",
                   "Add memory usage trending alert at 80% (UC21 SLO)",
-                  "Enable NannyML memory drift monitoring (UC1)",
+                  "Enable Evidently memory drift monitoring (UC1)",
               ],
               "similar_incidents": similar_incidents_found,
           }
@@ -264,5 +255,8 @@ jobs:
         if: always()
         with:
           name: eval-uc8-uc23
-          path: eval-results/uc{8,23}*.json
+          path: |
+            eval-results/uc8*.json
+            eval-results/uc23*.json
+            eval-results/postmortem_uc23.json
           retention-days: 7

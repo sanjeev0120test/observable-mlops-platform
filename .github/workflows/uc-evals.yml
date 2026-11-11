@@ -1,0 +1,326 @@
+name: uc-evals
+
+# Orchestrates the 23 use-case eval gates (reusable workflows 01–26).
+#   push to main  → only the UCs whose inputs changed (shared code → all)
+#   nightly/manual → every UC, then aggregate and publish the eval portal
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      full: ${{ steps.scope.outputs.full }}
+      uc01: ${{ steps.scope.outputs.full == 'true' || steps.f.outputs.shared == 'true' || steps.f.outputs.uc01 == 'true' }}
+      uc02: ${{ steps.scope.outputs.full == 'true' || steps.f.outputs.shared == 'true' || steps.f.outputs.uc02 == 'true' }}
+      uc03: ${{ steps.scope.outputs.full == 'true' || steps.f.outputs.shared == 'true' || steps.f.outputs.uc03 == 'true' }}
+      uc04: ${{ steps.scope.outputs.full == 'true' || steps.f.outputs.shared == 'true' || steps.f.outputs.uc04 == 'true' }}
+      uc05: ${{ steps.scope.outputs.full == 'true' || steps.f.outputs.shared == 'true' || steps.f.outputs.uc05 == 'true' }}
+      uc06: ${{ steps.scope.outputs.full == 'true' || steps.f.outputs.shared == 'true' || steps.f.outputs.uc06 == 'true' }}
+      uc07: ${{ steps.scope.outputs.full == 'true' || steps.f.outputs.shared == 'true' || steps.f.outputs.uc07 == 'true' }}
+      uc08: ${{ steps.scope.outputs.full == 'true' || steps.f.outputs.shared == 'true' || steps.f.outputs.uc08 == 'true' }}
+      uc09: ${{ steps.scope.outputs.full == 'true' || steps.f.outputs.shared == 'true' || steps.f.outputs.uc09 == 'true' }}
+      uc10: ${{ steps.scope.outputs.full == 'true' || steps.f.outputs.shared == 'true' || steps.f.outputs.uc10 == 'true' }}
+      uc11: ${{ steps.scope.outputs.full == 'true' || steps.f.outputs.shared == 'true' || steps.f.outputs.uc11 == 'true' }}
+      uc13: ${{ steps.scope.outputs.full == 'true' || steps.f.outputs.shared == 'true' || steps.f.outputs.uc13 == 'true' }}
+      uc14: ${{ steps.scope.outputs.full == 'true' || steps.f.outputs.shared == 'true' || steps.f.outputs.uc14 == 'true' }}
+      uc15: ${{ steps.scope.outputs.full == 'true' || steps.f.outputs.shared == 'true' || steps.f.outputs.uc15 == 'true' }}
+      uc18: ${{ steps.scope.outputs.full == 'true' || steps.f.outputs.shared == 'true' || steps.f.outputs.uc18 == 'true' }}
+      uc19: ${{ steps.scope.outputs.full == 'true' || steps.f.outputs.shared == 'true' || steps.f.outputs.uc19 == 'true' }}
+      uc20: ${{ steps.scope.outputs.full == 'true' || steps.f.outputs.shared == 'true' || steps.f.outputs.uc20 == 'true' }}
+      uc21: ${{ steps.scope.outputs.full == 'true' || steps.f.outputs.shared == 'true' || steps.f.outputs.uc21 == 'true' }}
+      uc22: ${{ steps.scope.outputs.full == 'true' || steps.f.outputs.shared == 'true' || steps.f.outputs.uc22 == 'true' }}
+      uc23: ${{ steps.scope.outputs.full == 'true' || steps.f.outputs.shared == 'true' || steps.f.outputs.uc23 == 'true' }}
+      uc24: ${{ steps.scope.outputs.full == 'true' || steps.f.outputs.shared == 'true' || steps.f.outputs.uc24 == 'true' }}
+      uc25: ${{ steps.scope.outputs.full == 'true' || steps.f.outputs.shared == 'true' || steps.f.outputs.uc25 == 'true' }}
+      uc26: ${{ steps.scope.outputs.full == 'true' || steps.f.outputs.shared == 'true' || steps.f.outputs.uc26 == 'true' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - id: scope
+        run: echo "full=${{ github.event_name != 'push' }}" >> "$GITHUB_OUTPUT"
+      - id: f
+        if: steps.scope.outputs.full != 'true'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            shared:
+              - .github/workflows/uc-evals.yml
+              - .github/actions/setup-python-uv/**
+              - eval/**
+              - data/synthetic/**
+              - scripts/setup-dagshub.sh
+              - pyproject.toml
+              - uv.lock
+            uc01: [.github/workflows/01-*.yml, observability/**, infra/docker-compose/**]
+            uc02: [.github/workflows/02-*.yml, scripts/validate_data.py]
+            uc03: [.github/workflows/03-*.yml, services/drift-monitor/**]
+            uc04: [.github/workflows/04-*.yml, services/anomaly-detector/**, mlops/experiments/log_anomaly/**]
+            uc05: [.github/workflows/05-*.yml, mlops/feature-store/**]
+            uc06: [.github/workflows/06-*.yml, services/alert-correlator/**]
+            uc07: [.github/workflows/07-*.yml, services/predictive-scaler/**]
+            uc08: [.github/workflows/08-*.yml, services/self-healing/**, aiops/policies/opa/**, aiops/n8n-workflows/**]
+            uc09: [.github/workflows/09-*.yml, services/runbook-agent/**]
+            uc10: [.github/workflows/10-*.yml, mlops/experiments/**]
+            uc11: [.github/workflows/11-*.yml, services/cost-optimizer/**]
+            uc13: [.github/workflows/13-*.yml, .github/actions/setup-kyverno/**, aiops/policies/kyverno/**, aiops/falco/**, infra/helm/falco/**]
+            uc14: [.github/workflows/14-*.yml]
+            uc15: [.github/workflows/15-*.yml, observability/alerts/**]
+            uc18: [.github/workflows/18-*.yml, observability/otel/**]
+            uc19: [.github/workflows/19-*.yml, aiops/policies/**, infra/kubernetes/**, platform/**]
+            uc20: [.github/workflows/20-*.yml]
+            uc21: [.github/workflows/21-*.yml, mlops/experiments/**]
+            uc22: [.github/workflows/22-*.yml]
+            uc23: [.github/workflows/23-*.yml, mlops/experiments/**]
+            uc24: [.github/workflows/24-*.yml]
+            uc25: [.github/workflows/25-*.yml]
+            uc26: [.github/workflows/26-*.yml, backstage/**]
+
+  uc01:
+    needs: changes
+    if: needs.changes.outputs.uc01 == 'true'
+    uses: ./.github/workflows/01-observability.yml
+    secrets: inherit
+  uc02:
+    needs: changes
+    if: needs.changes.outputs.uc02 == 'true'
+    uses: ./.github/workflows/02-data-pipeline.yml
+    secrets: inherit
+  uc03:
+    needs: changes
+    if: needs.changes.outputs.uc03 == 'true'
+    uses: ./.github/workflows/03-drift-detection.yml
+    secrets: inherit
+  uc04:
+    needs: changes
+    if: needs.changes.outputs.uc04 == 'true'
+    uses: ./.github/workflows/04-log-anomaly.yml
+    secrets: inherit
+  uc05:
+    needs: changes
+    if: needs.changes.outputs.uc05 == 'true'
+    uses: ./.github/workflows/05-feature-skew.yml
+    secrets: inherit
+  uc06:
+    needs: changes
+    if: needs.changes.outputs.uc06 == 'true'
+    uses: ./.github/workflows/06-alert-correlation.yml
+    secrets: inherit
+  uc07:
+    needs: changes
+    if: needs.changes.outputs.uc07 == 'true'
+    uses: ./.github/workflows/07-predictive-scaling.yml
+    secrets: inherit
+  uc08:
+    needs: changes
+    if: needs.changes.outputs.uc08 == 'true'
+    uses: ./.github/workflows/08-self-healing.yml
+    secrets: inherit
+  uc09:
+    needs: changes
+    if: needs.changes.outputs.uc09 == 'true'
+    uses: ./.github/workflows/09-rag-runbook.yml
+    secrets: inherit
+  uc10:
+    needs: changes
+    if: needs.changes.outputs.uc10 == 'true'
+    uses: ./.github/workflows/10-model-serving.yml
+    secrets: inherit
+  uc11:
+    needs: changes
+    if: needs.changes.outputs.uc11 == 'true'
+    uses: ./.github/workflows/11-cost-optimizer.yml
+    secrets: inherit
+  uc13:
+    needs: changes
+    if: needs.changes.outputs.uc13 == 'true'
+    uses: ./.github/workflows/13-security-policy.yml
+    secrets: inherit
+  uc14:
+    needs: changes
+    if: needs.changes.outputs.uc14 == 'true'
+    uses: ./.github/workflows/14-dora-metrics.yml
+    secrets: inherit
+  uc15:
+    needs: changes
+    if: needs.changes.outputs.uc15 == 'true'
+    uses: ./.github/workflows/15-slo-monitoring.yml
+    secrets: inherit
+  uc18:
+    needs: changes
+    if: needs.changes.outputs.uc18 == 'true'
+    uses: ./.github/workflows/18-distributed-tracing.yml
+    secrets: inherit
+  uc19:
+    needs: changes
+    if: needs.changes.outputs.uc19 == 'true'
+    uses: ./.github/workflows/19-gitops-drift.yml
+    secrets: inherit
+  uc20:
+    needs: changes
+    if: needs.changes.outputs.uc20 == 'true'
+    uses: ./.github/workflows/20-data-quality.yml
+    secrets: inherit
+  uc21:
+    needs: changes
+    if: needs.changes.outputs.uc21 == 'true'
+    uses: ./.github/workflows/21-hpo.yml
+    secrets: inherit
+  uc22:
+    needs: changes
+    if: needs.changes.outputs.uc22 == 'true'
+    uses: ./.github/workflows/22-error-classification.yml
+    secrets: inherit
+  uc23:
+    needs: changes
+    if: needs.changes.outputs.uc23 == 'true'
+    uses: ./.github/workflows/23-explainability.yml
+    secrets: inherit
+  uc24:
+    needs: changes
+    if: needs.changes.outputs.uc24 == 'true'
+    uses: ./.github/workflows/24-rate-limiting.yml
+    secrets: inherit
+  uc25:
+    needs: changes
+    if: needs.changes.outputs.uc25 == 'true'
+    uses: ./.github/workflows/25-feature-monitoring.yml
+    secrets: inherit
+  uc26:
+    needs: changes
+    if: needs.changes.outputs.uc26 == 'true'
+    uses: ./.github/workflows/26-catalog-validate.yml
+    secrets: inherit
+
+  aggregate:
+    name: aggregate eval results
+    needs: [changes, uc01, uc02, uc03, uc04, uc05, uc06, uc07, uc08, uc09, uc10, uc11, uc13,
+            uc14, uc15, uc18, uc19, uc20, uc21, uc22, uc23, uc24, uc25, uc26]
+    if: always() && needs.changes.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: eval-*
+          path: eval-results/
+          merge-multiple: true
+      - name: Aggregate + gate
+        env:
+          FULL: ${{ needs.changes.outputs.full }}
+          RESULTS: ${{ toJSON(needs.*.result) }}
+        run: |
+          python3 - <<'PYEOF'
+          import json, os, sys
+          sys.path.insert(0, ".")
+          from pathlib import Path
+          from eval.scorer import aggregate_all_results
+
+          eval_dir = Path("eval-results")
+          eval_dir.mkdir(exist_ok=True)
+          summary = aggregate_all_results(eval_dir)
+          expected = {f"UC{i}" for i in range(1, 24)}
+          missing = sorted(expected - set(summary["ucs"]), key=lambda u: int(u[2:]))
+          failed = sorted((u for u, r in summary["ucs"].items() if not r["passed"]), key=lambda u: int(u[2:]))
+
+          lines = ["### UC eval gates", "", "| UC | Status | Score | Threshold |", "|---|---|---|---|"]
+          for uc, r in sorted(summary["ucs"].items(), key=lambda kv: int(kv[0][2:])):
+              lines.append(f"| {uc} | {'PASS' if r['passed'] else 'FAIL'} | {r['score']:.1f} | {r['threshold']} |")
+          lines.append(f"\n**{summary['passed']}/{summary['total']} passing**")
+          if missing:
+              lines.append(f"\nNot evaluated in this run: {', '.join(missing)}")
+          print("\n".join(lines))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as fh:
+              fh.write("\n".join(lines) + "\n")
+
+          eval_dir.joinpath("summary.json").write_text(json.dumps(
+              {**summary, "expected_total": len(expected), "missing_ucs": missing}, indent=2))
+
+          problems = []
+          if failed:
+              problems.append(f"failing UCs: {failed}")
+          if os.environ["FULL"] == "true" and missing:
+              problems.append(f"full run is missing results for {missing}")
+          if any(r in ("failure", "cancelled") for r in json.loads(os.environ["RESULTS"])):
+              problems.append("one or more UC workflows failed")
+          if problems:
+              sys.exit("; ".join(problems))
+          PYEOF
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: eval-summary
+          path: eval-results/summary.json
+          retention-days: 30
+          if-no-files-found: ignore
+
+  publish-portal:
+    name: publish eval portal
+    needs: [changes, aggregate]
+    if: always() && needs.changes.outputs.full == 'true' && github.ref == 'refs/heads/main' && needs.aggregate.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: eval-*
+          path: eval-results/
+          merge-multiple: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        continue-on-error: true  # UC1 may not have produced an HTML report
+        with:
+          name: drift-reports-uc1
+          path: services/drift-monitor/reports/
+      - run: bash scripts/publish-portal.sh
+      - uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./portal/dist
+          commit_message: "chore: update eval dashboard [skip ci]"
+      - uses: ./.github/actions/setup-python-uv
+        if: env.HF_TOKEN != ''
+      - name: Publish to Hugging Face Spaces (opt-in via HF_TOKEN)
+        if: env.HF_TOKEN != ''
+        env:
+          HF_SPACE: ${{ vars.HF_SPACE_NAME || 'observable-mlops-platform' }}
+        run: |
+          uv run --no-project --with huggingface-hub==2.4.0 python - <<'PYEOF'
+          import os
+          from huggingface_hub import HfApi
+
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          space_id = f"{api.whoami()['name']}/{os.environ['HF_SPACE']}"
+          api.upload_file(
+              path_or_fileobj="portal/dist/index.html",
+              path_in_repo="index.html",
+              repo_id=space_id,
+              repo_type="space",
+              commit_message="Update eval dashboard",
+          )
+          print(f"Portal published to https://huggingface.co/spaces/{space_id}")
+          PYEOF

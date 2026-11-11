@@ -1,14 +1,10 @@
 name: "22 · UC16 — Intelligent Error Classification (sklearn + sentence-transformers)"
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/22-error-classification.yml"
+  workflow_call:
   workflow_dispatch:
 
 env:
-  PYTHON_VERSION: "3.11"
   UC: UC16
 
 permissions:
@@ -22,11 +18,15 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+      - uses: ./.github/actions/setup-python-uv
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-      - run: pip install --quiet scikit-learn==1.5.0 numpy pandas pyarrow sentence-transformers==3.0.1
+          groups: "dl"
+
+      - name: Cache Hugging Face models
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.cache/huggingface
+          key: hf-all-MiniLM-L6-v2-v1
 
       - name: Generate container logs
         run: python data/synthetic/generate_container_logs.py --hours 12 --output /tmp/container_logs.ndjson

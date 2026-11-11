@@ -20,9 +20,35 @@ sys.path.insert(0, str(_REPO_ROOT / "services" / "drift-monitor" / "src"))
 from drift_engine import (  # noqa: E402
     _compute_psi,
     _run_ks_test,
+    _run_mmd_test,
     compute_drift,
     RETRAIN_PSI_THRESHOLD,
 )
+
+
+class TestMMD:
+    """Kernel MMD permutation test (replaces Alibi LSDD)."""
+
+    def test_same_distribution_not_significant(self):
+        rng = np.random.default_rng(3)
+        p = _run_mmd_test(rng.normal(0, 1, 400), rng.normal(0, 1, 400))
+        assert p > 0.05, f"Same distribution should not be flagged, p={p}"
+
+    def test_shifted_distribution_significant(self):
+        rng = np.random.default_rng(4)
+        p = _run_mmd_test(rng.normal(0, 1, 400), rng.normal(1.5, 1, 400))
+        assert p < 0.05, f"Shifted distribution should be flagged, p={p}"
+
+    def test_deterministic_and_bounded(self):
+        rng = np.random.default_rng(5)
+        ref, cur = rng.normal(0, 1, 300), rng.normal(0.2, 1, 300)
+        p1, p2 = _run_mmd_test(ref, cur), _run_mmd_test(ref, cur)
+        assert p1 == p2
+        assert 0.0 < p1 <= 1.0
+
+    def test_degenerate_inputs(self):
+        assert _run_mmd_test(np.array([1.0]), np.array([2.0])) == 1.0
+        assert 0.0 < _run_mmd_test(np.ones(50), np.ones(50)) <= 1.0
 
 
 class TestComputePSI:
@@ -107,9 +133,9 @@ class TestComputeDrift:
 
     def test_no_drift_does_not_trigger_retrain(self, stable_df):
         result = compute_drift(stable_df, stable_df.copy())
-        assert (
-            not result.retrain_triggered
-        ), f"Identical data should not trigger retrain, PSI={result.psi_score}"
+        assert not result.retrain_triggered, (
+            f"Identical data should not trigger retrain, PSI={result.psi_score}"
+        )
         assert result.psi_score < RETRAIN_PSI_THRESHOLD
 
     def test_large_drift_triggers_retrain(self, stable_df):
@@ -117,9 +143,9 @@ class TestComputeDrift:
         shifted["cpu_usage_pct"] = (shifted["cpu_usage_pct"] + 40).clip(0, 100)
         shifted["mem_usage_pct"] = (shifted["mem_usage_pct"] + 30).clip(0, 100)
         result = compute_drift(stable_df, shifted)
-        assert (
-            result.retrain_triggered
-        ), f"Large drift should trigger retrain, PSI={result.psi_score}"
+        assert result.retrain_triggered, (
+            f"Large drift should trigger retrain, PSI={result.psi_score}"
+        )
         assert result.psi_score > RETRAIN_PSI_THRESHOLD
 
     def test_result_counts_match_input(self, stable_df):
@@ -142,6 +168,15 @@ class TestComputeDrift:
         shifted["cpu_usage_pct"] = (shifted["cpu_usage_pct"] + 50).clip(0, 100)
         result = compute_drift(stable_df, shifted, primary_feature="cpu_usage_pct")
         assert isinstance(result.drifted_features, list)
+
+    def test_evidently_report_written(self, stable_df, tmp_path):
+        pytest.importorskip("evidently")
+        shifted = stable_df.copy()
+        shifted["cpu_usage_pct"] = (shifted["cpu_usage_pct"] + 30).clip(0, 100)
+        result = compute_drift(stable_df, shifted, report_output_dir=tmp_path)
+        report = Path(result.report_path)
+        assert report.exists(), "Evidently 0.7 report was not written"
+        assert report.stat().st_size > 10_000
 
     def test_compute_drift_handles_missing_columns_gracefully(self, stable_df):
         """Should work even if current_df has fewer columns."""

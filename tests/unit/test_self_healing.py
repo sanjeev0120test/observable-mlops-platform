@@ -44,9 +44,9 @@ class TestSelfHealingFailClosed:
                     "trigger": {"alert_name": "PodCrashLoopBackOff"},
                 },
             )
-            assert (
-                resp.status_code == 503
-            ), f"OPA unavailable must return 503, got {resp.status_code}"
+            assert resp.status_code == 503, (
+                f"OPA unavailable must return 503, got {resp.status_code}"
+            )
 
     def test_unknown_action_returns_400(self):
         from fastapi.testclient import TestClient
@@ -86,8 +86,9 @@ class TestSelfHealingFailClosed:
                 data = resp.json()
                 assert data["allowed"] is False, f"Protected namespace {ns} should be denied"
                 assert len(data["deny_reasons"]) > 0
-                mock_opa.assert_not_called(), (
-                    f"OPA should not be called for hard-protected namespace {ns}"
+                (
+                    mock_opa.assert_not_called(),
+                    (f"OPA should not be called for hard-protected namespace {ns}"),
                 )
 
     def test_health_endpoint_reports_fail_closed_true(self):

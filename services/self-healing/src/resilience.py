@@ -23,11 +23,8 @@ import random
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from typing import TypeVar
 
 logger = logging.getLogger(__name__)
-
-T = TypeVar("T")
 
 
 def backoff_delays(
@@ -49,7 +46,7 @@ def backoff_delays(
     return delays
 
 
-def retry_call(
+def retry_call[T](
     func: Callable[[], T],
     *,
     attempts: int = 3,
@@ -133,7 +130,7 @@ class CircuitBreaker:
         if self._failures >= self.failure_threshold:
             self._opened_at = self._now()
 
-    def call(self, func: Callable[[], T]) -> T:
+    def call[T](self, func: Callable[[], T]) -> T:
         state = self.state
         if state == "open":
             raise CircuitBreakerOpenError(
