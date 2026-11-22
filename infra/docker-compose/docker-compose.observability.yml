@@ -35,7 +35,7 @@ services:
     mem_limit: 512m
 
   alertmanager:
-    image: prom/alertmanager:v0.34.2
+    image: prom/alertmanager:v0.35.0
     container_name: platform-alertmanager
     command:
       - "--config.file=/etc/alertmanager/alertmanager.yml"
@@ -48,7 +48,7 @@ services:
     mem_limit: 128m
 
   grafana:
-    image: grafana/grafana:13.3.0
+    image: grafana/grafana:13.3.1
     container_name: platform-grafana
     environment:
       GF_SECURITY_ADMIN_PASSWORD: admin
@@ -74,7 +74,7 @@ services:
     mem_limit: 256m
 
   loki:
-    image: grafana/loki:3.7.9
+    image: grafana/loki:3.7.10
     container_name: platform-loki
     command: -config.file=/etc/loki/loki.yml
     ports:
