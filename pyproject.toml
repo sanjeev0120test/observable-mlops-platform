@@ -10,7 +10,7 @@ dependencies = []
 # One lockfile (uv.lock), one group per CI domain. Jobs install only the group they need:
 #   uv sync --frozen --no-default-groups --group <group>   (.github/actions/setup-python-uv)
 [dependency-groups]
-lint = ["ruff==0.17.4"]
+lint = ["ruff==0.17.5"]
 data = [
     "numpy>=2.5",
     # Evidently 0.7 still imports pandas internals removed in pandas 3.
